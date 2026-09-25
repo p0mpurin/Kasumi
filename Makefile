@@ -17,7 +17,15 @@ INCLUDES := include
 
 APP_TITLE := Kasumi
 APP_DESCRIPTION := Cloud gaming for New 3DS
-APP_AUTHOR := Kasumi contributors
+APP_AUTHOR := p0mpurin
+
+# Release version: GitHub releases are tagged v$(VERSION). The CIA's own
+# version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
+VERSION_MAJOR := 0
+VERSION_MINOR := 9
+VERSION_MICRO := 0
+VERSION_SUFFIX := -beta.1
+VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 APP_PRODUCT_CODE := CTR-P-KSMI
 APP_UNIQUE_ID := 0x4B534
 RSF := resources/app.rsf
@@ -31,7 +39,7 @@ BANNERTOOL ?= bannertool
 
 ARCH := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 CFLAGS := -g -Wall -Wextra -Werror -O2 -mword-relocations -ffunction-sections $(ARCH)
-CFLAGS += $(INCLUDE) -D__3DS__
+CFLAGS += $(INCLUDE) -D__3DS__ -DAPP_VERSION=\"$(VERSION)\"
 ASFLAGS := -g $(ARCH)
 LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $(OUTPUT)).map
 LIBDIRS := $(PORTLIBS) $(CTRULIB)
@@ -89,7 +97,10 @@ clean:
 cia: all
 	@$(BANNERTOOL) makebanner -i "$(BANNER_IMAGE)" -a "$(BANNER_AUDIO)" -o "$(BUILD)/banner.bnr"
 	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(APP_ICON)" -f "visible,nosavebackups,new3ds" -o "$(BUILD)/icon.icn"
-	@$(MAKEROM) -f cia -o "$(TARGET).cia" -target t -exefslogo -elf "$(TARGET).elf" -rsf "$(RSF)" -banner "$(BUILD)/banner.bnr" -icon "$(BUILD)/icon.icn" -DAPP_TITLE="$(APP_TITLE)" -DAPP_PRODUCT_CODE="$(APP_PRODUCT_CODE)" -DAPP_UNIQUE_ID="$(APP_UNIQUE_ID)" -major 0 -minor 1 -micro 0
+	@$(MAKEROM) -f cia -o "$(TARGET).cia" -target t -exefslogo -elf "$(TARGET).elf" -rsf "$(RSF)" -banner "$(BUILD)/banner.bnr" -icon "$(BUILD)/icon.icn" -DAPP_TITLE="$(APP_TITLE)" -DAPP_PRODUCT_CODE="$(APP_PRODUCT_CODE)" -DAPP_UNIQUE_ID="$(APP_UNIQUE_ID)" -major $(VERSION_MAJOR) -minor $(VERSION_MINOR) -micro $(VERSION_MICRO)
+
+version:
+	@echo $(VERSION)
 
 run-info:
 	@echo "Load $(TARGET).3dsx in Azahar configured as a New Nintendo 3DS."

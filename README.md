@@ -49,6 +49,21 @@ affiliated with NVIDIA or with the OpenNOW project.
   reconnect, and pause-on-lid-close that resumes on the same rig.
 - **First-run guide** that walks you through everything (skippable).
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/in-game.png" width="260" alt="Genshin Impact streaming with stats"><br>Playing, with live stats</td>
+    <td align="center"><img src="docs/screenshots/game-page.png" width="260" alt="A game's page"><br>A game's page</td>
+    <td align="center"><img src="docs/screenshots/stream-menu.png" width="260" alt="Stream menu"><br>Stream menu</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/zoom-zone.png" width="260" alt="Zoom zone"><br>Zoom zones for small text</td>
+    <td align="center"><img src="docs/screenshots/settings.png" width="260" alt="Settings"><br>Settings</td>
+    <td align="center"><img src="docs/screenshots/keyboard.png" width="260" alt="Remote keyboard"><br>Remote keyboard</td>
+  </tr>
+</table>
+
 ## Requirements
 
 - A **New** Nintendo 3DS, New 3DS XL or New 2DS XL (the original 3DS lacks the
@@ -64,6 +79,11 @@ Download `Kasumi.cia` from the
 [Releases](https://github.com/p0mpurin/Kasumi/releases) page and install it
 with FBI, or copy `Kasumi.3dsx` to `sdmc:/3ds/` and start it from the
 Homebrew Launcher.
+
+After that, Kasumi updates itself: **Settings > Updates** shows what's new
+and installs the latest release in place (it checks automatically, only in
+the menus). Your login, library and settings are kept. Every download is
+checked against the release's SHA256SUMS before anything is installed.
 
 ## Getting started
 
@@ -140,6 +160,11 @@ make cia MAKEROM=/path/to/makerom BANNERTOOL=/path/to/bannertool
 [bannertool](https://github.com/Steveice10/bannertool). How the stream,
 pacing and input work is described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
 
+To publish a release, set the version in the Makefile, write
+`docs/releases/v<version>.md`, and run `bash tools/make-release.sh` (with
+`MAKEROM` and `BANNERTOOL` set); it builds the CIA, the .3dsx and
+`SHA256SUMS` and prints the `gh release create` command.
+
 ## Credits
 
 Kasumi builds on the open-source OpenNOW family of GeForce NOW clients,
@@ -151,3 +176,10 @@ informed by [Moonlight-N3DS](https://github.com/zoeyjodon/moonlight-N3DS).
 GeForce NOW and NVIDIA are trademarks of NVIDIA Corporation. Nintendo 3DS is
 a trademark of Nintendo. Kasumi is an unofficial fan project and is not
 affiliated with or endorsed by either company.
+
+## License
+
+Kasumi is free software under the [GNU General Public License v3.0](LICENSE):
+you may use, study, share and modify it, and anything you distribute that is
+based on it must stay under the GPL with its source available. Third-party
+components keep their own licences; see [THIRD_PARTY.md](THIRD_PARTY.md).

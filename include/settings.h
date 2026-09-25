@@ -43,6 +43,9 @@ typedef struct {
     bool lid_keeps_playing;
     /* The first-run guide was finished or skipped. */
     bool guide_done;
+    /* Look for updates once or twice a day; include pre-releases (beta). */
+    bool auto_update;
+    bool update_beta;
 } AppSettings;
 
 void settings_defaults(AppSettings *settings);

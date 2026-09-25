@@ -11,13 +11,29 @@ extern const unsigned char _binary_romfs_cacert_pem_end[];
 /* Main-thread requests only. Keep a bounded connection/TLS cache between calls. */
 static CURL *g_http;
 static volatile bool g_cancel;
+static long g_next_timeout;
+static HttpProgress g_next_progress;
+static void *g_next_context;
 
 void http_cancel(void) { g_cancel = true; }
+
+void http_next_request(long timeout_seconds, HttpProgress progress, void *context)
+{
+    g_next_timeout = timeout_seconds;
+    g_next_progress = progress;
+    g_next_context = context;
+}
+
+static HttpProgress g_progress;
+static void *g_progress_context;
 
 static int transfer_progress(void *userdata, curl_off_t dl_total, curl_off_t dl_now,
                              curl_off_t ul_total, curl_off_t ul_now)
 {
-    (void)userdata; (void)dl_total; (void)dl_now; (void)ul_total; (void)ul_now;
+    (void)userdata; (void)ul_total; (void)ul_now;
+    if (g_progress && dl_now > 0)
+        g_progress((unsigned long long)dl_now, dl_total > 0 ? (unsigned long long)dl_total : 0,
+                   g_progress_context);
     return g_cancel ? 1 : 0;
 }
 
@@ -101,7 +117,12 @@ bool http_request(const char *method, const char *url, const char *user_agent,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 25L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, g_next_timeout > 0 ? g_next_timeout : 25L);
+    g_progress = g_next_progress;
+    g_progress_context = g_next_context;
+    g_next_timeout = 0;
+    g_next_progress = NULL;
+    g_next_context = NULL;
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 2L);
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
@@ -143,6 +164,8 @@ bool http_request(const char *method, const char *url, const char *user_agent,
         free(buffer.data);
     }
     /* Drop borrowed request pointers before their owners release them. */
+    g_progress = NULL;
+    g_progress_context = NULL;
     curl_easy_reset(curl);
     curl_slist_free_all(header_list);
     return result == CURLE_OK;

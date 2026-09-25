@@ -7,6 +7,7 @@
 #include "diagnostic.h"
 #include "http_client.h"
 #include "game_art.h"
+#include "updater.h"
 
 #define WORKER_STACK_SIZE (128 * 1024)
 #define WORKER_IDLE_NS 50000000LL
@@ -50,6 +51,8 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
         game_art_prefetch(g_work.games, (unsigned)g_work.game_count);
         return true;
     case NET_JOB_CONNECTION_TEST: return gfn_connection_test(&g_work);
+    case NET_JOB_UPDATE_CHECK: return updater_check(!strcmp(text, "beta"));
+    case NET_JOB_UPDATE_INSTALL: return updater_install();
     case NET_JOB_LIBRARY_CACHED:
         if (gfn_library_load(&g_work)) return true;
         return gfn_fetch_library(&g_work);

@@ -234,7 +234,7 @@ void remote_keyboard_draw(const WebRtcTransport *t, bool touching, int tx, int t
     ui_hline(0, 30.0f, UI_BOTTOM_WIDTH, UI_LINE);
     ui_rect(UI_BOTTOM_WIDTH / 2 - 12, 30.0f, 24.0f, 1.0f, UI_ACCENT);
     static const char *const hints[] = {
-        "A", "Type", "B", "Delete", "Y", "Space", "START", "Enter", "X", "Close", NULL
+        "A", "Type", "B", "Delete", "Y", "Space", "X", "Close", NULL
     };
     ui_hint_row(UI_BOTTOM_WIDTH / 2, 34.0f, hints);
 

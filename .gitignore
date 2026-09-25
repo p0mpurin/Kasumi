@@ -27,3 +27,7 @@ BUILD08.md
 BUILD09.md
 TRANSPORT-REVIEW.md
 QUALITY-AND-UX-RESEARCH.md
+inappscreenshots/
+
+# Release builds (tools/make-release.sh)
+dist/

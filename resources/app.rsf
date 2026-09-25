@@ -107,6 +107,7 @@ AccessControlInfo:
   ServiceAccessControl:
     - APT:U
     - ac:u
+    - am:net
     - cfg:u
     - fs:USER
     - gsp::Gpu

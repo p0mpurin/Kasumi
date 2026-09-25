@@ -70,7 +70,11 @@ typedef enum {
     ACTION_OPTION_NEXT,
     ACTION_GUIDE_NEXT,
     ACTION_GUIDE_BACK,
-    ACTION_GUIDE_SKIP
+    ACTION_GUIDE_SKIP,
+    ACTION_UPDATE_PRIMARY,
+    ACTION_UPDATE_CLOSE,
+    ACTION_UPDATE_LATER,
+    ACTION_WHATS_NEW_CLOSE
 } AppAction;
 
 enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
@@ -78,6 +82,7 @@ enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
        SETTING_FILTER, SETTING_GYRO, SETTING_GYRO_SPEED,
        SETTING_THEME, SETTING_VOLUME, SETTING_MENU_AUDIO, SETTING_LID,
        SETTING_CONNECTION, SETTING_GUIDE,
+       SETTING_UPDATES, SETTING_AUTO_UPDATE, SETTING_UPDATE_CHANNEL,
        SETTING_ACCOUNT, SETTING_COUNT };
 
 /* Library tabs (L / R). */
@@ -115,6 +120,12 @@ typedef struct {
     size_t list_count;
     /* First-run guide page, -1 when closed. */
     int guide_page;
+    /* Software update page and the one-time "what's new" page. */
+    bool update_open;
+    bool whats_new_open;
+    int notes_scroll;
+    char whats_new_version[32];
+    const char *whats_new_notes;
     AppModal modal;
     char modal_title[48];
     char modal_jp[24];

@@ -25,6 +25,10 @@ void settings_defaults(AppSettings *settings)
     settings->mute_in_menus = false;
     settings->lid_keeps_playing = false;
     settings->guide_done = false;
+    settings->auto_update = true;
+    /* Kasumi's own releases are betas for now, so beta is the default
+     * channel; otherwise a beta build would never see its successor. */
+    settings->update_beta = true;
 }
 
 unsigned settings_deadzone_percent(DeadzoneLevel level)
@@ -78,6 +82,8 @@ bool settings_load(AppSettings *settings)
     settings->mute_in_menus = read_bool(root, "mute_in_menus", settings->mute_in_menus);
     settings->lid_keeps_playing = read_bool(root, "lid_keeps_playing", settings->lid_keeps_playing);
     settings->guide_done = read_bool(root, "guide_done", settings->guide_done);
+    settings->auto_update = read_bool(root, "auto_update", settings->auto_update);
+    settings->update_beta = read_bool(root, "update_beta", settings->update_beta);
     json_decref(root);
     return true;
 }
@@ -86,7 +92,7 @@ bool settings_save(const AppSettings *settings)
 {
     mkdir("sdmc:/3ds", 0777);
     mkdir(APP_DATA_DIR, 0777);
-    json_t *root = json_pack("{s:i,s:i,s:b,s:b,s:b,s:b,s:b,s:i,s:b,s:i,s:i,s:i,s:i,s:b,s:b,s:b}",
+    json_t *root = json_pack("{s:i,s:i,s:b,s:b,s:b,s:b,s:b,s:i,s:b,s:i,s:i,s:i,s:i,s:b,s:b,s:b,s:b,s:b}",
                              "button_layout", (int)settings->button_layout,
                              "deadzone", (int)settings->deadzone,
                              "swap_shoulders", settings->swap_shoulders,
@@ -102,7 +108,9 @@ bool settings_save(const AppSettings *settings)
                              "volume", (int)settings->volume,
                              "mute_in_menus", settings->mute_in_menus,
                              "lid_keeps_playing", settings->lid_keeps_playing,
-                             "guide_done", settings->guide_done);
+                             "guide_done", settings->guide_done,
+                             "auto_update", settings->auto_update,
+                             "update_beta", settings->update_beta);
     if (!root) return false;
     const bool ok = json_dump_file(root, SETTINGS_PATH, JSON_INDENT(2)) == 0;
     json_decref(root);

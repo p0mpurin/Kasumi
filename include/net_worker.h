@@ -23,7 +23,10 @@ typedef enum {
     NET_JOB_SIGN_OUT,
     /* Show the saved library again (after a search): no network. */
     NET_JOB_LIBRARY_CACHED,
-    NET_JOB_CONNECTION_TEST
+    NET_JOB_CONNECTION_TEST,
+    /* Text "beta" includes pre-releases. */
+    NET_JOB_UPDATE_CHECK,
+    NET_JOB_UPDATE_INSTALL
 } NetJobKind;
 
 typedef struct {

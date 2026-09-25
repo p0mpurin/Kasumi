@@ -8,6 +8,7 @@
 
 #include "game_art.h"
 #include "game_prefs.h"
+#include "updater.h"
 #include "mvd_video.h"
 #include "play_history.h"
 #include "zoom_zones.h"
@@ -67,6 +68,12 @@ static const UiRect OPT_CLOSE = { 84, 194, 152, 40 };
 static const UiRect GUIDE_BACK = { 16, 188, 92, 44 };
 static const UiRect GUIDE_SKIP = { 114, 188, 92, 44 };
 static const UiRect GUIDE_NEXT = { 212, 188, 92, 44 };
+
+/* Software update and what's new, lower screen. */
+static const UiRect UPD_PRIMARY = { 16, 148, 288, 44 };
+static const UiRect UPD_LATER = { 16, 200, 140, 34 };
+static const UiRect UPD_CLOSE = { 164, 200, 140, 34 };
+static const UiRect NEW_CONTINUE = { 60, 184, 200, 44 };
 
 /* Which options row a tap landed on (read by main with the action). */
 static int g_touched_option_row = -1;
@@ -176,6 +183,10 @@ static const SettingEntry SETTING_ENTRIES[] = {
     { SETTING_LID, NULL, NULL },
     { SETTING_POINTER, NULL, NULL },
     { SETTING_GUIDE, NULL, NULL },
+    { -1, "更新", "UPDATES" },
+    { SETTING_UPDATES, NULL, NULL },
+    { SETTING_AUTO_UPDATE, NULL, NULL },
+    { SETTING_UPDATE_CHANNEL, NULL, NULL },
     { -1, "アカウント", "ACCOUNT" },
     { SETTING_ACCOUNT, NULL, NULL },
 };
@@ -201,6 +212,8 @@ static const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_THEME] = "Theme", [SETTING_VOLUME] = "Stream volume",
     [SETTING_MENU_AUDIO] = "Audio in menus", [SETTING_LID] = "Closing the lid",
     [SETTING_CONNECTION] = "Connection check", [SETTING_GUIDE] = "Getting started",
+    [SETTING_UPDATES] = "Software update", [SETTING_AUTO_UPDATE] = "Check automatically",
+    [SETTING_UPDATE_CHANNEL] = "Update channel",
 };
 static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_LAYOUT] = "ボタン配置", [SETTING_TRIGGERS] = "トリガー",
@@ -212,9 +225,29 @@ static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_THEME] = "色", [SETTING_VOLUME] = "音量",
     [SETTING_MENU_AUDIO] = "メニュー音", [SETTING_LID] = "スリープ",
     [SETTING_CONNECTION] = "接続", [SETTING_GUIDE] = "案内",
+    [SETTING_UPDATES] = "更新", [SETTING_AUTO_UPDATE] = "自動確認",
+    [SETTING_UPDATE_CHANNEL] = "チャンネル",
 };
 
 static const char *connection_advice(const GfnClient *c);
+
+/* NVIDIA's store codes, as people know the stores. */
+static const char *store_label(const char *code)
+{
+    static const struct { const char *code, *label; } STORES[] = {
+        { "STEAM", "Steam" }, { "EPIC", "Epic Games" }, { "EPIC_GAMES_STORE", "Epic Games" },
+        { "EGS", "Epic Games" }, { "EA_APP", "EA app" }, { "ORIGIN", "EA app" },
+        { "UBISOFT", "Ubisoft" }, { "UPLAY", "Ubisoft" }, { "UBISOFT_CONNECT", "Ubisoft" },
+        { "BATTLENET", "Battle.net" }, { "BATTLE_NET", "Battle.net" }, { "XBOX", "Xbox" },
+        { "MICROSOFT", "Xbox" }, { "MICROSOFT_STORE", "Xbox" }, { "GOG", "GOG" },
+        { "NV_BUNDLE", "GeForce NOW" }, { "GFN", "GeForce NOW" }, { "UNKNOWN", "Own launcher" },
+        { "NONE", "Own launcher" }, { "ROCKSTAR", "Rockstar" }, { "WARGAMING", "Wargaming" },
+    };
+    if (!code || !code[0]) return "GeForce NOW";
+    for (size_t i = 0; i < sizeof(STORES) / sizeof(STORES[0]); ++i)
+        if (!strcmp(code, STORES[i].code)) return STORES[i].label;
+    return code;
+}
 
 static const char *gyro_mode_name(GfnGyroMode mode)
 {
@@ -241,6 +274,8 @@ static unsigned setting_option(const App *app, int setting, unsigned *count)
     case SETTING_VOLUME: *count = 6; return s->volume;
     case SETTING_MENU_AUDIO: *count = 2; return s->mute_in_menus ? 1 : 0;
     case SETTING_LID: *count = 2; return s->lid_keeps_playing ? 1 : 0;
+    case SETTING_AUTO_UPDATE: *count = 2; return s->auto_update ? 0 : 1;
+    case SETTING_UPDATE_CHANNEL: *count = 2; return s->update_beta ? 1 : 0;
     default: *count = 0; return 0;
     }
 }
@@ -282,6 +317,17 @@ static const char *setting_value(const App *app, int setting)
         return result;
     }
     case SETTING_GUIDE: return "Open";
+    case SETTING_UPDATES: {
+        static char text[48];
+        const UpdateInfo info = updater_info();
+        if (info.state == UPDATE_AVAILABLE) snprintf(text, sizeof(text), "%s ready", info.latest);
+        else if (info.state == UPDATE_UP_TO_DATE) snprintf(text, sizeof(text), "Up to date");
+        else if (info.state == UPDATE_INSTALLED) snprintf(text, sizeof(text), "Restart to finish");
+        else snprintf(text, sizeof(text), "v%s", APP_VERSION);
+        return text;
+    }
+    case SETTING_AUTO_UPDATE: return s->auto_update ? "On" : "Off";
+    case SETTING_UPDATE_CHANNEL: return s->update_beta ? "Beta" : "Stable";
     case SETTING_ACCOUNT: return gfn_has_session(app->client) ? "Sign out" : "Signed out";
     }
     return "";
@@ -339,6 +385,14 @@ static const char *setting_description(const App *app, int setting)
             : "Game audio keeps playing while the stream menu is open.";
     case SETTING_CONNECTION: return connection_advice(app->client);
     case SETTING_GUIDE: return "Walk through the basics again: signing in, controls, picture and extras.";
+    case SETTING_UPDATES:
+        return "See what's new and install the latest Kasumi from GitHub. Your login, library and settings stay.";
+    case SETTING_AUTO_UPDATE:
+        return s->auto_update ? "Kasumi looks for a new version about twice a day, only in the menus, never while you play."
+                              : "Kasumi only looks for updates when you open Software update.";
+    case SETTING_UPDATE_CHANNEL:
+        return s->update_beta ? "Beta: get test versions first. They may have rough edges."
+                              : "Stable: only finished releases.";
     case SETTING_LID:
         return s->lid_keeps_playing
             ? "Closing the lid only turns the screens off; the stream keeps running (and using battery)."
@@ -375,6 +429,8 @@ void screens_setting_change(App *app, int setting, int direction)
     case SETTING_VOLUME: s->volume = (s->volume + 6 + step) % 6; break;
     case SETTING_MENU_AUDIO: s->mute_in_menus = !s->mute_in_menus; break;
     case SETTING_LID: s->lid_keeps_playing = !s->lid_keeps_playing; break;
+    case SETTING_AUTO_UPDATE: s->auto_update = !s->auto_update; break;
+    case SETTING_UPDATE_CHANNEL: s->update_beta = !s->update_beta; break;
     case SETTING_BITRATE:
         s->bitrate_mode = (StreamBitrateMode)((s->bitrate_mode + STREAM_BITRATE_COUNT + step) %
                                               STREAM_BITRATE_COUNT);
@@ -394,7 +450,10 @@ static void draw_status_bar(const App *app, float width)
     const time_t now = time(NULL);
     const struct tm *local = gmtime(&now);
     if (local) strftime(clock, sizeof(clock), "%H:%M", local);
-    ui_text(width - 12.0f, 5.0f, 12.0f, UI_TEXT, UI_ALIGN_RIGHT, clock);
+    const float clock_w = ui_text(width - 12.0f, 5.0f, 12.0f, UI_TEXT, UI_ALIGN_RIGHT, clock);
+    /* A quiet badge while a newer version waits (until dismissed). */
+    if (app->view != VIEW_STREAM && updater_info().state == UPDATE_AVAILABLE && !updater_dismissed())
+        ui_pill(width - 20.0f - clock_w, 4.0f, UI_ACCENT, UI_ALIGN_RIGHT, "UPDATE");
 
     /* Seal and wordmark centred as one group. */
     const float name_w = ui_text_width(APP_NAME, 12.0f);
@@ -584,7 +643,7 @@ static void draw_library_art(const App *app)
     draw_game_art(game, LIB_ART_X, LIB_ART_Y + (1.0f - t) * 4.0f, GAME_ART_WIDTH, 0.35f + 0.65f * t);
     ui_rect(LIB_ART_X + GAME_ART_WIDTH / 2 - 12, LIB_ART_Y + GAME_ART_HEIGHT + 6, 24, 1, UI_ACCENT);
     ui_text_fit(LIB_ART_X + GAME_ART_WIDTH / 2, LIB_ART_Y + GAME_ART_HEIGHT + 11, 11, UI_TEXT_DIM,
-                UI_ALIGN_CENTER, GAME_ART_WIDTH + 8, game->store[0] ? game->store : "GeForce NOW");
+                UI_ALIGN_CENTER, GAME_ART_WIDTH + 8, store_label(game->store));
     /* Warm the neighbours so scrolling feels instant. */
     if (app->selected > 0) game_art_want(app_game(app, app->selected - 1));
     if (app->selected + 1 < app->list_count) game_art_want(app_game(app, app->selected + 1));
@@ -664,7 +723,7 @@ static void draw_library_top(const App *app, bool entering)
         const bool favourite = game_prefs_favourite(game->app_id);
         if (favourite) ui_rounded(42, y + 9, 5, 5, 2.5f, UI_ACCENT);
         const float title_x = favourite ? 51.0f : 44.0f;
-        const char *store = game->store[0] ? game->store : "GFN";
+        const char *store = store_label(game->store);
         const float store_w = ui_text_width(store, 11) + 12;
         ui_text_fit(title_x, y + 5, 13, selected ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT,
                     LIB_LIST_W - title_x - store_w - 4, game->title);
@@ -873,8 +932,8 @@ static void draw_modal_top(const App *app, float p)
 
 static const char *details_store(const App *app, const GfnGame *game)
 {
-    if (app->details_variant < game->variant_count) return game->variants[app->details_variant].store;
-    return game->store[0] ? game->store : "GeForce NOW";
+    if (app->details_variant < game->variant_count) return store_label(game->variants[app->details_variant].store);
+    return store_label(game->store);
 }
 
 static void format_played(char *out, size_t size, uint32_t seconds)
@@ -904,7 +963,7 @@ static void draw_details_top(const App *app)
     if (game->variant_count > 1) {
         for (unsigned i = 0; i < game->variant_count; ++i) {
             const bool on = i == app->details_variant;
-            px += ui_pill(px, y, on ? UI_ACCENT : UI_LINE_STRONG, UI_ALIGN_LEFT, game->variants[i].store) + 6;
+            px += ui_pill(px, y, on ? UI_ACCENT : UI_LINE_STRONG, UI_ALIGN_LEFT, store_label(game->variants[i].store)) + 6;
         }
     } else {
         px += ui_pill(px, y, UI_TEXT_DIM, UI_ALIGN_LEFT, details_store(app, game)) + 6;
@@ -1027,6 +1086,227 @@ static void draw_details_bottom(const App *app, float overlay_p)
     if (app->options_open) draw_options_sheet(app, overlay_p);
 }
 
+/* ---- Software update --------------------------------------------------------- */
+
+/* Word-wrapped, scrollable notes inside a panel; lines fade at the edges. */
+static void draw_notes(UiRect box, const char *text, int scroll)
+{
+    ui_rect_r(box, UI_SURFACE);
+    ui_outline(box.x, box.y, box.w, box.h, 1.0f, UI_LINE);
+    const float line_h = 15.0f, pad = 8.0f, width = box.w - pad * 2;
+    const int visible = (int)((box.h - pad * 2) / line_h);
+    /* First pass counts lines so the scroll can be clamped. */
+    int total = 0;
+    char line[256];
+    for (int pass = 0; pass < 2; ++pass) {
+        int max_scroll = total - visible;
+        if (max_scroll < 0) max_scroll = 0;
+        const int first = scroll > max_scroll ? max_scroll : scroll;
+        int index = 0;
+        const char *p = text && text[0] ? text : "No release notes.";
+        while (*p) {
+            const char *end = strchr(p, '\n');
+            const size_t para = end ? (size_t)(end - p) : strlen(p);
+            size_t start = 0;
+            do {
+                /* Grow the line word by word. */
+                size_t best = 0, cursor = start;
+                while (cursor < para) {
+                    size_t next = cursor;
+                    while (next < para && p[next] == ' ') ++next;
+                    while (next < para && p[next] != ' ') ++next;
+                    const size_t len = next - start < sizeof(line) - 1 ? next - start : sizeof(line) - 1;
+                    memcpy(line, p + start, len);
+                    line[len] = '\0';
+                    if (ui_text_width(line, 12) > width && best) break;
+                    best = next - start;
+                    cursor = next;
+                }
+                if (!best) best = para - start;
+                if (pass == 1 && index >= first && index < first + visible) {
+                    const size_t len = best < sizeof(line) - 1 ? best : sizeof(line) - 1;
+                    memcpy(line, p + start, len);
+                    line[len] = '\0';
+                    const bool bullet = line[0] == '-' && line[1] == ' ';
+                    const float y = box.y + pad + (index - first) * line_h;
+                    if (bullet) {
+                        ui_circle(box.x + pad + 3, y + 7, 2, UI_ACCENT);
+                        ui_text(box.x + pad + 10, y, 12, UI_TEXT, UI_ALIGN_LEFT, line + 2);
+                    } else {
+                        ui_text(box.x + pad, y, 12, UI_TEXT_DIM, UI_ALIGN_LEFT, line);
+                    }
+                }
+                ++index;
+                start += best;
+                while (start < para && p[start] == ' ') ++start;
+            } while (start < para);
+            if (!end) break;
+            p = end + 1;
+        }
+        total = index;
+        if (pass == 1 && total > visible) {
+            /* Scroll hint on the right edge. */
+            const float rail = box.h - 8, thumb = rail * visible / total;
+            ui_vline(box.x + box.w - 5, box.y + 4, rail, UI_LINE);
+            ui_rect(box.x + box.w - 6, box.y + 4 + (rail - thumb) * first / (float)(total - visible), 3, thumb,
+                    UI_ACCENT);
+        }
+    }
+}
+
+static const char *update_phase_title(const UpdateInfo *info)
+{
+    switch (info->state) {
+    case UPDATE_CHECKING: return "Checking GitHub for updates";
+    case UPDATE_DOWNLOADING: return "Downloading";
+    case UPDATE_VERIFYING: return "Checking the download";
+    case UPDATE_INSTALLING: return "Installing - keep the console on";
+    case UPDATE_INSTALLED: return "Update installed";
+    case UPDATE_FAILED: return "Update didn't finish";
+    case UPDATE_AVAILABLE: return "A new version is ready";
+    case UPDATE_UP_TO_DATE: return "Kasumi is up to date";
+    default: return "Software update";
+    }
+}
+
+static void draw_update_top(const App *app)
+{
+    const UpdateInfo info = updater_info();
+    draw_title(200, 31, "更新", "SOFTWARE UPDATE");
+    const bool has_new = info.latest[0] && info.state != UPDATE_UP_TO_DATE && info.state != UPDATE_IDLE &&
+                         info.state != UPDATE_CHECKING;
+    if (has_new) {
+        /* Installed -> available, side by side. */
+        const UiRect left = { 40, 60, 140, 40 }, right = { 220, 60, 140, 40 };
+        ui_rect_r(left, UI_SURFACE);
+        ui_outline(left.x, left.y, left.w, left.h, 1.0f, UI_LINE);
+        ui_label(left.x + left.w / 2, left.y + 5, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "INSTALLED");
+        ui_text_fit(left.x + left.w / 2, left.y + 20, 13, UI_TEXT_DIM, UI_ALIGN_CENTER, left.w - 8, APP_VERSION);
+        ui_rect_r(right, UI_SURFACE);
+        ui_outline(right.x, right.y, right.w, right.h, 1.0f, UI_ACCENT);
+        ui_label(right.x + right.w / 2, right.y + 5, 11, UI_ACCENT, UI_ALIGN_CENTER,
+                 info.prerelease ? "NEW BETA" : "NEW");
+        ui_text_fit(right.x + right.w / 2, right.y + 20, 13, UI_TEXT, UI_ALIGN_CENTER, right.w - 8, info.latest);
+        ui_triangle(194, 74, 194, 86, 204, 80, UI_ACCENT);
+        char heading[64];
+        snprintf(heading, sizeof(heading), "WHAT'S NEW  ·  %s", info.published[0] ? info.published : info.latest);
+        ui_label(40, 106, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, heading);
+        const UiRect notes = { 36, 120, 328, 94 };
+        draw_notes(notes, info.notes, app->notes_scroll);
+    } else if (info.state == UPDATE_CHECKING || info.state == UPDATE_IDLE) {
+        ui_enso(200, 118, 24, UI_ACCENT);
+        ui_text(200, 156, 13, UI_TEXT, UI_ALIGN_CENTER, "Checking GitHub for a newer Kasumi...");
+    } else {
+        const bool ok = info.state == UPDATE_UP_TO_DATE;
+        ui_ring(200, 110, 26, 2.0f, ok ? UI_ACCENT : UI_DANGER, UI_BG);
+        if (ok) {
+            ui_line(188, 110, 197, 119, 3.0f, UI_ACCENT);
+            ui_line(197, 119, 213, 101, 3.0f, UI_ACCENT);
+        } else {
+            ui_text(200, 94, 26, UI_DANGER, UI_ALIGN_CENTER, "!");
+        }
+        ui_text(200, 146, 14, UI_TEXT, UI_ALIGN_CENTER, ok ? "Kasumi is up to date" : "Could not check for updates");
+        char detail[160];
+        if (ok && info.checked_at) {
+            const long age = (long)((int64_t)time(NULL) - info.checked_at);
+            if (age < 120) snprintf(detail, sizeof(detail), "Version %s  ·  checked just now", APP_VERSION);
+            else snprintf(detail, sizeof(detail), "Version %s  ·  checked %ld min ago", APP_VERSION, age / 60);
+        } else {
+            snprintf(detail, sizeof(detail), "%s", ok ? APP_VERSION : info.error);
+        }
+        ui_text_wrap(200, 166, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 330, 2, 14, detail);
+    }
+    static const char *const hints_new[] = { "A", "Install", "X", "Later", "B", "Close", NULL };
+    static const char *const hints[] = { "A", "Check again", "B", "Close", NULL };
+    static const char *const hints_busy[] = { NULL };
+    const bool working = info.state == UPDATE_DOWNLOADING || info.state == UPDATE_VERIFYING ||
+                         info.state == UPDATE_INSTALLING || info.state == UPDATE_CHECKING;
+    draw_footer(UI_TOP_WIDTH, working ? hints_busy : info.state == UPDATE_AVAILABLE ? hints_new : hints);
+}
+
+static void draw_update_bottom(const App *app)
+{
+    static float bar;
+    const UpdateInfo info = updater_info();
+    ui_label(160, 8, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "SOFTWARE UPDATE");
+    ui_text(160, 26, 14, info.state == UPDATE_FAILED ? UI_DANGER : UI_TEXT, UI_ALIGN_CENTER,
+            update_phase_title(&info));
+
+    /* Three steps with one continuous bar underneath. */
+    static const char *const steps[] = { "DOWNLOAD", "VERIFY", "INSTALL" };
+    int step = -1;
+    if (info.state == UPDATE_DOWNLOADING) step = 0;
+    else if (info.state == UPDATE_VERIFYING) step = 1;
+    else if (info.state == UPDATE_INSTALLING) step = 2;
+    else if (info.state == UPDATE_INSTALLED) step = 3;
+    const float overall = step < 0 ? 0.0f : step >= 3 ? 1.0f : (step + info.progress / 1000.0f) / 3.0f;
+    bar = ui_approach(bar, overall, 10.0f);
+    const float bx = 30, bw = 260, by = 76;
+    ui_rounded(bx, by, bw, 6, 3, UI_RAISED);
+    if (bar > 0.005f) ui_rounded(bx, by, bw * bar, 6, 3, info.state == UPDATE_FAILED ? UI_DANGER : UI_ACCENT);
+    for (int i = 0; i < 3; ++i) {
+        const float x = bx + bw * (i + 0.5f) / 3.0f;
+        const bool done = step > i, now = step == i;
+        ui_label(x, by + 14, 11, done || now ? UI_TEXT : UI_TEXT_FAINT, UI_ALIGN_CENTER, steps[i]);
+    }
+    char detail[160] = "";
+    if (info.state == UPDATE_DOWNLOADING && info.size_bytes)
+        snprintf(detail, sizeof(detail), "%.1f of %.1f MB", info.progress / 1000.0f * info.size_bytes / 1048576.0f,
+                 info.size_bytes / 1048576.0f);
+    else if (info.state == UPDATE_AVAILABLE && info.size_bytes)
+        snprintf(detail, sizeof(detail), "%s  ·  %.1f MB  ·  %s", info.latest, info.size_bytes / 1048576.0f,
+                 updater_is_3dsx() ? ".3dsx" : "CIA");
+    else if (info.state == UPDATE_INSTALLED)
+        snprintf(detail, sizeof(detail), updater_can_relaunch() ? "Restart to use %s." : "Close Kasumi and open it again to use %s.",
+                 info.latest);
+    else if (info.state == UPDATE_FAILED)
+        snprintf(detail, sizeof(detail), "%s", info.error);
+    else if (info.state == UPDATE_INSTALLING)
+        snprintf(detail, sizeof(detail), "Your login, library and settings stay as they are.");
+    ui_text_wrap(160, 112, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 290, 2, 14, detail);
+
+    const bool working = info.state == UPDATE_DOWNLOADING || info.state == UPDATE_VERIFYING ||
+                         info.state == UPDATE_INSTALLING || info.state == UPDATE_CHECKING;
+    char label[48];
+    const char *jp = "確認";
+    if (info.state == UPDATE_AVAILABLE) { snprintf(label, sizeof(label), "INSTALL %s", info.latest); jp = "インストール"; }
+    else if (info.state == UPDATE_INSTALLED) {
+        snprintf(label, sizeof(label), "%s", updater_can_relaunch() ? "RESTART KASUMI" : "EXIT KASUMI");
+        jp = "再起動";
+    } else if (info.state == UPDATE_FAILED) { snprintf(label, sizeof(label), "TRY AGAIN"); jp = "再試行"; }
+    else if (working) { snprintf(label, sizeof(label), "PLEASE WAIT"); jp = "処理中"; }
+    else snprintf(label, sizeof(label), "CHECK AGAIN");
+    ui_button(UPD_PRIMARY, label, jp, working ? UI_BUTTON_NORMAL : UI_BUTTON_PRIMARY, pressed(app, UPD_PRIMARY));
+    if (!working) {
+        if (info.state == UPDATE_AVAILABLE)
+            ui_button(UPD_LATER, "LATER", "後で", UI_BUTTON_NORMAL, pressed(app, UPD_LATER));
+        ui_button(info.state == UPDATE_AVAILABLE ? UPD_CLOSE : (UiRect){ 90, 200, 140, 34 }, "CLOSE", "閉じる",
+                  UI_BUTTON_NORMAL, pressed(app, UPD_CLOSE));
+    }
+}
+
+static void draw_whats_new_top(const App *app)
+{
+    draw_title(200, 31, "新機能", "WHAT'S NEW");
+    char heading[64];
+    snprintf(heading, sizeof(heading), "Kasumi %s", app->whats_new_version);
+    ui_text(200, 62, 15, UI_TEXT, UI_ALIGN_CENTER, heading);
+    const UiRect notes = { 30, 86, 340, 126 };
+    draw_notes(notes, app->whats_new_notes, app->notes_scroll);
+    static const char *const hints[] = { "A", "Continue", NULL };
+    draw_footer(UI_TOP_WIDTH, hints);
+}
+
+static void draw_whats_new_bottom(const App *app)
+{
+    const UiRect card = { 30, 40, 260, 120 };
+    ui_panel(card, UI_ACCENT);
+    ui_seal(144, card.y + 16, 32);
+    ui_text(160, card.y + 58, 14, UI_TEXT, UI_ALIGN_CENTER, "Kasumi was updated");
+    ui_text(160, card.y + 80, 12, UI_ACCENT, UI_ALIGN_CENTER, app->whats_new_version);
+    ui_button(NEW_CONTINUE, "CONTINUE", "続ける", UI_BUTTON_PRIMARY, pressed(app, NEW_CONTINUE));
+}
+
 /* ---- First-run guide ------------------------------------------------------- */
 
 typedef struct {
@@ -1096,8 +1376,11 @@ void screens_draw_top(const App *app)
     draw_status_bar(app, UI_TOP_WIDTH);
     /* The view's content rises 8 px as it fades in. */
     ui_offset(0.0f, (1.0f - p) * 8.0f);
-    const bool guide = app->guide_page >= 0 && app->view != VIEW_STREAM;
-    if (guide) draw_guide_top(app);
+    const bool menus = app->view != VIEW_STREAM;
+    const bool guide = app->guide_page >= 0 && menus;
+    if (app->whats_new_open && menus) draw_whats_new_top(app);
+    else if (guide) draw_guide_top(app);
+    else if (app->update_open && menus) draw_update_top(app);
     else switch (app->view) {
     case VIEW_WELCOME: draw_welcome_top(); break;
     case VIEW_LOGIN: draw_login_top(app); break;
@@ -1185,7 +1468,7 @@ static void draw_library_bottom(const App *app)
         const int lines = ui_text_wrap(cx, card.y + 12, 14, UI_TEXT, UI_ALIGN_CENTER,
                                        text_w, 2, 17, game->title);
         const float meta_y = card.y + 18 + lines * 17.0f;
-        const char *store = game->store[0] ? game->store : "GFN";
+        const char *store = store_label(game->store);
         ui_pill(cx, meta_y - 2, UI_TEXT_DIM, UI_ALIGN_CENTER, store);
         ui_text_fit(cx, meta_y + 17, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, text_w, stream_profile_name());
     } else {
@@ -1631,8 +1914,11 @@ void screens_draw_bottom(const App *app)
                               (app->view == VIEW_SETTINGS && app->setting_index >= 0 &&
                                (screens_setting_at(app->setting_index) == SETTING_GYRO));
     ui_offset(0.0f, (1.0f - p) * 8.0f);
-    const bool guide = app->guide_page >= 0 && app->view != VIEW_STREAM;
-    if (guide) draw_guide_bottom(app);
+    const bool menus = app->view != VIEW_STREAM;
+    const bool guide = app->guide_page >= 0 && menus;
+    if (app->whats_new_open && menus) draw_whats_new_bottom(app);
+    else if (guide) draw_guide_bottom(app);
+    else if (app->update_open && menus) draw_update_bottom(app);
     else switch (app->view) {
     case VIEW_WELCOME: draw_welcome_bottom(app); break;
     case VIEW_LOGIN: draw_login_bottom(app); break;
@@ -1646,10 +1932,14 @@ void screens_draw_bottom(const App *app)
     fade_in_veil(UI_BOTTOM_WIDTH, 0.0f, p);
     if (app->modal != MODAL_NONE) draw_modal_bottom(app, op);
     if (app->busy) {
-        ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_SCRIM);
-        ui_enso(160, 96, 16, UI_ACCENT);
+        ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, ui_with_alpha(UI_BG, 0xE8));
+        const UiRect card = { 70, 64, 180, 112 };
+        ui_rect_r(card, UI_SURFACE);
+        ui_outline(card.x, card.y, card.w, card.h, 1.0f, UI_LINE_STRONG);
+        ui_rect(card.x, card.y, card.w, 2, UI_ACCENT);
+        ui_enso(160, 104, 18, UI_ACCENT);
         static const char *const hints[] = { "B", "Cancel", NULL };
-        ui_hint_row(160, 128, hints);
+        ui_hint_row(160, 142, hints);
     }
 }
 
@@ -1669,6 +1959,18 @@ AppAction screens_touch(const App *app, int x, int y)
 {
     if (app->busy) return ACTION_NONE;
     g_touched_option_row = -1;
+    if (app->whats_new_open && app->view != VIEW_STREAM)
+        return ui_hit(NEW_CONTINUE, x, y) ? ACTION_WHATS_NEW_CLOSE : ACTION_NONE;
+    if (app->update_open && app->view != VIEW_STREAM && app->guide_page < 0) {
+        if (ui_hit(UPD_PRIMARY, x, y)) return ACTION_UPDATE_PRIMARY;
+        if (updater_info().state == UPDATE_AVAILABLE) {
+            if (ui_hit(UPD_LATER, x, y)) return ACTION_UPDATE_LATER;
+            if (ui_hit(UPD_CLOSE, x, y)) return ACTION_UPDATE_CLOSE;
+        } else if (ui_hit((UiRect){ 90, 200, 140, 34 }, x, y)) {
+            return ACTION_UPDATE_CLOSE;
+        }
+        return ACTION_NONE;
+    }
     if (app->guide_page >= 0 && app->view != VIEW_STREAM) {
         if (ui_hit(GUIDE_BACK, x, y)) return ACTION_GUIDE_BACK;
         if (ui_hit(GUIDE_SKIP, x, y)) return ACTION_GUIDE_SKIP;

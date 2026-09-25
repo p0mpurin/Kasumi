@@ -13,6 +13,7 @@
 #include "diagnostic.h"
 #include "game_art.h"
 #include "game_prefs.h"
+#include "updater.h"
 #include "play_history.h"
 #include "screenshot.h"
 #include "zoom_zones.h"
@@ -453,6 +454,87 @@ static void save_settings(void)
         show_notice("Settings could not be saved to SD");
 }
 
+/* ---- Software update ------------------------------------------------------- */
+
+static char g_whats_new_notes[1600];
+
+static void start_update_check(bool quiet)
+{
+    if (gfn_session_active(&g_client)) return;
+    submit_job(NET_JOB_UPDATE_CHECK, quiet ? NULL : "Checking for updates...",
+               g_app.settings.update_beta ? "beta" : "stable", NULL);
+}
+
+static void open_updates(void)
+{
+    g_app.update_open = true;
+    g_app.notes_scroll = 0;
+    const UpdateInfo info = updater_info();
+    if (info.state == UPDATE_IDLE || info.state == UPDATE_UP_TO_DATE || info.state == UPDATE_FAILED)
+        start_update_check(true);
+}
+
+static void handle_updates(u32 down, u32 repeat, AppAction action)
+{
+    const UpdateInfo info = updater_info();
+    const bool working = info.state == UPDATE_CHECKING || info.state == UPDATE_DOWNLOADING ||
+                         info.state == UPDATE_VERIFYING || info.state == UPDATE_INSTALLING;
+    if (repeat & KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
+    if (repeat & KEY_DOWN) ++g_app.notes_scroll;
+    /* Never leave mid-install: the page shows its progress to the end. */
+    if (((down & KEY_B) || action == ACTION_UPDATE_CLOSE) && !working) {
+        g_app.update_open = false;
+        return;
+    }
+    if (((down & KEY_X) || action == ACTION_UPDATE_LATER) && info.state == UPDATE_AVAILABLE) {
+        updater_dismiss();
+        g_app.update_open = false;
+        show_notice("OK - Kasumi will remind you when the next version is out");
+        return;
+    }
+    if (!(down & KEY_A) && action != ACTION_UPDATE_PRIMARY) return;
+    switch (info.state) {
+    case UPDATE_AVAILABLE:
+        if (gfn_session_active(&g_client)) {
+            show_notice("Finish your game first - updates never run during a session");
+            break;
+        }
+        diagnostic_log("UPDATE", "install %s requested", info.latest);
+        submit_job(NET_JOB_UPDATE_INSTALL, NULL, NULL, NULL);
+        break;
+    case UPDATE_INSTALLED:
+        /* The CIA relaunches into the new version; a .3dsx is reopened by hand. */
+        updater_relaunch();
+        g_quit = true;
+        break;
+    case UPDATE_CHECKING: case UPDATE_DOWNLOADING: case UPDATE_VERIFYING: case UPDATE_INSTALLING:
+        break;
+    default:
+        start_update_check(false);
+        break;
+    }
+}
+
+static void handle_whats_new(u32 down, u32 repeat, AppAction action)
+{
+    if (repeat & KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
+    if (repeat & KEY_DOWN) ++g_app.notes_scroll;
+    if ((down & (KEY_A | KEY_B | KEY_START)) || action == ACTION_WHATS_NEW_CLOSE)
+        g_app.whats_new_open = false;
+}
+
+/* Quiet daily check from the menus; never during a session. */
+static void auto_update_check(void)
+{
+    static u64 started_at;
+    if (!started_at) started_at = osGetTime();
+    if (!g_app.settings.auto_update || osGetTime() - started_at < 4000) return;
+    if (g_app.view != VIEW_LIBRARY && g_app.view != VIEW_WELCOME) return;
+    if (net_worker_busy() || gfn_session_active(&g_client) || !updater_check_due()) return;
+    if (updater_info().state != UPDATE_IDLE) return;
+    start_update_check(true);
+}
+
 static void change_setting(int direction)
 {
     const int index = screens_setting_at(g_app.setting_index);
@@ -468,6 +550,10 @@ static void change_setting(int direction)
     }
     if (index == SETTING_GUIDE) {
         g_app.guide_page = 0;
+        return;
+    }
+    if (index == SETTING_UPDATES) {
+        open_updates();
         return;
     }
     screens_setting_change(&g_app, index, direction);
@@ -1303,6 +1389,14 @@ static void finish_jobs(void)
     }
     if (result.kind == NET_JOB_LOAD_LIBRARY || result.kind == NET_JOB_SEARCH)
         g_app.selected = g_app.list_top = 0;
+    if (result.kind == NET_JOB_UPDATE_CHECK) {
+        const UpdateInfo info = updater_info();
+        if (info.state == UPDATE_AVAILABLE && !updater_dismissed() && !g_app.update_open) {
+            char text[96];
+            snprintf(text, sizeof(text), "Kasumi %s is available - Settings > Updates", info.latest);
+            show_notice(text);
+        }
+    }
     if (g_leave_pending && !net_worker_busy()) leave_session();
 }
 
@@ -1337,7 +1431,7 @@ static void fatal_screen(const char *title, const char *message)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     gfxInitDefault();
     gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
@@ -1396,6 +1490,13 @@ int main(void)
     }
     play_history_load();
     game_prefs_load();
+    updater_init(argc > 0 && argv ? argv[0] : NULL);
+    /* First start of a freshly installed version: show what changed, once. */
+    if (updater_take_whats_new(g_app.whats_new_version, sizeof(g_app.whats_new_version),
+                               g_whats_new_notes, sizeof(g_whats_new_notes))) {
+        g_app.whats_new_open = true;
+        g_app.whats_new_notes = g_whats_new_notes;
+    }
     aptHook(&g_apt_cookie, apt_hook, NULL);
     if (!net_worker_start(&g_client, &g_signal)) {
         fatal_screen("STARTUP FAILED", "Could not start the network worker thread.");
@@ -1442,8 +1543,13 @@ int main(void)
 
         if (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_DETAILS) rebuild_list();
         const AppAction action = touch_down ? screens_touch(&g_app, touch.px, touch.py) : ACTION_NONE;
-        if (g_app.guide_page >= 0 && g_app.view != VIEW_STREAM && !g_app.busy) {
+        if (g_app.view != VIEW_STREAM) auto_update_check();
+        if (g_app.whats_new_open && g_app.view != VIEW_STREAM) {
+            handle_whats_new(down, repeat, action);
+        } else if (g_app.guide_page >= 0 && g_app.view != VIEW_STREAM && !g_app.busy) {
             handle_guide(down, action);
+        } else if (g_app.update_open && g_app.view != VIEW_STREAM && !g_app.busy) {
+            handle_updates(down, repeat, action);
         } else if (g_app.busy) {
             /* The UI stays live during requests; B cancels what can be cancelled. */
             if (down & KEY_B) net_worker_cancel();
