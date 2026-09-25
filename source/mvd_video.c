@@ -159,12 +159,17 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
                    input_width, input_height,
                    (unsigned long)(linearSpaceFree() / 1024));
     diagnostic_checkpoint();
+    /* Fail rather than wait if mvd:STD is not there: a blocking lookup of a
+     * service whose module is not running never returns, and it froze the
+     * whole console (beta.5 CIA). The policy is restored after init. */
+    srvSetBlockingPolicy(true);
     Result rc = mvdstdCalculateBufferSize(&calc, &work_size);
     diagnostic_log("MVD", "preflight %ux%u work=%lu sizeResult=%08lX linearFreeKiB=%lu",
                    input_width, input_height, (unsigned long)work_size,
                    (unsigned long)rc, (unsigned long)(linearSpaceFree() / 1024));
     diagnostic_checkpoint();
     if (rc != 0) {
+        srvSetBlockingPolicy(false);
         snprintf(g_status, sizeof(g_status), "MVD size failed %08lX", (unsigned long)rc);
         diagnostic_log("MVD", "%s", g_status);
         return false;
@@ -172,6 +177,7 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     const u32 output_size = g_output_stride * g_output_alloc_height * sizeof(u16);
     const u32 reserve_size = 1024 * 1024;
     if ((u64)work_size + INPUT_CAPACITY + output_size + reserve_size > linearSpaceFree()) {
+        srvSetBlockingPolicy(false);
         snprintf(g_status, sizeof(g_status), "MVD 720p needs %lu KiB linear memory",
                  (unsigned long)((work_size + INPUT_CAPACITY + output_size + reserve_size) / 1024));
         diagnostic_log("MVD", "%s", g_status);
@@ -183,6 +189,7 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     diagnostic_checkpoint();
     rc = mvdstdInit(MVDMODE_VIDEOPROCESSING, MVD_INPUT_H264,
                     MVD_OUTPUT_BGR565, work_size, NULL);
+    srvSetBlockingPolicy(false);
     if (rc != 0) {
         snprintf(g_status, sizeof(g_status), "MVD init failed %08lX", (unsigned long)rc);
         diagnostic_log("MVD", "%s", g_status);

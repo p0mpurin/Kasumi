@@ -111,10 +111,17 @@ AccessControlInfo:
     - 1ff50000-1ff57fff
     - 1ff70000-1ff77fff
 
+  # Every service Kasumi opens must be listed here and its system module in
+  # Dependency below. The .3dsx inherits the Homebrew Launcher's list, so a
+  # gap only shows up in the CIA: beta.5 froze the whole console at stream
+  # start waiting for mvd:STD, whose module nothing had loaded.
   ServiceAccessControl:
     - APT:U
     - ac:u
     - am:net
+    - dsp::DSP
+    - ir:rst
+    - mvd:STD
     - gsp::Lcd
     - mcu::HWC
     - ptm:u
@@ -132,6 +139,8 @@ SystemControlInfo:
   Dependency:
     ac: 0x0004013000002402
     cfg: 0x0004013000001702
+    dsp: 0x0004013000001a02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
+    mvd: 0x0004013020004102
     socket: 0x0004013000002e02
