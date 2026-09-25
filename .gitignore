@@ -1,0 +1,29 @@
+# Build output
+build/
+build-host/
+build-transport/
+*.elf
+*.3dsx
+*.smdh
+*.map
+*.cia
+*.log
+
+# Private: live login tokens and device identity. Never commit these.
+gfn-session.json
+device-id.txt
+
+# Diagnostics and crash dumps from test sessions
+*-diagnostic.txt
+probe*.txt
+*.dmp
+
+# Local development notes
+HANDOFF.md
+NEXT-HANDOFF.md
+PLAN.md
+STATUS.md
+BUILD08.md
+BUILD09.md
+TRANSPORT-REVIEW.md
+QUALITY-AND-UX-RESEARCH.md

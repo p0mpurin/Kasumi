@@ -1,0 +1,8 @@
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_C_COMPILER /c/devkitPro/devkitARM/bin/arm-none-eabi-gcc.exe)
+set(CMAKE_AR /c/devkitPro/devkitARM/bin/arm-none-eabi-ar.exe)
+set(CMAKE_RANLIB /c/devkitPro/devkitARM/bin/arm-none-eabi-ranlib.exe)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_DEPENDS_USE_COMPILER FALSE)
+set(CMAKE_C_FLAGS_INIT "-O2 -g -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft -ffunction-sections -fdata-sections -D__3DS__ -IC:/devkitPro/libctru/include")
