@@ -26,7 +26,8 @@ typedef enum {
     NET_JOB_CONNECTION_TEST,
     /* Text "beta" includes pre-releases. */
     NET_JOB_UPDATE_CHECK,
-    NET_JOB_UPDATE_INSTALL
+    NET_JOB_UPDATE_INSTALL,
+    NET_JOB_RESUME_CHECK
 } NetJobKind;
 
 typedef struct {

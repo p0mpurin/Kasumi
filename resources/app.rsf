@@ -108,6 +108,9 @@ AccessControlInfo:
     - APT:U
     - ac:u
     - am:net
+    - gsp::Lcd
+    - mcu::HWC
+    - ptm:u
     - cfg:u
     - fs:USER
     - gsp::Gpu

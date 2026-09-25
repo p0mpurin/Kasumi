@@ -25,7 +25,9 @@ typedef enum {
     MODAL_NONE,
     MODAL_EXIT,
     MODAL_SIGN_OUT,
-    MODAL_ERROR
+    MODAL_ERROR,
+    /* A game found still running at start-up: resume it or end it. */
+    MODAL_RESUME
 } AppModal;
 
 typedef enum {
@@ -79,7 +81,8 @@ typedef enum {
     ACTION_MAP_NEXT,
     ACTION_MAP_RESET,
     ACTION_MAP_CANCEL,
-    ACTION_MAP_DONE
+    ACTION_MAP_DONE,
+    ACTION_CONTINUE
 } AppAction;
 
 enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
@@ -170,6 +173,8 @@ typedef struct {
     unsigned reconnect_attempt;
     /* Estimated seconds left in NVIDIA's queue (-1 unknown, 0 any moment). */
     int queue_eta;
+    /* The most recently played library game (-1 none), for "Continue". */
+    int continue_index;
     /* Transient message (notice) with its expiry, shown as a toast. */
     const char *toast;
     unsigned stream_frame_base;

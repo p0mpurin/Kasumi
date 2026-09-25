@@ -4,6 +4,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The DSP audio driver, started once when Kasumi opens and kept until it
+ * closes (the stream and the queue chime both use it). False: no sound. */
+bool audio_system_init(void);
+bool audio_system_ready(void);
+void audio_system_exit(void);
+
 /* 48 kHz stereo Opus from the GFN WebRTC audio track. */
 bool audio_output_init(void);
 int audio_output_submit(const uint8_t *packet, size_t packet_size, uint8_t payload_type,

@@ -17,13 +17,22 @@
 
 /* ---- Shared geometry (drawing and hit-testing use the same rects) -------- */
 
-/* Library, lower screen. */
-static const UiRect LIB_PREV = { 8, 34, 30, 84 };
-static const UiRect LIB_NEXT = { 282, 34, 30, 84 };
-static const UiRect LIB_PLAY = { 16, 128, 288, 46 };
-static const UiRect LIB_LIBRARY = { 16, 184, 90, 48 };
-static const UiRect LIB_SEARCH = { 115, 184, 90, 48 };
-static const UiRect LIB_SETTINGS = { 214, 184, 90, 48 };
+/* Library, lower screen: a roomy layout, and a compact one that makes space
+ * for the "Continue" bar when a game was played before. */
+typedef struct { UiRect prev, next, card, cont, play, library, search, settings; } LibraryLayout;
+static const LibraryLayout LIB_ROOMY = {
+    { 8, 34, 30, 84 }, { 282, 34, 30, 84 }, { 44, 34, 232, 84 }, { 0, 0, 0, 0 },
+    { 16, 128, 288, 46 }, { 16, 184, 90, 48 }, { 115, 184, 90, 48 }, { 214, 184, 90, 48 },
+};
+static const LibraryLayout LIB_COMPACT = {
+    { 8, 30, 30, 72 }, { 282, 30, 30, 72 }, { 44, 30, 232, 72 }, { 16, 108, 288, 30 },
+    { 16, 144, 288, 40 }, { 16, 190, 90, 44 }, { 115, 190, 90, 44 }, { 214, 190, 90, 44 },
+};
+
+static const LibraryLayout *library_layout(const App *app)
+{
+    return app->continue_index >= 0 && !app->search_text[0] ? &LIB_COMPACT : &LIB_ROOMY;
+}
 
 /* Welcome. */
 static const UiRect WEL_SIGN_IN = { 40, 100, 240, 50 };
@@ -1538,41 +1547,57 @@ static void draw_library_bottom(const App *app)
         strip = synced;
     }
     draw_status_strip(app, strip);
+    const LibraryLayout *l = library_layout(app);
+    const bool compact = l == &LIB_COMPACT;
     const bool has_game = app_game(app, app->selected) != NULL;
-    draw_arrow(LIB_PREV, -1, has_game && app->selected > 0, pressed(app, LIB_PREV));
-    draw_arrow(LIB_NEXT, 1, has_game && app->selected + 1 < app->list_count,
-               pressed(app, LIB_NEXT));
+    draw_arrow(l->prev, -1, has_game && app->selected > 0, pressed(app, l->prev));
+    draw_arrow(l->next, 1, has_game && app->selected + 1 < app->list_count, pressed(app, l->next));
 
-    const UiRect card = { 44, 34, 232, 84 };
+    const UiRect card = l->card;
     ui_panel(card, UI_ACCENT);
     if (has_game) {
         const GfnGame *game = app_game(app, app->selected);
         /* Thumbnail on the left, text centred in the rest of the card. */
-        draw_game_art(game, card.x + 8, card.y + 10, 48, 1.0f);
-        const float text_x = card.x + 64, text_w = card.w - 72, cx = text_x + text_w / 2;
-        const int lines = ui_text_wrap(cx, card.y + 12, 14, UI_TEXT, UI_ALIGN_CENTER,
+        const float thumb = compact ? 42.0f : 48.0f;
+        draw_game_art(game, card.x + 8, card.y + (compact ? 7 : 10), thumb, 1.0f);
+        const float text_x = card.x + thumb + 16, text_w = card.w - thumb - 24, cx = text_x + text_w / 2;
+        const int lines = ui_text_wrap(cx, card.y + (compact ? 8 : 12), 14, UI_TEXT, UI_ALIGN_CENTER,
                                        text_w, 2, 17, game->title);
-        const float meta_y = card.y + 18 + lines * 17.0f;
-        const char *store = store_label(game->store);
-        ui_pill(cx, meta_y - 2, UI_TEXT_DIM, UI_ALIGN_CENTER, store);
-        ui_text_fit(cx, meta_y + 17, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, text_w, stream_profile_name());
+        const float meta_y = card.y + (compact ? 14 : 18) + lines * 17.0f;
+        ui_pill(cx, meta_y - 2, UI_TEXT_DIM, UI_ALIGN_CENTER, store_label(game->store));
+        if (!compact)
+            ui_text_fit(cx, meta_y + 17, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, text_w, stream_profile_name());
     } else {
         ui_text(160, card.y + 22, 13, UI_TEXT_DIM, UI_ALIGN_CENTER, "No game selected");
         ui_text(160, card.y + 44, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Load your library or search");
     }
 
     /* Open the game's page; an empty tab offers the full list instead. */
+    /* Continue: one tap (or START) back into the last game played. */
+    if (compact) {
+        const GfnGame *last = &client->games[app->continue_index];
+        const UiRect c = l->cont;
+        const bool down = pressed(app, c);
+        ui_rect_r(c, down ? UI_ACCENT_DEEP : UI_SURFACE);
+        ui_outline(c.x, c.y, c.w, c.h, 1.0f, UI_ACCENT);
+        ui_triangle(c.x + 12, c.y + 9, c.x + 12, c.y + 21, c.x + 21, c.y + 15, UI_ACCENT);
+        ui_label(c.x + 28, c.y + 9, 11, UI_ACCENT, UI_ALIGN_LEFT, "CONTINUE");
+        const float label_w = ui_text_width("CONTINUE", 11) + 9.0f, gap = 8;
+        ui_text_fit(c.x + 28 + label_w + gap, c.y + 7, 13, UI_TEXT, UI_ALIGN_LEFT,
+                    c.w - 28 - label_w - gap - 54, last->title);
+        ui_button_chip(c.x + c.w - 50, c.y + 7, "START", UI_TEXT_DIM);
+    }
     const char *main_label = has_game ? "OPEN GAME" : client->game_count ? "SHOW ALL GAMES" : "LOAD LIBRARY";
     const char *main_jp = has_game ? "詳細" : client->game_count ? "全て" : "ライブラリ";
-    ui_button(LIB_PLAY, main_label, main_jp, has_game ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
-              pressed(app, LIB_PLAY));
+    ui_button(l->play, main_label, main_jp, has_game ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, l->play));
     /* In the library this button refreshes it; after a search it goes back. */
     const bool searching = app->search_text[0] != '\0';
-    ui_button(LIB_LIBRARY, searching ? "LIBRARY" : "REFRESH", searching ? "ライブラリ" : "更新",
-              UI_BUTTON_NORMAL, pressed(app, LIB_LIBRARY));
-    ui_button(LIB_SEARCH, "SEARCH", "検索",
-              app->search_text[0] ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, LIB_SEARCH));
-    ui_button(LIB_SETTINGS, "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, LIB_SETTINGS));
+    ui_button(l->library, searching ? "LIBRARY" : "REFRESH", searching ? "ライブラリ" : "更新",
+              UI_BUTTON_NORMAL, pressed(app, l->library));
+    ui_button(l->search, "SEARCH", "検索",
+              app->search_text[0] ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, l->search));
+    ui_button(l->settings, "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, l->settings));
 }
 
 /* PlayStation symbol produced by a 3DS face button in the current layout.
@@ -1985,13 +2010,13 @@ static void draw_modal_bottom(const App *app, float p)
     ui_offset(0.0f, (1.0f - p) * 10.0f);
     ui_text(160, 68, 12, UI_ACCENT, UI_ALIGN_CENTER, app->modal_jp);
     ui_label(160, 84, 11, UI_TEXT, UI_ALIGN_CENTER, app->modal_title);
-    const bool error = app->modal == MODAL_ERROR;
-    ui_button(MODAL_LEFT, error ? "RETRY" : "YES", error ? "再試行" : "はい",
+    const bool error = app->modal == MODAL_ERROR, resume = app->modal == MODAL_RESUME;
+    ui_button(MODAL_LEFT, resume ? "RESUME" : error ? "RETRY" : "YES", resume ? "再開" : error ? "再試行" : "はい",
               app->modal == MODAL_EXIT || app->modal == MODAL_SIGN_OUT ? UI_BUTTON_DANGER
                                                                          : UI_BUTTON_PRIMARY,
               pressed(app, MODAL_LEFT));
-    ui_button(MODAL_RIGHT, error ? "BACK" : "NO", error ? "戻る" : "いいえ", UI_BUTTON_NORMAL,
-              pressed(app, MODAL_RIGHT));
+    ui_button(MODAL_RIGHT, resume ? "END GAME" : error ? "BACK" : "NO", resume ? "終了" : error ? "戻る" : "いいえ",
+              resume ? UI_BUTTON_DANGER : UI_BUTTON_NORMAL, pressed(app, MODAL_RIGHT));
     ui_offset(0.0f, 0.0f);
 }
 
@@ -2086,13 +2111,17 @@ AppAction screens_touch(const App *app, int x, int y)
         if (ui_hit(PAIR_RIGHT, x, y)) return ACTION_CANCEL;
         break;
     case VIEW_LIBRARY:
-        if (ui_hit(LIB_PREV, x, y)) return ACTION_PREV;
-        if (ui_hit(LIB_NEXT, x, y)) return ACTION_NEXT;
-        if (ui_hit(LIB_PLAY, x, y))
+    {
+        const LibraryLayout *l = library_layout(app);
+        if (l == &LIB_COMPACT && ui_hit(l->cont, x, y)) return ACTION_CONTINUE;
+        if (ui_hit(l->prev, x, y)) return ACTION_PREV;
+        if (ui_hit(l->next, x, y)) return ACTION_NEXT;
+        if (ui_hit(l->play, x, y))
             return app->list_count ? ACTION_PLAY : ACTION_LIBRARY;
-        if (ui_hit(LIB_LIBRARY, x, y)) return ACTION_LIBRARY;
-        if (ui_hit(LIB_SEARCH, x, y)) return ACTION_SEARCH;
-        if (ui_hit(LIB_SETTINGS, x, y)) return ACTION_SETTINGS;
+        if (ui_hit(l->library, x, y)) return ACTION_LIBRARY;
+        if (ui_hit(l->search, x, y)) return ACTION_SEARCH;
+        if (ui_hit(l->settings, x, y)) return ACTION_SETTINGS;
+    }
         break;
     case VIEW_SETTINGS:
         if (ui_hit(SET_PREV, x, y)) return ACTION_VALUE_PREV;

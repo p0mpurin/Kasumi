@@ -14,6 +14,7 @@
 #include "diagnostic.h"
 #include "game_art.h"
 #include "game_prefs.h"
+#include "queue_alert.h"
 #include "updater.h"
 #include "play_history.h"
 #include "screenshot.h"
@@ -50,6 +51,8 @@ static const char *g_busy_message;
 static bool g_leave_pending;
 static bool g_screenshot_requested;
 static void show_notice(const char *text);
+static void apply_game_options(const GamePrefs *prefs);
+static void launch_with_options(const GfnGame *base, unsigned variant);
 /* Main-loop health while streaming: the longest iteration and how many took
  * over 25 ms (a stalled loop delays packets, input and presents alike). */
 static unsigned g_loop_max_ms, g_loop_slow;
@@ -383,7 +386,8 @@ static void search_catalog(void)
     submit_job(NET_JOB_SEARCH, "Searching the GeForce NOW catalog...", g_app.search_text, NULL);
 }
 
-static void launch_game(const GfnGame *game)
+/* Everything a new session of this game needs, before any request. */
+static void prepare_game_session(const GfnGame *game)
 {
     if (game != &g_current_game) g_current_game = *game;
     snprintf(g_app.game_title, sizeof(g_app.game_title), "%s", g_current_game.title);
@@ -404,6 +408,11 @@ static void launch_game(const GfnGame *game)
                    stream_profile_max_bitrate(), stream_profile_dynamic_mode(),
                    stream_profile_sharpen());
     diagnostic_checkpoint();
+}
+
+static void launch_game(const GfnGame *game)
+{
+    prepare_game_session(game);
     submit_job(NET_JOB_START_SESSION, "Creating your cloud session...", NULL, &g_current_game);
 }
 
@@ -639,6 +648,21 @@ static void handle_modal(u32 down, AppAction action)
     if (!confirm && !dismiss) return;
     const AppModal modal = g_app.modal;
     g_app.modal = MODAL_NONE;
+    if (modal == MODAL_RESUME) {
+        if (confirm) {
+            /* The rig is already ours: set the game up and let signalling
+             * start as for any ready session. */
+            prepare_game_session(&g_client.resume_game);
+            apply_game_options(&(GamePrefs){ .bitrate = -1, .gyro = -1, .layout = -1 });
+            const GamePrefs prefs = game_prefs_get(g_current_game.app_id);
+            apply_game_options(&prefs);
+            diagnostic_log("APP", "resuming %s", g_current_game.title);
+        } else {
+            diagnostic_log("APP", "ending the session left running");
+            leave_session();
+        }
+        return;
+    }
     if (dismiss) return;
     if (modal == MODAL_EXIT) {
         g_quit = true;
@@ -706,6 +730,25 @@ static void rebuild_list(void)
     }
     if (tab == LIBRARY_TAB_RECENT) qsort(g_app.list_map, n, sizeof(g_app.list_map[0]), compare_recent);
     g_app.list_count = n;
+    /* "Continue": the library game played most recently on Kasumi. */
+    static unsigned seen_prefs = ~0u;
+    static size_t seen_count = (size_t)-1;
+    static int64_t seen_saved = -1;
+    if (seen_prefs != game_prefs_version() || seen_count != g_client.game_count ||
+        seen_saved != g_client.library_saved_at || g_app.continue_index < 0) {
+        seen_prefs = game_prefs_version();
+        seen_count = g_client.game_count;
+        seen_saved = g_client.library_saved_at;
+        int64_t best = 0;
+        g_app.continue_index = -1;
+        for (size_t i = 0; i < g_client.game_count; ++i) {
+            PlayHistory history;
+            if (game_history(&g_client.games[i], &history) && history.last_played > best) {
+                best = history.last_played;
+                g_app.continue_index = (int)i;
+            }
+        }
+    }
     keep_selection_visible();
 }
 
@@ -735,6 +778,12 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
             g_app.selected = g_app.selected + LIBRARY_ROWS < count ? g_app.selected + LIBRARY_ROWS
                                                                   : count - 1;
         keep_selection_visible();
+    }
+    if (((down & KEY_START) || action == ACTION_CONTINUE) && g_app.continue_index >= 0 &&
+        !g_app.search_text[0]) {
+        const GfnGame *game = &g_client.games[g_app.continue_index];
+        launch_with_options(game, game->variant_selected);
+        return;
     }
     if ((down & KEY_A) || action == ACTION_PLAY) {
         if (count && g_app.selected < count) {
@@ -806,16 +855,15 @@ static void apply_game_options(const GamePrefs *prefs)
     if (prefs->has_map) gfn_input_set_custom_map(prefs->map);
 }
 
-/* Launch the details page's game with the store chosen there. */
-static void launch_details_game(void)
+/* Launch a library game from one of its stores, with its own options. */
+static void launch_with_options(const GfnGame *base, unsigned variant)
 {
-    const GfnGame *base = app_game(&g_app, g_app.selected);
     if (!base) return;
     GfnGame game = *base;
     const GamePrefs prefs = game_prefs_get(base->app_id);
-    if (g_app.details_variant < game.variant_count) {
-        snprintf(game.app_id, sizeof(game.app_id), "%s", game.variants[g_app.details_variant].id);
-        snprintf(game.store, sizeof(game.store), "%s", game.variants[g_app.details_variant].store);
+    if (variant < game.variant_count) {
+        snprintf(game.app_id, sizeof(game.app_id), "%s", game.variants[variant].id);
+        snprintf(game.store, sizeof(game.store), "%s", game.variants[variant].store);
     }
     launch_game(&game);
     /* launch_game applied the global picture settings; layer this game's. */
@@ -909,7 +957,7 @@ static void handle_details(u32 down, u32 repeat, AppAction action)
     }
     const unsigned variants = game->variant_count;
     if ((down & KEY_A) || action == ACTION_DETAILS_PLAY) {
-        launch_details_game();
+        launch_with_options(app_game(&g_app, g_app.selected), g_app.details_variant);
     } else if ((down & KEY_B) || action == ACTION_BACK) {
         g_app.details_open = false;
     } else if ((down & KEY_Y) || action == ACTION_FAVOURITE) {
@@ -1145,7 +1193,21 @@ static void track_queue(void)
 {
     static u64 queued_at;
     static int start_place;
+    static bool alert_pending;
+    static u64 lid_checked_at;
     const u64 now = osGetTime();
+    /* Lid shut while waiting for a rig: screens off to save battery. */
+    if (now - lid_checked_at >= 400) {
+        lid_checked_at = now;
+        const bool waiting = gfn_session_active(&g_client) && !g_app.stream_started_at;
+        queue_alert_screens(waiting && queue_alert_lid_closed());
+    }
+    /* After a real queue, the rig being ready is worth a chime and a light. */
+    if (alert_pending && g_client.session_state == GFN_SESSION_READY) {
+        alert_pending = false;
+        queue_alert_start();
+    }
+    if (!gfn_session_active(&g_client)) alert_pending = false;
     const bool queued = g_client.session_state == GFN_SESSION_QUEUED;
     if (queued) {
         if (!queued_at) queued_at = now;
@@ -1160,6 +1222,7 @@ static void track_queue(void)
     if (queued_at && start_place > 0 &&
         (g_client.session_state == GFN_SESSION_SETUP || g_client.session_state == GFN_SESSION_READY)) {
         const float seconds = (float)(now - queued_at) / 1000.0f;
+        alert_pending = seconds >= 20.0f;
         const float rate = seconds / (float)start_place;
         if (rate > 0.2f && rate < 60.0f) {
             g_seconds_per_place = g_seconds_per_place * 0.6f + rate * 0.4f;
@@ -1453,7 +1516,7 @@ static void tick_network(void)
     /* Signaling starts on the worker (its TLS connect blocks); afterwards
      * the UI thread services it without blocking. */
     if (g_client.session_state == GFN_SESSION_READY && g_signal.state == NVST_SIGNAL_IDLE &&
-        !net_worker_busy() && !g_leave_pending)
+        !net_worker_busy() && !g_leave_pending && g_app.modal != MODAL_RESUME)
         submit_job(NET_JOB_START_SIGNAL, NULL, NULL, NULL);
     if (net_worker_signal_starting()) return;
     /* Signaling is only heartbeats once media flows; ~60 Hz is plenty and
@@ -1505,6 +1568,13 @@ static void finish_jobs(void)
     }
     if (result.kind == NET_JOB_LOAD_LIBRARY || result.kind == NET_JOB_SEARCH)
         g_app.selected = g_app.list_top = 0;
+    if (result.kind == NET_JOB_RESUME_CHECK && result.ok && g_client.resume_found) {
+        char text[192];
+        snprintf(text, sizeof(text), "%.90s is still running on your rig. Jump back in, or end it?",
+                 g_client.resume_game.title[0] ? g_client.resume_game.title : "Your game");
+        g_current_game = g_client.resume_game;
+        open_modal(MODAL_RESUME, "再開", "RESUME YOUR GAME?", text);
+    }
     if (result.kind == NET_JOB_UPDATE_CHECK) {
         const UpdateInfo info = updater_info();
         if (info.state == UPDATE_AVAILABLE && !updater_dismissed() && !g_app.update_open) {
@@ -1604,9 +1674,12 @@ int main(int argc, char **argv)
         diagnostic_log("INPUT", "wire encoder self-test FAILED");
         show_notice("Input packet self-test failed");
     }
+    /* Audio driver now, while nothing else is running (see audio_output.c). */
+    audio_system_init();
     play_history_load();
     game_prefs_load();
     queue_stats_load();
+    g_app.continue_index = -1;
     g_app.queue_eta = -1;
     updater_init(argc > 0 && argv ? argv[0] : NULL);
     /* First start of a freshly installed version: show what changed, once. */
@@ -1616,6 +1689,7 @@ int main(int argc, char **argv)
         g_app.whats_new_notes = g_whats_new_notes;
     }
     aptHook(&g_apt_cookie, apt_hook, NULL);
+    queue_alert_stop();
     if (!net_worker_start(&g_client, &g_signal)) {
         fatal_screen("STARTUP FAILED", "Could not start the network worker thread.");
         shutdown_services();
@@ -1624,6 +1698,9 @@ int main(int argc, char **argv)
         return 1;
     }
     probe_load();
+    /* A crash or power loss may have left a game running on a rig. */
+    if (gfn_has_session(&g_client) && gfn_active_exists())
+        submit_job(NET_JOB_RESUME_CHECK, "Checking for a game that's still running...", NULL, NULL);
     bool sleep_allowed = true;
 
     bool was_touching = false;
@@ -1685,6 +1762,7 @@ int main(int argc, char **argv)
             }
         }
         if (hidKeysUp() & KEY_TOUCH) touchpad_end();
+        if (queue_alert_active() && (down || touch_down)) queue_alert_stop();
         update_pointer_click(down, held);
 
         /* Game input: touch-held L3/R3/PS, and nothing while menus are up. */
@@ -1699,7 +1777,11 @@ int main(int argc, char **argv)
 
         /* "Keep streaming" holds the console awake for the whole session;
          * "Pause & resume" lets the lid sleep it and reconnects on waking. */
-        const bool want_sleep = !gfn_session_active(&g_client) || !g_app.settings.lid_keeps_playing;
+        /* While queued or setting up, stay awake even with the lid shut so
+         * the queue keeps moving and the alert can fire; once playing, the
+         * "Closing the lid" setting decides. */
+        const bool want_sleep = !gfn_session_active(&g_client) ||
+                                (g_app.stream_started_at && !g_app.settings.lid_keeps_playing);
         if (want_sleep != sleep_allowed) {
             aptSetSleepAllowed(want_sleep);
             sleep_allowed = want_sleep;
@@ -1735,6 +1817,9 @@ int main(int argc, char **argv)
 
     finish_history();
     aptUnhook(&g_apt_cookie);
+    queue_alert_exit();
+    audio_output_close();
+    audio_system_exit();
     if (gfn_session_active(&g_client)) {
         close_media();
         net_worker_wait_idle(8000);

@@ -15,6 +15,7 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #define DATA_DIR APP_DATA_DIR
+static void active_clear(void);
 #define SESSION_PATH DATA_DIR "/gfn-session.json"
 #define SESSION_TMP DATA_DIR "/gfn-session.tmp"
 #define DEVICE_PATH DATA_DIR "/device-id.txt"
@@ -1325,8 +1326,100 @@ bool gfn_stop_session(GfnClient *client)
     if (ok) {
         memset(client->session_id, 0, sizeof(client->session_id));
         client->session_state = GFN_SESSION_IDLE;
+        active_clear();
     }
     return ok;
+}
+
+/* ---- Resume after a crash ---------------------------------------------------- */
+
+#define ACTIVE_SESSION_PATH APP_DATA_DIR "/active-session.json"
+
+void gfn_active_save(const GfnClient *client, const GfnGame *game)
+{
+    if (!client->session_id[0] || !game) return;
+    json_t *root = json_pack("{s:s,s:s,s:s,s:s,s:I,s:{s:s,s:s,s:s,s:s}}",
+                             "session_id", client->session_id,
+                             "client_id", client->session_client_id,
+                             "device_id", client->session_device_id,
+                             "base_url", client->session_base_url,
+                             "saved_at", (json_int_t)time(NULL),
+                             "game", "title", game->title, "id", game->app_id,
+                             "store", game->store, "image", game->image_url);
+    if (root) json_dump_file(root, ACTIVE_SESSION_PATH, JSON_COMPACT);
+    json_decref(root);
+}
+
+static void active_clear(void) { remove(ACTIVE_SESSION_PATH); }
+
+bool gfn_active_exists(void)
+{
+    struct stat st;
+    return stat(ACTIVE_SESSION_PATH, &st) == 0;
+}
+
+bool gfn_resume_check(GfnClient *client)
+{
+    client->resume_found = false;
+    json_error_t error;
+    json_t *root = json_load_file(ACTIVE_SESSION_PATH, 0, &error);
+    if (!json_is_object(root)) {
+        json_decref(root);
+        active_clear();
+        return false;
+    }
+    /* NVIDIA ends an abandoned rig after a while; don't bother after a day. */
+    json_t *saved = json_object_get(root, "saved_at");
+    const int64_t age = (int64_t)time(NULL) - (json_is_integer(saved) ? json_integer_value(saved) : 0);
+    if (age > 24 * 3600 || !gfn_has_session(client) || !refresh_session(client)) {
+        json_decref(root);
+        if (age > 24 * 3600) active_clear();
+        return false;
+    }
+    memset(&client->resume_game, 0, sizeof(client->resume_game));
+    copy_json_string(client->session_id, sizeof(client->session_id), root, "session_id");
+    copy_json_string(client->session_client_id, sizeof(client->session_client_id), root, "client_id");
+    copy_json_string(client->session_device_id, sizeof(client->session_device_id), root, "device_id");
+    copy_json_string(client->session_base_url, sizeof(client->session_base_url), root, "base_url");
+    json_t *game = json_object_get(root, "game");
+    if (json_is_object(game)) {
+        copy_json_string(client->resume_game.title, sizeof(client->resume_game.title), game, "title");
+        copy_json_string(client->resume_game.app_id, sizeof(client->resume_game.app_id), game, "id");
+        copy_json_string(client->resume_game.store, sizeof(client->resume_game.store), game, "store");
+        copy_json_string(client->resume_game.image_url, sizeof(client->resume_game.image_url), game, "image");
+    }
+    json_decref(root);
+    if (!client->session_id[0] || !client->session_base_url[0]) {
+        active_clear();
+        memset(client->session_id, 0, sizeof(client->session_id));
+        return false;
+    }
+
+    client->queue_best = 0;
+    client->queue_step = client->seat_setup_step = -1;
+    char url[512];
+    snprintf(url, sizeof(url), "%s/v2/session/%s", client->session_base_url, client->session_id);
+    const char *headers[16]; char client_header[80], device_header[80];
+    const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
+    HttpResponse response;
+    const bool sent = http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response);
+    const bool alive = sent && response.status >= 200 && response.status < 300 &&
+                       apply_session_response(client, &response, "Resume") &&
+                       client->session_state != GFN_SESSION_ERROR;
+    diagnostic_log("CLOUDMATCH", "resume check http=%ld alive=%d state=%d",
+                   sent ? response.status : 0, alive, client->session_state);
+    http_response_free(&response);
+    if (!alive) {
+        /* Gone: forget it quietly and start clean. */
+        active_clear();
+        memset(client->session_id, 0, sizeof(client->session_id));
+        client->session_state = GFN_SESSION_IDLE;
+        snprintf(client->status, sizeof(client->status), "Library ready");
+        return false;
+    }
+    client->resume_found = true;
+    snprintf(client->status, sizeof(client->status), "Your game is still running");
+    return true;
 }
 
 bool gfn_session_active(const GfnClient *client)

@@ -66,6 +66,10 @@ typedef struct {
     unsigned conn_kbps;
     int64_t conn_tested_at;
     bool conn_failed;
+    /* A session found still running at start-up (after a crash or power
+     * loss), and the game it is for. */
+    bool resume_found;
+    GfnGame resume_game;
     size_t catalog_total;
     char catalog_vpc[64];
     int64_t catalog_vpc_expires_at;
@@ -100,6 +104,13 @@ bool gfn_fetch_library(GfnClient *client);
 bool gfn_library_load(GfnClient *client);
 /* Measure Wi-Fi, latency and throughput to NVIDIA (a few seconds). */
 bool gfn_connection_test(GfnClient *client);
+/* Remember the running session on the SD card (cleared when it stops), so a
+ * crash or power loss can resume it on the next start. */
+void gfn_active_save(const GfnClient *client, const GfnGame *game);
+bool gfn_active_exists(void);
+/* Ask NVIDIA whether the remembered session still runs; if so the client
+ * takes it over (queued, setting up or ready) and resume_found is set. */
+bool gfn_resume_check(GfnClient *client);
 bool gfn_search_catalog(GfnClient *client, const char *query);
 bool gfn_start_session(GfnClient *client, const GfnGame *game);
 void gfn_session_tick(GfnClient *client);

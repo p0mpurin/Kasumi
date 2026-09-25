@@ -57,7 +57,11 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
         if (gfn_library_load(&g_work)) return true;
         return gfn_fetch_library(&g_work);
     case NET_JOB_SEARCH: return gfn_search_catalog(&g_work, text);
-    case NET_JOB_START_SESSION: return gfn_start_session(&g_work, game);
+    case NET_JOB_START_SESSION:
+        if (!gfn_start_session(&g_work, game)) return false;
+        gfn_active_save(&g_work, game);
+        return true;
+    case NET_JOB_RESUME_CHECK: return gfn_resume_check(&g_work);
     case NET_JOB_STOP_SESSION:
         if (gfn_stop_session(&g_work)) return true;
         /* Keep a stuck session visible so the user can try again. */
@@ -69,7 +73,9 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
             return false;
         }
         publish();
-        return gfn_start_session(&g_work, game);
+        if (!gfn_start_session(&g_work, game)) return false;
+        gfn_active_save(&g_work, game);
+        return true;
     case NET_JOB_START_SIGNAL: {
         g_signal_starting = true;
         const bool ok = nvst_signal_start(g_signal, g_work.signaling_url, g_work.session_id);

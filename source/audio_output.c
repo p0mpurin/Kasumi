@@ -61,6 +61,36 @@ static unsigned g_concealed;
 static bool g_attempted;
 static bool g_ndsp_ready;
 static char g_status[96] = "not started";
+static bool g_system_ready;
+static bool g_system_attempted;
+
+/* Beta.3 crashed inside ndspInit (crash dump 30: a write to 0x1ff57ffe in
+ * ndspSetCounter). ndspInit reads variable addresses back from the DSP in a
+ * handshake; it was called from the first audio packet, in the middle of
+ * the DTLS handshake and decoder start-up, and got an incomplete reply. The
+ * driver now starts once at launch, while the app is idle, and stays up. */
+bool audio_system_init(void)
+{
+    if (g_system_ready) return true;
+    if (g_system_attempted) return false;
+    g_system_attempted = true;
+    diagnostic_log("AUDIO", "dsp init begin");
+    diagnostic_checkpoint();
+    const Result result = ndspInit();
+    g_system_ready = R_SUCCEEDED(result);
+    diagnostic_log("AUDIO", "dsp init %s rc=%08lX", g_system_ready ? "ok" : "failed (no sound)",
+                   (unsigned long)result);
+    return g_system_ready;
+}
+
+bool audio_system_ready(void) { return g_system_ready; }
+
+void audio_system_exit(void)
+{
+    if (!g_system_ready) return;
+    ndspExit();
+    g_system_ready = false;
+}
 
 bool audio_output_init(void)
 {
@@ -76,9 +106,8 @@ bool audio_output_init(void)
         return false;
     }
 
-    Result result = ndspInit();
-    if (R_FAILED(result)) {
-        snprintf(g_status, sizeof(g_status), "NDSP init failed %08lX", (unsigned long)result);
+    if (!audio_system_init()) {
+        snprintf(g_status, sizeof(g_status), "DSP unavailable: playing without sound");
         diagnostic_log("AUDIO", "%s", g_status);
         opus_decoder_destroy(g_decoder);
         g_decoder = NULL;
@@ -210,8 +239,9 @@ unsigned audio_output_concealed(void) { return g_concealed; }
 void audio_output_close(void)
 {
     if (g_ndsp_ready) {
+        /* The driver itself stays up for the next stream. */
         ndspChnWaveBufClear(AUDIO_CHANNEL);
-        ndspExit();
+        ndspChnReset(AUDIO_CHANNEL);
         g_ndsp_ready = false;
     }
     if (g_pcm) {

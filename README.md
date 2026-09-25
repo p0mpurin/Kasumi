@@ -57,8 +57,12 @@ affiliated with NVIDIA or with the OpenNOW project.
   with All / Favourites / Recent tabs and a page for every game.
 - **Per-game options**: bitrate, gyro, button layout and a fully **custom
   button mapping** just for that game.
-- **Queue with an estimate**: the free-tier queue shows your place and a
-  wait time that learns from your own queues.
+- **Queue with an estimate and an alert**: the free-tier queue shows a wait
+  time that learns from your own queues. Close the lid while you wait; when
+  the rig is ready the notification light pulses and a chime plays.
+- **Picks up where you left off**: *Continue* relaunches your last game in
+  one press, and if Kasumi ever closes mid-game, the next start offers to
+  resume the game still running on your rig.
 - **Stream menu** (hold START + SELECT): screenshots, controls sheet, zoom
   zones, gyro, sound and disconnect.
 - **Remote keyboard and touchpad** for launchers, sign-in screens and chat.
@@ -93,7 +97,13 @@ affiliated with NVIDIA or with the OpenNOW project.
 
 ## Install
 
-Download `Kasumi.cia` from the
+<img src="docs/assets/install-qr.png" width="160" align="right" alt="QR code for Kasumi.cia">
+
+**Quickest:** open **FBI** on the 3DS, choose **Remote Install > Scan QR
+Code**, and scan the code on the right. FBI downloads and installs the
+latest Kasumi.cia directly.
+
+Or download `Kasumi.cia` from the
 [Releases](https://github.com/p0mpurin/Kasumi/releases) page and install it
 with FBI, or copy `Kasumi.3dsx` to `sdmc:/3ds/` and start it from the
 Homebrew Launcher.
