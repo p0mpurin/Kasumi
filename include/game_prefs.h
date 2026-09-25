@@ -11,6 +11,9 @@ typedef struct {
     int bitrate;
     int gyro;
     int layout;
+    /* Custom button mapping (GFN_OUT_* per GFN_IN_*), when has_map. */
+    bool has_map;
+    unsigned char map[14];
 } GamePrefs;
 
 void game_prefs_load(void);

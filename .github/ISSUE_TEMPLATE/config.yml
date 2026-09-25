@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup help (custom firmware and FBI)
+    url: https://3ds.hacks.guide/
+    about: Kasumi needs Luma3DS custom firmware. The guide covers installing it and FBI.
+  - name: Latest release
+    url: https://github.com/p0mpurin/Kasumi/releases
+    about: Download the newest Kasumi.cia or Kasumi.3dsx.

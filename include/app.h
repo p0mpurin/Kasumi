@@ -74,7 +74,12 @@ typedef enum {
     ACTION_UPDATE_PRIMARY,
     ACTION_UPDATE_CLOSE,
     ACTION_UPDATE_LATER,
-    ACTION_WHATS_NEW_CLOSE
+    ACTION_WHATS_NEW_CLOSE,
+    ACTION_MAP_PREV,
+    ACTION_MAP_NEXT,
+    ACTION_MAP_RESET,
+    ACTION_MAP_CANCEL,
+    ACTION_MAP_DONE
 } AppAction;
 
 enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
@@ -89,7 +94,7 @@ enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
 
 /* Per-game options sheet rows. */
-enum { OPTION_BITRATE, OPTION_GYRO, OPTION_LAYOUT, OPTION_CONNECTION, OPTION_COUNT };
+enum { OPTION_BITRATE, OPTION_GYRO, OPTION_LAYOUT, OPTION_MAPPING, OPTION_CONNECTION, OPTION_COUNT };
 
 #define GUIDE_PAGES 5
 
@@ -114,6 +119,11 @@ typedef struct {
     /* Per-game options sheet on the details page. */
     bool options_open;
     int options_index;
+    /* Button mapping editor: the input being edited and the working map. */
+    bool mapping_open;
+    int mapping_input;
+    unsigned char mapping[GFN_INPUT_COUNT];
+    unsigned char mapping_default[GFN_INPUT_COUNT];
     /* Library tab and the visible list: positions -> client->games. */
     int library_tab;
     unsigned short list_map[GFN_MAX_GAMES];
@@ -158,6 +168,8 @@ typedef struct {
     bool free_tier_guess;
     /* Automatic reconnects after the connection dropped mid-game. */
     unsigned reconnect_attempt;
+    /* Estimated seconds left in NVIDIA's queue (-1 unknown, 0 any moment). */
+    int queue_eta;
     /* Transient message (notice) with its expiry, shown as a toast. */
     const char *toast;
     unsigned stream_frame_base;

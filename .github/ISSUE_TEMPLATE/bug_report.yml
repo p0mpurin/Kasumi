@@ -1,0 +1,111 @@
+name: Bug report
+description: Something doesn't work, crashes, stutters or looks wrong.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Kasumi. The diagnostic log makes most problems easy to find.
+
+        **Never attach `gfn-session.json`: it contains your NVIDIA login.** The diagnostic log leaves tokens and passwords out and is safe to share.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+      placeholder: "I opened Genshin Impact, the queue finished, then the screen stayed on 'Connecting'..."
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Kasumi version
+      description: Shown in Settings > Updates, or on the welcome screen.
+      placeholder: "0.9.0-beta.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Console
+      options:
+        - New Nintendo 3DS
+        - New Nintendo 3DS XL
+        - New Nintendo 2DS XL
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is Kasumi installed?
+      options:
+        - CIA (HOME Menu)
+        - 3DSX (Homebrew Launcher)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - Signing in
+        - Library or game page
+        - Queue or connecting
+        - While playing (video, audio, input)
+        - Stream menu, zoom or keyboard
+        - Settings
+        - Updating
+        - Crash or freeze
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wifi
+    attributes:
+      label: Wi-Fi signal (bars at the top of Kasumi)
+      options:
+        - 3 bars
+        - 2 bars
+        - 1 bar
+        - Not sure
+
+  - type: dropdown
+    id: bitrate
+    attributes:
+      label: Bitrate setting
+      options:
+        - Adaptive
+        - Steady 1 Mbps
+        - Steady 1.2 Mbps
+        - Steady 1.5 Mbps
+        - Not sure
+
+  - type: input
+    id: game
+    attributes:
+      label: Game (if it happened while playing)
+      placeholder: "Genshin Impact"
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Diagnostic log
+      description: |
+        Attach `sdmc:/3ds/kasumi/kasumi-diagnostic.txt` from the SD card (drag the file into this box).
+        It is rewritten every time Kasumi starts, so copy it before opening Kasumi again.
+        After a crash, also attach the newest file from `sdmc:/luma/dumps/arm11/`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots (Rosalina menu, L + D-Pad Down + SELECT) or other details that help.

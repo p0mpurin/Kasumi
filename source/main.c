@@ -3,6 +3,7 @@
 #include <malloc.h>
 #include <poll.h>
 #include <stdarg.h>
+#include <jansson.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -783,6 +784,14 @@ static void handle_guide(u32 down, AppAction action)
     }
 }
 
+/* The running game's options (its custom button map survives menu toggles). */
+static GamePrefs g_session_prefs;
+
+static void reapply_game_map(void)
+{
+    if (gfn_session_active(&g_client) && g_session_prefs.has_map) gfn_input_set_custom_map(g_session_prefs.map);
+}
+
 /* Settings for this game's session: the global ones with its options. */
 static void apply_game_options(const GamePrefs *prefs)
 {
@@ -793,6 +802,8 @@ static void apply_game_options(const GamePrefs *prefs)
     if (prefs->layout >= 0 && prefs->layout < 2) session.button_layout = (GfnButtonLayout)prefs->layout;
     settings_apply_input(&session);
     settings_apply_picture(&session);
+    g_session_prefs = *prefs;
+    if (prefs->has_map) gfn_input_set_custom_map(prefs->map);
 }
 
 /* Launch the details page's game with the store chosen there. */
@@ -809,11 +820,55 @@ static void launch_details_game(void)
     launch_game(&game);
     /* launch_game applied the global picture settings; layer this game's. */
     apply_game_options(&prefs);
-    diagnostic_log("APP", "game options bitrate=%d gyro=%d layout=%d", prefs.bitrate, prefs.gyro, prefs.layout);
+    diagnostic_log("APP", "game options bitrate=%d gyro=%d layout=%d map=%d", prefs.bitrate, prefs.gyro,
+                   prefs.layout, prefs.has_map);
+}
+
+/* ---- Button mapping editor ---------------------------------------------- */
+
+static void open_mapping(const GfnGame *game, const GamePrefs *prefs)
+{
+    (void)game;
+    const GfnButtonLayout layout = prefs->layout >= 0 ? (GfnButtonLayout)prefs->layout : g_app.settings.button_layout;
+    gfn_input_default_map(layout, g_app.settings.swap_shoulders, g_app.mapping_default);
+    memcpy(g_app.mapping, prefs->has_map ? prefs->map : g_app.mapping_default, sizeof(g_app.mapping));
+    g_app.mapping_input = GFN_IN_A;
+    g_app.mapping_open = true;
+}
+
+static void handle_mapping(u32 down, u32 repeat, AppAction action)
+{
+    const GfnGame *game = app_game(&g_app, g_app.selected);
+    if (!game) { g_app.mapping_open = false; return; }
+    /* Pressing a 3DS button picks it; the Circle Pad changes what it sends
+     * (every button, D-Pad included, is itself remappable). */
+    for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
+        if (down & gfn_input_key(i)) g_app.mapping_input = (int)i;
+    unsigned char *out = &g_app.mapping[g_app.mapping_input];
+    if ((repeat & KEY_CPAD_LEFT) || action == ACTION_MAP_PREV)
+        *out = (unsigned char)((*out + GFN_OUTPUT_COUNT - 1) % GFN_OUTPUT_COUNT);
+    if ((repeat & KEY_CPAD_RIGHT) || action == ACTION_MAP_NEXT)
+        *out = (unsigned char)((*out + 1) % GFN_OUTPUT_COUNT);
+    if (repeat & KEY_CPAD_UP) g_app.mapping_input = (g_app.mapping_input + GFN_INPUT_COUNT - 1) % GFN_INPUT_COUNT;
+    if (repeat & KEY_CPAD_DOWN) g_app.mapping_input = (g_app.mapping_input + 1) % GFN_INPUT_COUNT;
+    if (action == ACTION_MAP_RESET) memcpy(g_app.mapping, g_app.mapping_default, sizeof(g_app.mapping));
+    if (action == ACTION_MAP_CANCEL) g_app.mapping_open = false;
+    if (action == ACTION_MAP_DONE) {
+        GamePrefs prefs = game_prefs_get(game->app_id);
+        prefs.has_map = memcmp(g_app.mapping, g_app.mapping_default, sizeof(g_app.mapping)) != 0;
+        memcpy(prefs.map, g_app.mapping, sizeof(prefs.map));
+        game_prefs_set(game->app_id, &prefs);
+        g_app.mapping_open = false;
+        show_notice(prefs.has_map ? "Button mapping saved for this game" : "This game uses the normal layout");
+    }
 }
 
 static void handle_options(u32 down, u32 repeat, AppAction action)
 {
+    if (g_app.mapping_open) {
+        handle_mapping(down, repeat, action);
+        return;
+    }
     const GfnGame *game = app_game(&g_app, g_app.selected);
     if (!game) { g_app.options_open = false; return; }
     GamePrefs prefs = game_prefs_get(game->app_id);
@@ -832,6 +887,9 @@ static void handle_options(u32 down, u32 repeat, AppAction action)
     case OPTION_BITRATE: CYCLE(prefs.bitrate, STREAM_BITRATE_COUNT); break;
     case OPTION_GYRO: CYCLE(prefs.gyro, GFN_GYRO_MODE_COUNT); break;
     case OPTION_LAYOUT: CYCLE(prefs.layout, 2); break;
+    case OPTION_MAPPING:
+        if ((down & KEY_A) || action == ACTION_OPTION_NEXT || action == ACTION_OPTION_PREV) open_mapping(game, &prefs);
+        return;
     case OPTION_CONNECTION:
         if ((down & KEY_A) || action == ACTION_OPTION_NEXT)
             submit_job(NET_JOB_CONNECTION_TEST, "Checking your connection to NVIDIA...", NULL, NULL);
@@ -979,6 +1037,7 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
         } else if (action == ACTION_MENU_GYRO) {
             screens_setting_change(&g_app, SETTING_GYRO, 1);
             settings_apply_input(&g_app.settings);
+            reapply_game_map();
             save_settings();
         } else if (action == ACTION_MENU_LAYOUT) {
             screens_setting_change(&g_app, SETTING_LAYOUT, 1);
@@ -1060,6 +1119,62 @@ static void finish_history(void)
     play_history_end(g_current_game.app_id, (uint32_t)(played / 1000));
 }
 
+/* ---- Queue estimate -------------------------------------------------------- */
+
+/* NVIDIA's queue number is not linear in time (in testing it fell 63 -> 50
+ * in 41 s, then held at 50 for 80 s), but the whole wait was close to
+ * proportional to the starting place: 63 places took 124 s, 70 took 131 s,
+ * about 1.9 s per place. So the estimate is (starting place x learned
+ * seconds per place) minus the time already waited, and every finished
+ * queue refines the learned rate. */
+#define QUEUE_STATS_PATH APP_DATA_DIR "/queue.json"
+
+static float g_seconds_per_place = 1.9f;
+
+static void queue_stats_load(void)
+{
+    json_error_t error;
+    json_t *root = json_load_file(QUEUE_STATS_PATH, 0, &error);
+    json_t *rate = json_is_object(root) ? json_object_get(root, "seconds_per_place") : NULL;
+    if (json_is_number(rate) && json_number_value(rate) > 0.2 && json_number_value(rate) < 60.0)
+        g_seconds_per_place = (float)json_number_value(rate);
+    json_decref(root);
+}
+
+static void track_queue(void)
+{
+    static u64 queued_at;
+    static int start_place;
+    const u64 now = osGetTime();
+    const bool queued = g_client.session_state == GFN_SESSION_QUEUED;
+    if (queued) {
+        if (!queued_at) queued_at = now;
+        if (!start_place && g_client.queue_position > 0) start_place = g_client.queue_position;
+        if (!start_place) { g_app.queue_eta = -1; return; }
+        const float expected = (float)start_place * g_seconds_per_place;
+        const float left = expected - (float)(now - queued_at) / 1000.0f;
+        g_app.queue_eta = left > 20.0f ? (int)left : 0;
+        return;
+    }
+    /* The queue just ended with a rig: learn from how long it really took. */
+    if (queued_at && start_place > 0 &&
+        (g_client.session_state == GFN_SESSION_SETUP || g_client.session_state == GFN_SESSION_READY)) {
+        const float seconds = (float)(now - queued_at) / 1000.0f;
+        const float rate = seconds / (float)start_place;
+        if (rate > 0.2f && rate < 60.0f) {
+            g_seconds_per_place = g_seconds_per_place * 0.6f + rate * 0.4f;
+            json_t *root = json_pack("{s:f}", "seconds_per_place", (double)g_seconds_per_place);
+            if (root) json_dump_file(root, QUEUE_STATS_PATH, JSON_COMPACT);
+            json_decref(root);
+            diagnostic_log("QUEUE", "finished start=%d seconds=%.0f rate=%.2f s/place learned=%.2f",
+                           start_place, (double)seconds, (double)rate, (double)g_seconds_per_place);
+        }
+    }
+    queued_at = 0;
+    start_place = 0;
+    g_app.queue_eta = -1;
+}
+
 /* Timer, free-tier warnings and automatic reconnects for a running session. */
 static void track_session(void)
 {
@@ -1067,6 +1182,7 @@ static void track_session(void)
     static bool warned_5, warned_1;
     const u64 now = osGetTime();
 
+    track_queue();
     char shot[64];
     const int shot_result = screenshot_poll(shot, sizeof(shot));
     if (shot_result > 0) {
@@ -1490,6 +1606,8 @@ int main(int argc, char **argv)
     }
     play_history_load();
     game_prefs_load();
+    queue_stats_load();
+    g_app.queue_eta = -1;
     updater_init(argc > 0 && argv ? argv[0] : NULL);
     /* First start of a freshly installed version: show what changed, once. */
     if (updater_take_whats_new(g_app.whats_new_version, sizeof(g_app.whats_new_version),

@@ -60,9 +60,16 @@ static const UiRect DET_STORE_NEXT = { 260, 106, 44, 44 };
 static const UiRect DET_FAV = { 16, 188, 92, 44 };
 static const UiRect DET_OPTIONS = { 114, 188, 92, 44 };
 static const UiRect DET_BACK = { 212, 188, 92, 44 };
-static const UiRect OPT_CLOSE = { 84, 194, 152, 40 };
-#define OPT_ROW_Y 40.0f
-#define OPT_ROW_H 36.0f
+static const UiRect OPT_CLOSE = { 84, 206, 152, 30 };
+#define OPT_ROW_Y 38.0f
+#define OPT_ROW_H 30.0f
+
+/* Button mapping editor, lower screen. */
+static const UiRect MAP_PREV = { 16, 96, 48, 48 };
+static const UiRect MAP_NEXT = { 256, 96, 48, 48 };
+static const UiRect MAP_RESET = { 16, 196, 92, 38 };
+static const UiRect MAP_CANCEL = { 114, 196, 92, 38 };
+static const UiRect MAP_DONE = { 212, 196, 92, 38 };
 
 /* Guide, lower screen. */
 static const UiRect GUIDE_BACK = { 16, 188, 92, 44 };
@@ -805,9 +812,14 @@ static void draw_session_top(const App *app)
         draw_title(200, 126, jp[stage], en[stage]);
         ui_text_fit(200, 156, 13, UI_TEXT_DIM, UI_ALIGN_CENTER, 360,
                     app->game_title[0] ? app->game_title : "GeForce NOW");
-        if (stage == 0)
-            ui_text(200, 172, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
-                    client->queue_position > 0 ? "Your place in NVIDIA's queue" : "Waiting for a free rig");
+        if (stage == 0) {
+            char wait[64];
+            if (app->queue_eta > 90) snprintf(wait, sizeof(wait), "Your place in the queue  ·  about %d min", (app->queue_eta + 30) / 60);
+            else if (app->queue_eta > 0) snprintf(wait, sizeof(wait), "Your place in the queue  ·  about a minute");
+            else if (app->queue_eta == 0) snprintf(wait, sizeof(wait), "Your rig should be ready any moment");
+            else snprintf(wait, sizeof(wait), "%s", client->queue_position > 0 ? "Your place in NVIDIA's queue" : "Waiting for a free rig");
+            ui_text(200, 172, 11, app->queue_eta >= 0 ? UI_TEXT_DIM : UI_TEXT_FAINT, UI_ALIGN_CENTER, wait);
+        }
         else if (stage >= 2)
             ui_text_fit(200, 172, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, 360,
                         app->transport->peer ? app->transport->status : app->signal->status);
@@ -1015,6 +1027,7 @@ static const char *option_value(const App *app, const GamePrefs *prefs, int row,
     case OPTION_BITRATE: return prefs->bitrate < 0 ? "Default" : bitrates[prefs->bitrate % STREAM_BITRATE_COUNT];
     case OPTION_GYRO: return prefs->gyro < 0 ? "Default" : gyros[prefs->gyro % GFN_GYRO_MODE_COUNT];
     case OPTION_LAYOUT: return prefs->layout < 0 ? "Default" : layouts[prefs->layout % 2];
+    case OPTION_MAPPING: return prefs->has_map ? "Custom  ·  A to edit" : "Default  ·  A to edit";
     case OPTION_CONNECTION:
         if (!c->conn_tested_at) return "Press A to test";
         snprintf(buffer, size, "%u ms  ·  %u.%u Mbps  ·  %u/3", c->conn_latency_ms, c->conn_kbps / 1000,
@@ -1043,7 +1056,8 @@ static void draw_options_sheet(const App *app, float p)
     ui_text(160, 3, 12, UI_ACCENT, UI_ALIGN_CENTER, "設定");
     ui_label(160, 18, 11, UI_TEXT, UI_ALIGN_CENTER, "OPTIONS FOR THIS GAME");
     ui_hline(16, 33, 288, UI_LINE);
-    static const char *const labels[OPTION_COUNT] = { "Bitrate", "Gyro aim", "Button layout", "Connection" };
+    static const char *const labels[OPTION_COUNT] = { "Bitrate", "Gyro aim", "Button layout", "Button mapping",
+                                                       "Connection" };
     char buffer[64];
     for (int i = 0; i < OPTION_COUNT; ++i) {
         const float y = OPT_ROW_Y + i * OPT_ROW_H;
@@ -1052,18 +1066,81 @@ static void draw_options_sheet(const App *app, float p)
             ui_rect(12, y, 296, OPT_ROW_H - 4, UI_RAISED);
             ui_rect(12, y, 2, OPT_ROW_H - 4, UI_ACCENT);
         }
-        ui_text(24, y + 9, 12, focus ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT, labels[i]);
+        ui_text(24, y + 7, 12, focus ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT, labels[i]);
         const char *value = option_value(app, &prefs, i, buffer, sizeof(buffer));
         const bool custom = (i == OPTION_BITRATE && prefs.bitrate >= 0) ||
-                            (i == OPTION_GYRO && prefs.gyro >= 0) || (i == OPTION_LAYOUT && prefs.layout >= 0);
-        ui_text_fit(296, y + 9, 12, custom ? UI_ACCENT : focus ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_RIGHT,
+                            (i == OPTION_GYRO && prefs.gyro >= 0) || (i == OPTION_LAYOUT && prefs.layout >= 0) ||
+                            (i == OPTION_MAPPING && prefs.has_map);
+        ui_text_fit(296, y + 7, 12, custom ? UI_ACCENT : focus ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_RIGHT,
                     180, value);
     }
-    ui_text_wrap(160, OPT_ROW_Y + OPTION_COUNT * OPT_ROW_H + 2, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 292, 1, 14,
+    ui_text_wrap(160, OPT_ROW_Y + OPTION_COUNT * OPT_ROW_H + 1, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 292, 1, 14,
                  app->options_index == OPTION_CONNECTION ? connection_advice(app->client)
                  : "Default follows Settings. Only this game's sessions use these.");
     ui_button(OPT_CLOSE, "DONE", "完了", UI_BUTTON_NORMAL, pressed(app, OPT_CLOSE));
     ui_offset(0.0f, 0.0f);
+}
+
+/* PlayStation symbol for face outputs, next to its name. */
+static float draw_output(float cx, float y, float size, unsigned output, u32 color)
+{
+    const char *name = gfn_output_name(output);
+    const float w = ui_text_width(name, size);
+    const bool face = output >= GFN_OUT_CROSS && output <= GFN_OUT_TRIANGLE;
+    float x = cx - (w + (face ? size + 6 : 0)) / 2;
+    if (face) {
+        const float s = size * 0.8f, sy = y + size * 0.55f;
+        if (output == GFN_OUT_CROSS) ui_ps_cross(x + s / 2, sy, s, UI_AI);
+        else if (output == GFN_OUT_CIRCLE) ui_ps_circle(x + s / 2, sy, s, UI_DANGER);
+        else if (output == GFN_OUT_SQUARE) ui_ps_square(x + s / 2, sy, s, UI_SAKURA);
+        else ui_ps_triangle(x + s / 2, sy, s, UI_MATCHA);
+        x += size + 6;
+    }
+    ui_text(x, y, size, color, UI_ALIGN_LEFT, name);
+    return w;
+}
+
+static void draw_mapping_top(const App *app)
+{
+    const GfnGame *game = app_game(app, app->selected);
+    draw_title(200, 31, "ボタン設定", "BUTTON MAPPING");
+    if (game) ui_text_fit(200, 60, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, 340, game->title);
+    /* Two columns of seven: 3DS button -> what it sends. */
+    for (int i = 0; i < GFN_INPUT_COUNT; ++i) {
+        const float x = i < 7 ? 22 : 206, y = 80 + (i % 7) * 19.0f;
+        const bool on = i == app->mapping_input;
+        const bool changed = app->mapping[i] != app->mapping_default[i];
+        if (on) {
+            ui_rect(x - 6, y - 2, 178, 18, UI_RAISED);
+            ui_rect(x - 6, y - 2, 2, 18, UI_ACCENT);
+        }
+        ui_button_chip(x, y, gfn_input_name((unsigned)i), on ? UI_TEXT : UI_TEXT_DIM);
+        ui_text(x + 74, y, 12, changed ? UI_ACCENT : on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT,
+                gfn_output_name(app->mapping[i]));
+    }
+    static const char *const hints[] = { "ANY BUTTON", "Pick", "CIRCLE PAD", "Change", NULL };
+    draw_footer(UI_TOP_WIDTH, hints);
+}
+
+static void draw_mapping_bottom(const App *app)
+{
+    ui_label(160, 8, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "PRESS ANY 3DS BUTTON TO PICK IT");
+    const UiRect card = { 70, 30, 180, 128 };
+    ui_panel(card, UI_ACCENT);
+    const unsigned input = (unsigned)app->mapping_input;
+    ui_label(160, card.y + 12, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "3DS BUTTON");
+    const float chip_w = ui_text_width(gfn_input_name(input), 10) + 10;
+    ui_button_chip(160 - (strlen(gfn_input_name(input)) == 1 ? 7.5f : chip_w / 2), card.y + 30,
+                   gfn_input_name(input), UI_TEXT);
+    ui_label(160, card.y + 60, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "SENDS");
+    draw_output(160, card.y + 78, 16, app->mapping[input],
+                app->mapping[input] != app->mapping_default[input] ? UI_ACCENT : UI_TEXT);
+    draw_arrow(MAP_PREV, -1, true, pressed(app, MAP_PREV));
+    draw_arrow(MAP_NEXT, 1, true, pressed(app, MAP_NEXT));
+    ui_text(160, 168, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Circle Pad left / right also changes it");
+    ui_button(MAP_RESET, "RESET", "初期化", UI_BUTTON_NORMAL, pressed(app, MAP_RESET));
+    ui_button(MAP_CANCEL, "CANCEL", "取消", UI_BUTTON_NORMAL, pressed(app, MAP_CANCEL));
+    ui_button(MAP_DONE, "SAVE", "保存", UI_BUTTON_PRIMARY, pressed(app, MAP_DONE));
 }
 
 static void draw_details_bottom(const App *app, float overlay_p)
@@ -1083,7 +1160,12 @@ static void draw_details_bottom(const App *app, float overlay_p)
               favourite ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, DET_FAV));
     ui_button(DET_OPTIONS, "OPTIONS", "設定", UI_BUTTON_NORMAL, pressed(app, DET_OPTIONS));
     ui_button(DET_BACK, "BACK", "戻る", UI_BUTTON_NORMAL, pressed(app, DET_BACK));
-    if (app->options_open) draw_options_sheet(app, overlay_p);
+    if (app->mapping_open) {
+        ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_BG);
+        draw_mapping_bottom(app);
+    } else if (app->options_open) {
+        draw_options_sheet(app, overlay_p);
+    }
 }
 
 /* ---- Software update --------------------------------------------------------- */
@@ -1387,7 +1469,10 @@ void screens_draw_top(const App *app)
     case VIEW_LIBRARY: draw_library_top(app, entering); break;
     case VIEW_SETTINGS: draw_settings_top(app, entering); break;
     case VIEW_SESSION: draw_session_top(app); break;
-    case VIEW_DETAILS: draw_details_top(app); break;
+    case VIEW_DETAILS:
+        if (app->mapping_open) draw_mapping_top(app);
+        else draw_details_top(app);
+        break;
     case VIEW_STREAM: break;
     }
     ui_offset(0.0f, 0.0f);
@@ -1407,7 +1492,7 @@ static void draw_welcome_bottom(const App *app)
     ui_button(WEL_SIGN_IN, "SIGN IN", "サインイン", UI_BUTTON_PRIMARY, pressed(app, WEL_SIGN_IN));
     ui_button(WEL_SETTINGS, "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, WEL_SETTINGS));
     ui_button(WEL_EXIT, "EXIT", "終了", UI_BUTTON_NORMAL, pressed(app, WEL_EXIT));
-    ui_label(160, 222, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "BUILD " APP_BUILD);
+    ui_label(160, 222, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "VERSION " APP_VERSION);
 }
 
 static void draw_login_bottom(const App *app)
@@ -1622,8 +1707,13 @@ static void draw_session_bottom(const App *app)
     ui_wifi_icon(70, 133, app->wifi_bars, UI_ACCENT, UI_LINE_STRONG);
     ui_textf(96, 131, 15, UI_TEXT, UI_ALIGN_LEFT, "%u/3", app->wifi_bars);
     ui_vline(160, 116, 34, UI_LINE);
-    ui_label(232, 116, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "QUEUE");
-    if (client->session_state == GFN_SESSION_QUEUED && client->queue_position > 0)
+    const bool queued = client->session_state == GFN_SESSION_QUEUED;
+    ui_label(232, 116, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, queued && app->queue_eta >= 0 ? "EST. WAIT" : "QUEUE");
+    if (queued && app->queue_eta > 90)
+        ui_textf(232, 131, 15, UI_TEXT, UI_ALIGN_CENTER, "~%d min", (app->queue_eta + 30) / 60);
+    else if (queued && app->queue_eta >= 0)
+        ui_text(232, 131, 15, UI_TEXT, UI_ALIGN_CENTER, app->queue_eta ? "~1 min" : "Soon");
+    else if (queued && client->queue_position > 0)
         ui_textf(232, 131, 15, UI_TEXT, UI_ALIGN_CENTER, "#%d", client->queue_position);
     else
         ui_text(232, 131, 15, UI_TEXT, UI_ALIGN_CENTER,
@@ -1787,8 +1877,11 @@ static void draw_controls_sheet(const App *app, float p)
     controls_row(y, "SELECT", "Share / View"); y += dy;
     controls_row(y, "TOUCH", "L3 / R3 / PS buttons"); y += dy;
     controls_row(y, "START+SELECT", "Hold for the stream menu"); y += dy;
-    ui_textf(160, y + 4, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Gyro aim: %s  ·  change it in the stream menu",
-             gyro_mode_name(s->gyro_mode));
+    if (gfn_input_custom_map_active())
+        ui_text(160, y + 4, 11, UI_ACCENT, UI_ALIGN_CENTER, "This game uses its own button mapping (Options)");
+    else
+        ui_textf(160, y + 4, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Gyro aim: %s  ·  change it in the stream menu",
+                 gyro_mode_name(s->gyro_mode));
     static const char *const hints[] = { "B", "Close", NULL };
     ui_hint_row(160, 222, hints);
     ui_offset(0.0f, 0.0f);
@@ -2015,6 +2108,14 @@ AppAction screens_touch(const App *app, int x, int y)
         }
         break;
     case VIEW_DETAILS:
+        if (app->mapping_open) {
+            if (ui_hit(MAP_PREV, x, y)) return ACTION_MAP_PREV;
+            if (ui_hit(MAP_NEXT, x, y)) return ACTION_MAP_NEXT;
+            if (ui_hit(MAP_RESET, x, y)) return ACTION_MAP_RESET;
+            if (ui_hit(MAP_CANCEL, x, y)) return ACTION_MAP_CANCEL;
+            if (ui_hit(MAP_DONE, x, y)) return ACTION_MAP_DONE;
+            return ACTION_NONE;
+        }
         if (app->options_open) {
             if (ui_hit(OPT_CLOSE, x, y)) return ACTION_OPTIONS_CLOSE;
             for (int i = 0; i < OPTION_COUNT; ++i) {

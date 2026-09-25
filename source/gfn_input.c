@@ -15,8 +15,66 @@ static float g_gyro_smooth_x, g_gyro_smooth_y;
 static unsigned g_gyro_calibration;
 static bool g_gyro_active;
 
+static bool g_custom_map_on;
+static unsigned char g_custom_map[GFN_INPUT_COUNT];
+
+static const u32 INPUT_KEYS[GFN_INPUT_COUNT] = {
+    KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_ZL, KEY_ZR, KEY_START, KEY_SELECT,
+    KEY_DUP, KEY_DDOWN, KEY_DLEFT, KEY_DRIGHT
+};
+static const char *const INPUT_NAMES[GFN_INPUT_COUNT] = {
+    "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT"
+};
+static const char *const OUTPUT_NAMES[GFN_OUTPUT_COUNT] = {
+    "Nothing", "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "L3", "R3",
+    "Options", "Share", "PS button", "D-Pad up", "D-Pad down", "D-Pad left", "D-Pad right"
+};
+/* Pad bits of each output; L2 / R2 are analog triggers instead. */
+static const uint16_t OUTPUT_BITS[GFN_OUTPUT_COUNT] = {
+    0, GFN_PAD_A, GFN_PAD_B, GFN_PAD_X, GFN_PAD_Y, GFN_PAD_LEFT_SHOULDER, GFN_PAD_RIGHT_SHOULDER,
+    0, 0, GFN_PAD_LEFT_THUMB, GFN_PAD_RIGHT_THUMB, GFN_PAD_START, GFN_PAD_BACK, GFN_PAD_GUIDE,
+    GFN_PAD_DPAD_UP, GFN_PAD_DPAD_DOWN, GFN_PAD_DPAD_LEFT, GFN_PAD_DPAD_RIGHT
+};
+
+u32 gfn_input_key(unsigned input) { return input < GFN_INPUT_COUNT ? INPUT_KEYS[input] : 0; }
+const char *gfn_input_name(unsigned input) { return input < GFN_INPUT_COUNT ? INPUT_NAMES[input] : ""; }
+const char *gfn_output_name(unsigned output) { return output < GFN_OUTPUT_COUNT ? OUTPUT_NAMES[output] : ""; }
+
+void gfn_input_default_map(GfnButtonLayout layout, bool swap, unsigned char map[GFN_INPUT_COUNT])
+{
+    const bool position = layout != GFN_LAYOUT_LABEL;
+    /* Position: 3DS X top, A right, B bottom, Y left like the PlayStation. */
+    map[GFN_IN_A] = position ? GFN_OUT_CIRCLE : GFN_OUT_CROSS;
+    map[GFN_IN_B] = position ? GFN_OUT_CROSS : GFN_OUT_CIRCLE;
+    map[GFN_IN_X] = position ? GFN_OUT_TRIANGLE : GFN_OUT_SQUARE;
+    map[GFN_IN_Y] = position ? GFN_OUT_SQUARE : GFN_OUT_TRIANGLE;
+    map[GFN_IN_L] = swap ? GFN_OUT_L2 : GFN_OUT_L1;
+    map[GFN_IN_R] = swap ? GFN_OUT_R2 : GFN_OUT_R1;
+    map[GFN_IN_ZL] = swap ? GFN_OUT_L1 : GFN_OUT_L2;
+    map[GFN_IN_ZR] = swap ? GFN_OUT_R1 : GFN_OUT_R2;
+    map[GFN_IN_START] = GFN_OUT_OPTIONS;
+    map[GFN_IN_SELECT] = GFN_OUT_SHARE;
+    map[GFN_IN_UP] = GFN_OUT_UP;
+    map[GFN_IN_DOWN] = GFN_OUT_DOWN;
+    map[GFN_IN_LEFT] = GFN_OUT_LEFT;
+    map[GFN_IN_RIGHT] = GFN_OUT_RIGHT;
+}
+
+void gfn_input_set_custom_map(const unsigned char *map)
+{
+    g_custom_map_on = map != NULL;
+    if (map)
+        for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
+            g_custom_map[i] = map[i] < GFN_OUTPUT_COUNT ? map[i] : GFN_OUT_NONE;
+}
+
+bool gfn_input_custom_map_active(void) { return g_custom_map_on; }
+
 void gfn_input_configure(const GfnInputConfig *config)
 {
+    /* A new configuration (settings changed, or a game ended) drops any
+     * game's custom map; launching a game applies its own again. */
+    g_custom_map_on = false;
     if (config) g_config = *config;
     if (g_config.deadzone_percent > 40) g_config.deadzone_percent = 40;
     if (g_config.gyro_speed > 2) g_config.gyro_speed = 1;
@@ -103,6 +161,11 @@ void gfn_input_set_suppressed(bool suppressed) { g_suppressed = suppressed; }
 uint16_t gfn_input_buttons_for_keys(u32 keys)
 {
     uint16_t buttons = 0;
+    if (g_custom_map_on) {
+        for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
+            if (keys & INPUT_KEYS[i]) buttons |= OUTPUT_BITS[g_custom_map[i]];
+        return buttons;
+    }
     if (keys & KEY_DUP) buttons |= GFN_PAD_DPAD_UP;
     if (keys & KEY_DDOWN) buttons |= GFN_PAD_DPAD_DOWN;
     if (keys & KEY_DLEFT) buttons |= GFN_PAD_DPAD_LEFT;
@@ -155,10 +218,18 @@ void gfn_input_read_3ds(GfnGamepadState *state)
     if (g_suppressed) return;
     const u32 held = hidKeysHeld();
     state->buttons = gfn_input_buttons_for_keys(held) | g_virtual_buttons;
-    const u32 left_trigger = g_config.swap_shoulders ? KEY_L : KEY_ZL;
-    const u32 right_trigger = g_config.swap_shoulders ? KEY_R : KEY_ZR;
-    if (held & left_trigger) state->left_trigger = 255;
-    if (held & right_trigger) state->right_trigger = 255;
+    if (g_custom_map_on) {
+        for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i) {
+            if (!(held & INPUT_KEYS[i])) continue;
+            if (g_custom_map[i] == GFN_OUT_L2) state->left_trigger = 255;
+            if (g_custom_map[i] == GFN_OUT_R2) state->right_trigger = 255;
+        }
+    } else {
+        const u32 left_trigger = g_config.swap_shoulders ? KEY_L : KEY_ZL;
+        const u32 right_trigger = g_config.swap_shoulders ? KEY_R : KEY_ZR;
+        if (held & left_trigger) state->left_trigger = 255;
+        if (held & right_trigger) state->right_trigger = 255;
+    }
     circlePosition circle;
     circlePosition cstick;
     hidCircleRead(&circle);

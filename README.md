@@ -7,6 +7,20 @@
   A native, unofficial GeForce NOW client with a calm, OLED-black design.
 </p>
 
+<p align="center">
+  <a href="https://github.com/p0mpurin/Kasumi/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/p0mpurin/Kasumi?include_prereleases&label=release&color=7EBEA5&style=flat-square"></a>
+  <a href="https://github.com/p0mpurin/Kasumi/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/p0mpurin/Kasumi/total?color=7EBEA5&style=flat-square"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-New%203DS%20%7C%20New%202DS%20XL-7EBEA5?style=flat-square">
+  <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-7EBEA5?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/p0mpurin/Kasumi/releases/latest"><b>Download</b></a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="https://github.com/p0mpurin/Kasumi/issues/new/choose">Report a problem</a>
+</p>
+
 ---
 
 **Kasumi** (霞, "mist") streams your GeForce NOW library to the New 3DS, New
@@ -41,13 +55,17 @@ affiliated with NVIDIA or with the OpenNOW project.
 
 - **Your library with box art**, saved on the SD card so it opens instantly,
   with All / Favourites / Recent tabs and a page for every game.
-- **Per-game options**: bitrate, gyro and button layout just for that game.
+- **Per-game options**: bitrate, gyro, button layout and a fully **custom
+  button mapping** just for that game.
+- **Queue with an estimate**: the free-tier queue shows your place and a
+  wait time that learns from your own queues.
 - **Stream menu** (hold START + SELECT): screenshots, controls sheet, zoom
   zones, gyro, sound and disconnect.
 - **Remote keyboard and touchpad** for PC menus and launchers.
 - **Comfort**: five colour themes, stream volume, session timer, automatic
   reconnect, and pause-on-lid-close that resumes on the same rig.
 - **First-run guide** that walks you through everything (skippable).
+- **Updates itself** from GitHub, with release notes on the console.
 
 ## Screenshots
 
@@ -116,6 +134,11 @@ checked against the release's SHA256SUMS before anything is installed.
 START is Enter, L is Shift (twice for Caps Lock), R switches symbols, ZL is
 Tab, X closes. Typed text is never stored or logged.
 
+**Custom mapping:** open a game, press X (Options) and choose *Button
+mapping*. Press any 3DS button to pick it, then use the Circle Pad (or the
+arrows) to choose what it sends: any PlayStation button, trigger, stick
+click, D-Pad direction, or nothing. Only that game uses the mapping.
+
 ## Tips
 
 - **Choppy picture?** Move closer to the router, or set Bitrate to
@@ -126,6 +149,31 @@ Tab, X closes. Typed text is never stored or logged.
 - **Connection check** (Settings > System) measures Wi-Fi, latency and speed
   and suggests a bitrate.
 
+## FAQ
+
+**Do I need a paid GeForce NOW membership?**
+No. The free tier works, with a queue before each session and a one-hour
+limit. Kasumi shows the queue with a wait estimate and warns you before the
+hour ends.
+
+**Does it work on an original 3DS or 2DS?**
+No. Kasumi decodes video with the hardware decoder that only the "New"
+models have.
+
+**Why 30 FPS and around 1 Mbps?**
+The 3DS screen and decoder are built for 30 FPS video, and its 2.4 GHz Wi-Fi
+starts losing packets above roughly 1.2 Mbps. Kasumi is tuned for a smooth,
+steady picture within those limits.
+
+**Is my account safe?**
+Kasumi signs in through NVIDIA's own device-code page and never sees your
+password. It is an unofficial client, so, as with any third-party client,
+use it at your own discretion.
+
+**Which games work?**
+Any game in your GeForce NOW library. Games with controller support play
+best; PC launchers and menus can be handled with the touchpad and keyboard.
+
 ## Privacy
 
 Your login is stored only on your SD card in `sdmc:/3ds/kasumi/gfn-session.json`.
@@ -134,9 +182,12 @@ excludes tokens and passwords and is safe to attach to bug reports.
 
 ## Reporting problems
 
-Open an [issue](https://github.com/p0mpurin/Kasumi/issues) with
-`sdmc:/3ds/kasumi/kasumi-diagnostic.txt` attached and, after a crash, the
-newest Luma crash dump. Mention your model, Wi-Fi bars and bitrate setting.
+[Open a bug report](https://github.com/p0mpurin/Kasumi/issues/new?template=bug_report.yml):
+the form asks for your model, Wi-Fi bars and bitrate, and for
+`sdmc:/3ds/kasumi/kasumi-diagnostic.txt` (copy it before opening Kasumi again;
+each start begins a new log). After a crash, attach the newest Luma dump from
+`sdmc:/luma/dumps/arm11/`. Ideas are welcome as
+[feature requests](https://github.com/p0mpurin/Kasumi/issues/new?template=feature_request.yml).
 
 ## Building
 

@@ -48,6 +48,29 @@ enum {
     GFN_PAD_A = 0x1000, GFN_PAD_B = 0x2000, GFN_PAD_X = 0x4000, GFN_PAD_Y = 0x8000
 };
 
+/* Custom button mapping: every remappable 3DS input sends one output. */
+enum {
+    GFN_IN_A, GFN_IN_B, GFN_IN_X, GFN_IN_Y, GFN_IN_L, GFN_IN_R, GFN_IN_ZL, GFN_IN_ZR,
+    GFN_IN_START, GFN_IN_SELECT, GFN_IN_UP, GFN_IN_DOWN, GFN_IN_LEFT, GFN_IN_RIGHT,
+    GFN_INPUT_COUNT
+};
+enum {
+    GFN_OUT_NONE, GFN_OUT_CROSS, GFN_OUT_CIRCLE, GFN_OUT_SQUARE, GFN_OUT_TRIANGLE,
+    GFN_OUT_L1, GFN_OUT_R1, GFN_OUT_L2, GFN_OUT_R2, GFN_OUT_L3, GFN_OUT_R3,
+    GFN_OUT_OPTIONS, GFN_OUT_SHARE, GFN_OUT_PS,
+    GFN_OUT_UP, GFN_OUT_DOWN, GFN_OUT_LEFT, GFN_OUT_RIGHT,
+    GFN_OUTPUT_COUNT
+};
+/* The 3DS key of an input, and the name of an output. */
+u32 gfn_input_key(unsigned input);
+const char *gfn_input_name(unsigned input);
+const char *gfn_output_name(unsigned output);
+/* What each input sends under a layout and trigger choice (no custom map). */
+void gfn_input_default_map(GfnButtonLayout layout, bool swap_shoulders, unsigned char map[GFN_INPUT_COUNT]);
+/* Apply a custom map (NULL returns to the layout's own). */
+void gfn_input_set_custom_map(const unsigned char *map);
+bool gfn_input_custom_map_active(void);
+
 void gfn_input_configure(const GfnInputConfig *config);
 /* Buttons the 3DS lacks (L3, R3, Guide), held from the touch screen. */
 void gfn_input_set_virtual_buttons(uint16_t buttons);

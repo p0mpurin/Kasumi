@@ -73,7 +73,7 @@ void diagnostic_init(void)
     if (g_file) fclose(g_file);
     g_file = fopen(DIAGNOSTIC_PATH, "w");
     if (!g_file) return;
-    fputs(APP_NAME " build " APP_BUILD " diagnostic\n", g_file);
+    fputs(APP_NAME " " APP_VERSION " (build " APP_BUILD ") diagnostic\n", g_file);
     fputs("Privacy: tokens, authorization headers, full SDP and ICE passwords are excluded.\n", g_file);
     fflush(g_file);
     s32 priority = 0x30;
