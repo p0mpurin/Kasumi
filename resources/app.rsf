@@ -104,6 +104,13 @@ AccessControlInfo:
     OutputDebugString: 61
     ControlPerformanceCounter: 62
 
+  # DSP shared memory. ndsp's variables live here; without these mappings the
+  # CIA crashed in ndspInit writing to 0x1ff57ffe (the .3dsx worked because
+  # the Homebrew Launcher's own title maps them).
+  IORegisterMapping:
+    - 1ff50000-1ff57fff
+    - 1ff70000-1ff77fff
+
   ServiceAccessControl:
     - APT:U
     - ac:u

@@ -64,16 +64,37 @@ static char g_status[96] = "not started";
 static bool g_system_ready;
 static bool g_system_attempted;
 
-/* Beta.3 crashed inside ndspInit (crash dump 30: a write to 0x1ff57ffe in
- * ndspSetCounter). ndspInit reads variable addresses back from the DSP in a
- * handshake; it was called from the first audio packet, in the middle of
- * the DTLS handshake and decoder start-up, and got an incomplete reply. The
- * driver now starts once at launch, while the app is idle, and stays up. */
+/* ndsp writes its variables into DSP shared memory at 0x1ff50000 and
+ * 0x1ff70000. A CIA only has those mapped if its exheader asks for them
+ * (resources/app.rsf); beta.3 and beta.4 CIAs did not and crashed in ndspInit
+ * (crash dumps 30-32: a write to 0x1ff57ffe). Check first, and play without
+ * sound rather than crash if they are missing. */
+static bool dsp_memory_mapped(void)
+{
+    static const u32 regions[2] = { 0x1FF50000, 0x1FF70000 };
+    for (int i = 0; i < 2; ++i) {
+        MemInfo info;
+        PageInfo page;
+        if (R_FAILED(svcQueryMemory(&info, &page, regions[i])) || info.state == MEMSTATE_FREE ||
+            info.base_addr + info.size < regions[i] + 0x8000) {
+            diagnostic_log("AUDIO", "dsp memory at %08lX not mapped (state=%lu)",
+                           (unsigned long)regions[i], (unsigned long)info.state);
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Started once at launch while the app is idle, and kept up. */
 bool audio_system_init(void)
 {
     if (g_system_ready) return true;
     if (g_system_attempted) return false;
     g_system_attempted = true;
+    if (!dsp_memory_mapped()) {
+        diagnostic_log("AUDIO", "dsp init skipped: playing without sound");
+        return false;
+    }
     diagnostic_log("AUDIO", "dsp init begin");
     diagnostic_checkpoint();
     const Result result = ndspInit();
