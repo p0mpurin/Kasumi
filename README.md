@@ -61,7 +61,7 @@ affiliated with NVIDIA or with the OpenNOW project.
   wait time that learns from your own queues.
 - **Stream menu** (hold START + SELECT): screenshots, controls sheet, zoom
   zones, gyro, sound and disconnect.
-- **Remote keyboard and touchpad** for PC menus and launchers.
+- **Remote keyboard and touchpad** for launchers, sign-in screens and chat.
 - **Comfort**: five colour themes, stream volume, session timer, automatic
   reconnect, and pause-on-lid-close that resumes on the same rig.
 - **First-run guide** that walks you through everything (skippable).
@@ -171,8 +171,11 @@ password. It is an unofficial client, so, as with any third-party client,
 use it at your own discretion.
 
 **Which games work?**
-Any game in your GeForce NOW library. Games with controller support play
-best; PC launchers and menus can be handled with the touchpad and keyboard.
+Any game in your GeForce NOW library. Kasumi shows up as a standard
+controller, so games with controller support work out of the box, and Steam
+games work too even without native controller support, because Steam Input
+translates the controller for them. The touchpad and keyboard are for
+navigating launchers, sign-in screens and chat, not for playing.
 
 ## Privacy
 
