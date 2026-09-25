@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/p0mpurin/Kasumi/releases/latest"><b>Download</b></a> ·
+  <a href="https://github.com/p0mpurin/Kasumi/releases"><b>Download</b></a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="https://github.com/p0mpurin/Kasumi/issues/new/choose">Report a problem</a>
