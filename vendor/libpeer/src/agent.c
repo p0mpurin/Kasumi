@@ -526,6 +526,15 @@ static int agent_has_frozen_candidate_pair(Agent* agent, int start) {
   return 0;
 }
 
+void agent_send_consent_check(Agent* agent) {
+  if (!agent->selected_pair || !agent->nominated_pair) return;
+  StunMessage msg;
+  memset(&msg, 0, sizeof(msg));
+  agent_create_binding_request(agent, &msg);
+  if (agent_socket_send(agent, &agent->selected_pair->remote->addr, msg.buf, msg.size) >= 0)
+    agent->last_binding_request_sent_ms = ports_get_epoch_time();
+}
+
 int agent_connectivity_check(Agent* agent) {
   char addr_string[ADDRSTRLEN];
   uint8_t buf[1400];

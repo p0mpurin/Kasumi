@@ -42,6 +42,7 @@ struct PeerConnection {
   uint8_t agent_buf[CONFIG_MTU];
   int agent_ret;
   int dtls_pending;
+  uint32_t last_consent_check_ms;
   int b_local_description_created;
   int remote_ice_lite;
 
@@ -662,6 +663,12 @@ int peer_connection_loop(PeerConnection* pc) {
       break;
     case PEER_CONNECTION_COMPLETED:
       sctp_tick(&pc->sctp);
+      /* The ICE round trip was only measured while connecting, so the
+       * ping shown in the stream stats never changed after that. */
+      if ((uint32_t)(ports_get_epoch_time() - pc->last_consent_check_ms) >= 2000) {
+        pc->last_consent_check_ms = ports_get_epoch_time();
+        agent_send_consent_check(&pc->agent);
+      }
       if (pc->dtls_pending || mbedtls_ssl_check_pending(&pc->dtls_srtp.ssl)) {
         packet_processed = peer_connection_read_dtls(pc) > 0;
         if (packet_processed || pc->dtls_pending || pc->state != PEER_CONNECTION_COMPLETED)

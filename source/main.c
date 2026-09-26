@@ -1215,33 +1215,11 @@ static bool wifi_connected(void)
     return connected;
 }
 
-/* The system turns Wi-Fi off a couple of seconds after the lid shuts, even
- * with sleep held off (beta.8 log: lid closed at 280.8 s, DNS failing from
- * 283.0 s). Ask for it back once per pause, as the HOME Menu's wireless
- * switch does, and log whether that worked. */
-static void keep_wifi_on(bool paused)
-{
-    static bool tried;
-    if (!paused) {
-        tried = false;
-        return;
-    }
-    if (tried || wifi_connected()) return;
-    tried = true;
-    Result rc = nwmExtInit();
-    if (R_SUCCEEDED(rc)) {
-        rc = NWMEXT_ControlWirelessEnabled(true);
-        nwmExtExit();
-    }
-    diagnostic_log("APP", "lid closed: Wi-Fi went off; re-enable rc=%08lX", (unsigned long)rc);
-}
-
 /* "Pause": with the lid shut the stream stays connected but the sound and
  * the controls are held; opening it shows a short "Welcome back" card. */
 static void track_lid_pause(bool paused)
 {
     static u64 paused_at;
-    keep_wifi_on(paused);
     if (paused == g_app.lid_paused) return;
     g_app.lid_paused = paused;
     const u64 now = osGetTime();

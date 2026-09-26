@@ -33,8 +33,17 @@ static void record(NvstSignal *s, const char *event)
         s->empty_polls, s->close_code);
 }
 
+/* Reconnects to the same session sign in with the same peer name, so the
+ * server can hand the stream straight back instead of waiting out the old
+ * connection (beta.9: a fresh name got no offer for 30 s). If that reused
+ * name gets nowhere, the next try uses a new one. */
+static char g_last_session[160], g_last_peer[32];
+static bool g_reuse_failed;
+
 static bool fail(NvstSignal *s, const char *message)
 {
+    if (s->reconnect && !s->offer_size && !g_reuse_failed && !strcmp(s->peer_name, g_last_peer))
+        g_reuse_failed = true;
     s->state = NVST_SIGNAL_ERROR;
     snprintf(s->status, sizeof(s->status), "%s", message);
     record(s, "failure");
@@ -317,7 +326,17 @@ bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_
         return fail(s, "NVST secure random seed failed");
     uint32_t peer_random;
     if (!random_bytes(s, (unsigned char *)&peer_random, sizeof(peer_random))) return fail(s, "NVST random failed");
-    snprintf(s->peer_name, sizeof(s->peer_name), "peer-%lu", (unsigned long)peer_random);
+    s->reconnect = !strcmp(session_id, g_last_session);
+    if (!s->reconnect) g_reuse_failed = false;
+    if (s->reconnect && g_last_peer[0] && !g_reuse_failed) {
+        snprintf(s->peer_name, sizeof(s->peer_name), "%s", g_last_peer);
+    } else {
+        snprintf(s->peer_name, sizeof(s->peer_name), "peer-%lu", (unsigned long)peer_random);
+        g_reuse_failed = false;
+    }
+    snprintf(g_last_session, sizeof(g_last_session), "%s", session_id);
+    snprintf(g_last_peer, sizeof(g_last_peer), "%s", s->peer_name);
+    diagnostic_log("NVST", "%s peer=%s", s->reconnect ? "reconnect" : "connect", s->peer_name);
     char base[640], url[960], connection[1024];
     if (strlen(base_url) >= sizeof(base) || strpbrk(base_url, "\r\n")) return fail(s, "Invalid signaling URL length/characters");
     snprintf(base, sizeof(base), "%s", base_url);
@@ -371,7 +390,11 @@ void nvst_signal_tick(NvstSignal *s)
         }
         if (!nvst_signal_active(s)) return;
     }
-    if (!s->offer_size && osGetTime()-s->started_ms >= 30000) fail(s, "No SDP offer within 30s; see NVST counters");
+    /* A reconnect normally gets its offer within 2 s; waiting 30 s for a
+     * server that is not going to send one only delays the next try. */
+    const u64 offer_wait = s->reconnect ? 12000 : 30000;
+    if (!s->offer_size && osGetTime()-s->started_ms >= offer_wait)
+        fail(s, s->reconnect ? "No SDP offer within 12s after reconnecting" : "No SDP offer within 30s; see NVST counters");
 }
 
 bool nvst_signal_send_answer(NvstSignal *s, const char *sdp, const char *nvst)

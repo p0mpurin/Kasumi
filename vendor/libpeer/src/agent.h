@@ -111,6 +111,10 @@ int agent_fail_nominated_remote(Agent* agent);
 
 int agent_connectivity_check(Agent* agent);
 
+/* A binding request on the selected pair once connected (consent
+ * freshness); its response updates the smoothed round-trip time. */
+void agent_send_consent_check(Agent* agent);
+
 void agent_clear_candidates(Agent* agent);
 
 int agent_create(Agent* agent);
