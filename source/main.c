@@ -1201,11 +1201,47 @@ static void queue_stats_load(void)
     json_decref(root);
 }
 
+/* Connected to an access point (ac:u), checked at most twice a second. */
+static bool wifi_connected(void)
+{
+    static u64 checked_at;
+    static bool connected = true;
+    const u64 now = osGetTime();
+    if (now - checked_at >= 500) {
+        checked_at = now;
+        u32 status = 0;
+        connected = R_SUCCEEDED(ACU_GetWifiStatus(&status)) && status != 0;
+    }
+    return connected;
+}
+
+/* The system turns Wi-Fi off a couple of seconds after the lid shuts, even
+ * with sleep held off (beta.8 log: lid closed at 280.8 s, DNS failing from
+ * 283.0 s). Ask for it back once per pause, as the HOME Menu's wireless
+ * switch does, and log whether that worked. */
+static void keep_wifi_on(bool paused)
+{
+    static bool tried;
+    if (!paused) {
+        tried = false;
+        return;
+    }
+    if (tried || wifi_connected()) return;
+    tried = true;
+    Result rc = nwmExtInit();
+    if (R_SUCCEEDED(rc)) {
+        rc = NWMEXT_ControlWirelessEnabled(true);
+        nwmExtExit();
+    }
+    diagnostic_log("APP", "lid closed: Wi-Fi went off; re-enable rc=%08lX", (unsigned long)rc);
+}
+
 /* "Pause": with the lid shut the stream stays connected but the sound and
  * the controls are held; opening it shows a short "Welcome back" card. */
 static void track_lid_pause(bool paused)
 {
     static u64 paused_at;
+    keep_wifi_on(paused);
     if (paused == g_app.lid_paused) return;
     g_app.lid_paused = paused;
     const u64 now = osGetTime();
@@ -1216,8 +1252,10 @@ static void track_lid_pause(bool paused)
         return;
     }
     const u64 away = paused_at ? now - paused_at : 0;
-    diagnostic_log("APP", "lid opened after %llu ms: resumed without reconnecting", (unsigned long long)away);
-    if (away >= 1500) {
+    const bool dropped = g_transport.state == WEBRTC_FAILED || g_signal.state == NVST_SIGNAL_ERROR;
+    diagnostic_log("APP", "lid opened after %llu ms: %s", (unsigned long long)away,
+                   dropped ? "connection dropped, reconnecting" : "resumed without reconnecting");
+    if (away >= 1500 && !dropped) {
         g_app.welcome_at = now;
         g_app.welcome_away_s = (unsigned)(away / 1000);
     }
@@ -1368,6 +1406,11 @@ static void track_session(void)
     /* A dropped connection mid-game: the rig is still ours, so reconnect the
      * media instead of sending the player back to the library. */
     const bool dropped = g_transport.state == WEBRTC_FAILED || g_signal.state == NVST_SIGNAL_ERROR;
+    static u64 wifi_wait_since, wifi_back_at;
+    if (!dropped) {
+        g_app.waiting_wifi = false;
+        wifi_wait_since = wifi_back_at = 0;
+    }
     if (!dropped || !g_app.stream_started_at || g_leave_pending || net_worker_busy()) return;
     if (g_client.session_state != GFN_SESSION_READY || g_app.reconnect_attempt > 3) return;
     /* 404/410 on the signalling upgrade: NVIDIA has closed the session, so
@@ -1377,7 +1420,31 @@ static void track_session(void)
         g_app.reconnect_attempt = 4;
         return;
     }
-    if (reconnect_at && now - reconnect_at < 2500) return;
+    /* No Wi-Fi (lid shut, or out of range): retrying now only burns the
+     * three attempts on "Couldn't resolve host name". Wait for the lid to
+     * open and Wi-Fi to come back (up to 30 s), then let it settle. */
+    if (g_app.lid_paused || !wifi_connected()) {
+        if (!wifi_wait_since) {
+            wifi_wait_since = now;
+            diagnostic_log("APP", "connection lost with %s; waiting before reconnecting",
+                           g_app.lid_paused ? "the lid closed" : "Wi-Fi off");
+        }
+        wifi_back_at = 0;
+        if (g_app.lid_paused || now - wifi_wait_since < 30000) {
+            g_app.waiting_wifi = true;
+            return;
+        }
+    } else if (wifi_wait_since) {
+        if (!wifi_back_at) {
+            wifi_back_at = now;
+            diagnostic_log("APP", "Wi-Fi back after %llu ms", (unsigned long long)(now - wifi_wait_since));
+        }
+        if (now - wifi_back_at < 1500) return;
+        wifi_wait_since = wifi_back_at = 0;
+        g_app.reconnect_attempt = 0;
+    }
+    g_app.waiting_wifi = false;
+    if (reconnect_at && now - reconnect_at < 2500 && g_app.reconnect_attempt) return;
     if (g_app.reconnect_attempt == 3) {
         /* Three tries failed: hand the choice back to the player. */
         if (now - reconnect_at >= 8000) g_app.reconnect_attempt = 4;

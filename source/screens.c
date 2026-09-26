@@ -790,7 +790,7 @@ static void draw_session_top(const App *app)
     const GfnClient *client = app->client;
     const bool failed = session_failed(app);
     const int stage = session_stage(app);
-    const bool reconnecting = app->reconnect_attempt > 0 && app->reconnect_attempt <= 3;
+    const bool reconnecting = (app->reconnect_attempt > 0 && app->reconnect_attempt <= 3) || app->waiting_wifi;
     static const char *const kanji[] = { "待", "準", "接", "始" };
     static const char *const jp[] = { "待機中", "準備中", "接続中", "開始" };
     static const char *const en[] = { "IN QUEUE", "PREPARING RIG", "CONNECTING", "STARTING STREAM" };
@@ -813,9 +813,14 @@ static void draw_session_top(const App *app)
         ui_text(200, 70, 26, UI_TEXT, UI_ALIGN_CENTER, "再");
         draw_title(200, 126, "再接続中", "RECONNECTING");
         ui_text_fit(200, 156, 13, UI_TEXT_DIM, UI_ALIGN_CENTER, 360, app->game_title);
-        ui_textf(200, 172, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
-                 "The connection dropped. Attempt %u of 3; your game keeps running.",
-                 app->reconnect_attempt);
+        if (app->waiting_wifi)
+            ui_text(200, 172, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
+                    app->lid_paused ? "Paused with the lid closed; reconnecting when you open it."
+                                    : "Waiting for Wi-Fi to come back; your game keeps running.");
+        else
+            ui_textf(200, 172, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
+                     "The connection dropped. Attempt %u of 3; your game keeps running.",
+                     app->reconnect_attempt);
     } else {
         if (stage == 0 && client->queue_position > 0)
             ui_textf(200, 70, 26, UI_TEXT, UI_ALIGN_CENTER, "%d", client->queue_position);
@@ -1749,7 +1754,7 @@ static void draw_session_bottom(const App *app)
     if (app->wifi_bars < 2)
         ui_text(160, 160, 11, UI_KIN, UI_ALIGN_CENTER, "Weak Wi-Fi: move closer to the router.");
 
-    if (session_failed(app) && (app->reconnect_attempt == 0 || app->reconnect_attempt > 3)) {
+    if (session_failed(app) && !app->waiting_wifi && (app->reconnect_attempt == 0 || app->reconnect_attempt > 3)) {
         ui_button(PAIR_LEFT, "RETRY", "再試行", UI_BUTTON_PRIMARY, pressed(app, PAIR_LEFT));
         ui_button(PAIR_RIGHT, "LEAVE", "退出", UI_BUTTON_DANGER, pressed(app, PAIR_RIGHT));
     } else {
@@ -2167,7 +2172,7 @@ AppAction screens_touch(const App *app, int x, int y)
         if (ui_hit(SET_BACK, x, y)) return ACTION_BACK;
         break;
     case VIEW_SESSION:
-        if (session_failed(app) && (app->reconnect_attempt == 0 || app->reconnect_attempt > 3)) {
+        if (session_failed(app) && !app->waiting_wifi && (app->reconnect_attempt == 0 || app->reconnect_attempt > 3)) {
             if (ui_hit(PAIR_LEFT, x, y)) return ACTION_RETRY;
             if (ui_hit(PAIR_RIGHT, x, y)) return ACTION_CANCEL;
         } else if (ui_hit(SINGLE, x, y)) {

@@ -177,6 +177,9 @@ typedef struct {
     int continue_index;
     /* Lid closed mid-game with "Pause": screens off, sound and input held. */
     bool lid_paused;
+    /* The connection dropped while Wi-Fi was off (the system turns it off
+     * with the lid shut): waiting for it before reconnecting. */
+    bool waiting_wifi;
     /* The "Welcome back" card after a lid pause: when it started (0 none)
      * and how long the lid was shut. */
     u64 welcome_at;

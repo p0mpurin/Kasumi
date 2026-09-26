@@ -122,6 +122,7 @@ AccessControlInfo:
     - dsp::DSP
     - ir:rst
     - mvd:STD
+    - nwm::EXT
     - gsp::Lcd
     - mcu::HWC
     - ptm:u
