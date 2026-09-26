@@ -111,6 +111,12 @@ AccessControlInfo:
     - 1ff50000-1ff57fff
     - 1ff70000-1ff77fff
 
+  # VRAM, read-only. Opening the software keyboard (Search) makes libctru copy
+  # the screen, which lives in VRAM, as the keyboard's backdrop; without this
+  # the CIA crashed there (crash dump 33, aptConvertScreenForCapture).
+  MemoryMapping:
+    - 1f000000-1f5fffff:r
+
   # Every service Kasumi opens must be listed here and its system module in
   # Dependency below. The .3dsx inherits the Homebrew Launcher's list, so a
   # gap only shows up in the CIA: beta.5 froze the whole console at stream
