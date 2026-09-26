@@ -289,7 +289,7 @@ static unsigned setting_option(const App *app, int setting, unsigned *count)
     case SETTING_THEME: *count = UI_THEME_COUNT; return s->theme;
     case SETTING_VOLUME: *count = 6; return s->volume;
     case SETTING_MENU_AUDIO: *count = 2; return s->mute_in_menus ? 1 : 0;
-    case SETTING_LID: *count = 2; return s->lid_keeps_playing ? 1 : 0;
+    case SETTING_LID: *count = LID_MODE_COUNT; return s->lid_mode;
     case SETTING_AUTO_UPDATE: *count = 2; return s->auto_update ? 0 : 1;
     case SETTING_UPDATE_CHANNEL: *count = 2; return s->update_beta ? 1 : 0;
     default: *count = 0; return 0;
@@ -323,7 +323,8 @@ static const char *setting_value(const App *app, int setting)
         return levels[s->volume < 6 ? s->volume : 5];
     }
     case SETTING_MENU_AUDIO: return s->mute_in_menus ? "Muted" : "Keep playing";
-    case SETTING_LID: return s->lid_keeps_playing ? "Keep streaming" : "Pause & resume";
+    case SETTING_LID: return s->lid_mode == LID_KEEP_PLAYING ? "Keep playing" :
+                             s->lid_mode == LID_SLEEP ? "Sleep" : "Pause";
     case SETTING_CONNECTION: {
         static char result[48];
         const GfnClient *c = app->client;
@@ -410,9 +411,11 @@ static const char *setting_description(const App *app, int setting)
         return s->update_beta ? "Beta: get test versions first. They may have rough edges."
                               : "Stable: only finished releases.";
     case SETTING_LID:
-        return s->lid_keeps_playing
-            ? "Closing the lid only turns the screens off; the stream keeps running (and using battery)."
-            : "Closing the lid sleeps the console. On opening it, Kasumi reconnects to the same rig if NVIDIA still holds it.";
+        return s->lid_mode == LID_KEEP_PLAYING
+            ? "Closing the lid turns the screens off; the game and its sound keep running."
+            : s->lid_mode == LID_SLEEP
+            ? "Closing the lid sleeps the console to save battery. On opening it, Kasumi reconnects to the same rig."
+            : "Closing the lid turns the screens and sound off but stays connected: open it and you are straight back in.";
     case SETTING_ACCOUNT:
         return "Remove the saved NVIDIA login from this console's SD card.";
     }
@@ -444,7 +447,7 @@ void screens_setting_change(App *app, int setting, int direction)
     case SETTING_THEME: s->theme = (s->theme + UI_THEME_COUNT + step) % UI_THEME_COUNT; break;
     case SETTING_VOLUME: s->volume = (s->volume + 6 + step) % 6; break;
     case SETTING_MENU_AUDIO: s->mute_in_menus = !s->mute_in_menus; break;
-    case SETTING_LID: s->lid_keeps_playing = !s->lid_keeps_playing; break;
+    case SETTING_LID: s->lid_mode = (s->lid_mode + LID_MODE_COUNT + step) % LID_MODE_COUNT; break;
     case SETTING_AUTO_UPDATE: s->auto_update = !s->auto_update; break;
     case SETTING_UPDATE_CHANNEL: s->update_beta = !s->update_beta; break;
     case SETTING_BITRATE:
@@ -1958,6 +1961,8 @@ static void draw_stream_header(const App *app)
     ui_hline(0, 23, UI_BOTTOM_WIDTH, ending ? UI_KIN : UI_LINE);
 }
 
+static void draw_welcome_back(const App *app);
+
 static void draw_stream_bottom(const App *app, float overlay_p)
 {
     const WebRtcTransport *t = app->transport;
@@ -2002,6 +2007,39 @@ static void draw_stream_bottom(const App *app, float overlay_p)
     }
     if (app->controls_open) draw_controls_sheet(app, overlay_p);
     else if (app->stream_menu) draw_stream_menu(app, overlay_p);
+    else draw_welcome_back(app);
+}
+
+/* After a lid pause: a short card over the lower screen's panel. */
+#define WELCOME_MS 3200
+static bool welcome_visible(const App *app)
+{
+    return app->welcome_at && osGetTime() - app->welcome_at < WELCOME_MS;
+}
+
+static void draw_welcome_back(const App *app)
+{
+    if (!welcome_visible(app)) return;
+    const u64 t = osGetTime() - app->welcome_at;
+    float a = 1.0f;
+    if (t < 250) a = t / 250.0f;
+    else if (t > WELCOME_MS - 500) a = (WELCOME_MS - t) / 500.0f;
+    const float e = ui_ease_out(a);
+    const u8 alpha = (u8)(0xFF * e);
+    const UiRect p = STR_PANEL;
+    ui_offset(0.0f, (1.0f - e) * 6.0f);
+    ui_rect(p.x, p.y, p.w, p.h, ui_with_alpha(UI_BG, (u8)(0xF0 * e)));
+    ui_outline(p.x, p.y, p.w, p.h, 1.0f, ui_with_alpha(UI_ACCENT, alpha));
+    ui_enso(160, p.y + 26, 15, ui_with_alpha(UI_ACCENT, alpha));
+    ui_text(160, p.y + 48, 15, ui_with_alpha(UI_ACCENT, alpha), UI_ALIGN_CENTER, "おかえり");
+    ui_label(160, p.y + 67, 11, ui_with_alpha(UI_TEXT, alpha), UI_ALIGN_CENTER, "WELCOME BACK");
+    char away[48];
+    if (app->welcome_away_s >= 90)
+        snprintf(away, sizeof(away), "Paused %u min · still connected", (app->welcome_away_s + 30) / 60);
+    else
+        snprintf(away, sizeof(away), "Paused %u s · still connected", app->welcome_away_s);
+    ui_text(160, p.y + 83, 11, ui_with_alpha(UI_TEXT_DIM, alpha), UI_ALIGN_CENTER, away);
+    ui_offset(0.0f, 0.0f);
 }
 
 static void draw_modal_bottom(const App *app, float p)
@@ -2028,7 +2066,7 @@ void screens_draw_bottom(const App *app)
                         app->controls_open ? 2 : app->stream_menu ? 1 : app->options_open ? 3 : 0;
     const float p = view_progress(&g_bottom_anim, (int)app->view, overlay);
     const float op = overlay_progress(&g_bottom_anim);
-    g_bottom_busy_animating = p < 1.0f || (overlay && op < 1.0f) ||
+    g_bottom_busy_animating = p < 1.0f || (overlay && op < 1.0f) || welcome_visible(app) ||
                               (app->view == VIEW_SETTINGS && app->setting_index >= 0 &&
                                (screens_setting_at(app->setting_index) == SETTING_GYRO));
     ui_offset(0.0f, (1.0f - p) * 8.0f);

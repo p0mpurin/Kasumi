@@ -1201,6 +1201,29 @@ static void queue_stats_load(void)
     json_decref(root);
 }
 
+/* "Pause": with the lid shut the stream stays connected but the sound and
+ * the controls are held; opening it shows a short "Welcome back" card. */
+static void track_lid_pause(bool paused)
+{
+    static u64 paused_at;
+    if (paused == g_app.lid_paused) return;
+    g_app.lid_paused = paused;
+    const u64 now = osGetTime();
+    if (paused) {
+        paused_at = now;
+        g_app.welcome_at = 0;
+        diagnostic_log("APP", "lid closed: paused, connection kept");
+        return;
+    }
+    const u64 away = paused_at ? now - paused_at : 0;
+    diagnostic_log("APP", "lid opened after %llu ms: resumed without reconnecting", (unsigned long long)away);
+    if (away >= 1500) {
+        g_app.welcome_at = now;
+        g_app.welcome_away_s = (unsigned)(away / 1000);
+    }
+    paused_at = 0;
+}
+
 static void track_queue(void)
 {
     static u64 queued_at;
@@ -1208,11 +1231,16 @@ static void track_queue(void)
     static bool alert_pending;
     static u64 lid_checked_at;
     const u64 now = osGetTime();
-    /* Lid shut while waiting for a rig: screens off to save battery. */
+    /* Lid shut while waiting for a rig, or mid-game with sleep held off
+     * ("Pause" and "Keep playing"): screens off to save battery. */
     if (now - lid_checked_at >= 400) {
         lid_checked_at = now;
-        const bool waiting = gfn_session_active(&g_client) && !g_app.stream_started_at;
-        queue_alert_screens(waiting && queue_alert_lid_closed());
+        const bool closed = queue_alert_lid_closed();
+        const bool session = gfn_session_active(&g_client);
+        const bool waiting = session && !g_app.stream_started_at;
+        const bool playing = session && g_app.stream_started_at && g_app.settings.lid_mode != LID_SLEEP;
+        queue_alert_screens((waiting || playing) && closed);
+        track_lid_pause(playing && closed && g_app.settings.lid_mode == LID_PAUSE);
     }
     /* After a real queue, the rig being ready is worth a chime and a light. */
     if (alert_pending && g_client.session_state == GFN_SESSION_READY) {
@@ -1267,7 +1295,7 @@ static void track_session(void)
     } else if (shot_result < 0) {
         show_notice("Screenshot could not be saved to the SD card");
     }
-    audio_output_set_muted(g_app.sound_muted ||
+    audio_output_set_muted(g_app.sound_muted || g_app.lid_paused ||
                            (g_app.settings.mute_in_menus && (g_app.stream_menu || g_app.controls_open)));
 
     static bool was_active;
@@ -1796,19 +1824,19 @@ int main(int argc, char **argv)
         const bool streaming = g_app.view == VIEW_STREAM;
         gfn_input_set_virtual_buttons(streaming && g_app.touching
             ? screens_stream_held_buttons(&g_app, touch.px, touch.py) : 0);
-        gfn_input_set_suppressed(!streaming || g_app.stream_menu || g_app.controls_open || g_app.modal != MODAL_NONE);
+        gfn_input_set_suppressed(!streaming || g_app.stream_menu || g_app.controls_open || g_app.modal != MODAL_NONE ||
+                                 g_app.lid_paused);
 
         tick_network();
         refresh_device_status();
         log_session();
 
-        /* "Keep streaming" holds the console awake for the whole session;
-         * "Pause & resume" lets the lid sleep it and reconnects on waking. */
         /* While queued or setting up, stay awake even with the lid shut so
-         * the queue keeps moving and the alert can fire; once playing, the
-         * "Closing the lid" setting decides. */
+         * the queue keeps moving and the alert can fire. Once playing, only
+         * "Sleep" lets the lid sleep the console (and reconnects on waking);
+         * "Pause" and "Keep playing" hold the connection with screens off. */
         const bool want_sleep = !gfn_session_active(&g_client) ||
-                                (g_app.stream_started_at && !g_app.settings.lid_keeps_playing);
+                                (g_app.stream_started_at && g_app.settings.lid_mode == LID_SLEEP);
         if (want_sleep != sleep_allowed) {
             aptSetSleepAllowed(want_sleep);
             sleep_allowed = want_sleep;

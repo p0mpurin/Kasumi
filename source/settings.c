@@ -23,7 +23,7 @@ void settings_defaults(AppSettings *settings)
     settings->theme = 0;
     settings->volume = 5;
     settings->mute_in_menus = false;
-    settings->lid_keeps_playing = false;
+    settings->lid_mode = LID_PAUSE;
     settings->guide_done = false;
     settings->auto_update = true;
     /* Kasumi's own releases are betas for now, so beta is the default
@@ -80,7 +80,9 @@ bool settings_load(AppSettings *settings)
     settings->theme = (unsigned)read_int(root, "theme", (int)settings->theme, UI_THEME_COUNT);
     settings->volume = (unsigned)read_int(root, "volume", (int)settings->volume, 6);
     settings->mute_in_menus = read_bool(root, "mute_in_menus", settings->mute_in_menus);
-    settings->lid_keeps_playing = read_bool(root, "lid_keeps_playing", settings->lid_keeps_playing);
+    /* Older settings files only had lid_keeps_playing (true: keep playing). */
+    const int lid_fallback = read_bool(root, "lid_keeps_playing", false) ? LID_KEEP_PLAYING : LID_PAUSE;
+    settings->lid_mode = (unsigned)read_int(root, "lid_mode", lid_fallback, LID_MODE_COUNT);
     settings->guide_done = read_bool(root, "guide_done", settings->guide_done);
     settings->auto_update = read_bool(root, "auto_update", settings->auto_update);
     settings->update_beta = read_bool(root, "update_beta", settings->update_beta);
@@ -92,7 +94,7 @@ bool settings_save(const AppSettings *settings)
 {
     mkdir("sdmc:/3ds", 0777);
     mkdir(APP_DATA_DIR, 0777);
-    json_t *root = json_pack("{s:i,s:i,s:b,s:b,s:b,s:b,s:b,s:i,s:b,s:i,s:i,s:i,s:i,s:b,s:b,s:b,s:b,s:b}",
+    json_t *root = json_pack("{s:i,s:i,s:b,s:b,s:b,s:b,s:b,s:i,s:b,s:i,s:i,s:i,s:i,s:b,s:i,s:b,s:b,s:b}",
                              "button_layout", (int)settings->button_layout,
                              "deadzone", (int)settings->deadzone,
                              "swap_shoulders", settings->swap_shoulders,
@@ -107,7 +109,7 @@ bool settings_save(const AppSettings *settings)
                              "theme", (int)settings->theme,
                              "volume", (int)settings->volume,
                              "mute_in_menus", settings->mute_in_menus,
-                             "lid_keeps_playing", settings->lid_keeps_playing,
+                             "lid_mode", (int)settings->lid_mode,
                              "guide_done", settings->guide_done,
                              "auto_update", settings->auto_update,
                              "update_beta", settings->update_beta);

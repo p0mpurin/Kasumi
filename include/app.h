@@ -175,6 +175,12 @@ typedef struct {
     int queue_eta;
     /* The most recently played library game (-1 none), for "Continue". */
     int continue_index;
+    /* Lid closed mid-game with "Pause": screens off, sound and input held. */
+    bool lid_paused;
+    /* The "Welcome back" card after a lid pause: when it started (0 none)
+     * and how long the lid was shut. */
+    u64 welcome_at;
+    unsigned welcome_away_s;
     /* Transient message (notice) with its expiry, shown as a toast. */
     const char *toast;
     unsigned stream_frame_base;

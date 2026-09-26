@@ -15,6 +15,8 @@ typedef enum {
     DEADZONE_COUNT
 } DeadzoneLevel;
 
+enum { LID_PAUSE, LID_SLEEP, LID_KEEP_PLAYING, LID_MODE_COUNT };
+
 typedef struct {
     GfnButtonLayout button_layout;
     DeadzoneLevel deadzone;
@@ -38,9 +40,9 @@ typedef struct {
     /* Stream volume in steps of 20 %: 0 = mute ... 5 = 100 %. */
     unsigned volume;
     bool mute_in_menus;
-    /* Closing the lid mid-game: pause (sleep, reconnect on open) or keep
-     * streaming with the screens off. */
-    bool lid_keeps_playing;
+    /* Closing the lid mid-game (LID_*): pause with the connection kept,
+     * sleep and reconnect on opening, or keep playing with the screens off. */
+    unsigned lid_mode;
     /* The first-run guide was finished or skipped. */
     bool guide_done;
     /* Look for updates once or twice a day; include pre-releases (beta). */
