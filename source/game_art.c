@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
 
 #include "app_paths.h"
 #include "diagnostic.h"
@@ -32,6 +34,12 @@
 #define ART_PIXELS (GAME_ART_WIDTH * GAME_ART_HEIGHT)
 /* Stored as 24-bit RGB on the card, RGBA8 in memory (no 16-bit banding). */
 #define ART_FILE_BYTES (ART_PIXELS * 3)
+/* Bumped when older cached covers must not be trusted: v2 (beta.11) drops
+ * covers that may have been saved from a cut-off download. */
+#define ART_CACHE_VERSION 2
+#define ART_VERSION_PATH ART_DIR "/version"
+/* A cover that failed is tried again after this long. */
+#define ART_RETRY_MS 8000
 
 typedef enum { ART_FREE, ART_WANTED, ART_LOADING, ART_DECODED, ART_READY, ART_FAILED } ArtState;
 
@@ -44,6 +52,7 @@ typedef struct {
     C3D_Tex tex;
     Tex3DS_SubTexture subtex;
     u64 used_at;
+    u64 failed_at;
 } ArtSlot;
 
 static ArtSlot g_slots[ART_SLOTS];
@@ -54,11 +63,43 @@ static LightLock g_lock = 1;
 static struct { char key[48]; char url[192]; } g_prefetch[PREFETCH_MAX];
 static unsigned g_prefetch_count, g_prefetch_next;
 
+/* Clear the SD cache once when ART_CACHE_VERSION changes. */
+static void check_cache_version(void)
+{
+    FILE *f = fopen(ART_VERSION_PATH, "r");
+    int version = 0;
+    if (f) {
+        if (fscanf(f, "%d", &version) != 1) version = 0;
+        fclose(f);
+    }
+    if (version == ART_CACHE_VERSION) return;
+    unsigned removed = 0;
+    DIR *dir = opendir(ART_DIR);
+    if (dir) {
+        struct dirent *entry;
+        char path[160];
+        while ((entry = readdir(dir))) {
+            const size_t n = strlen(entry->d_name);
+            if (n < 5 || strcmp(entry->d_name + n - 4, ".rgb")) continue;
+            snprintf(path, sizeof(path), "%s/%s", ART_DIR, entry->d_name);
+            if (unlink(path) == 0) ++removed;
+        }
+        closedir(dir);
+    }
+    f = fopen(ART_VERSION_PATH, "w");
+    if (f) {
+        fprintf(f, "%d\n", ART_CACHE_VERSION);
+        fclose(f);
+    }
+    diagnostic_log("ART", "cache v%d -> v%d: removed %u covers", version, ART_CACHE_VERSION, removed);
+}
+
 void game_art_init(void)
 {
     LightLock_Init(&g_lock);
     memset(g_slots, 0, sizeof(g_slots));
     mkdir(ART_DIR, 0777);
+    check_cache_version();
 }
 
 void game_art_exit(void)
@@ -103,7 +144,12 @@ void game_art_want(const GfnGame *game)
             snprintf(slot->url, sizeof(slot->url), "%s", game->image_url);
         }
     }
-    if (slot) slot->used_at = osGetTime();
+    if (slot) {
+        slot->used_at = osGetTime();
+        /* A failed cover (network hiccup) gets another go after a while. */
+        if (slot->state == ART_FAILED && slot->used_at - slot->failed_at >= ART_RETRY_MS)
+            slot->state = ART_WANTED;
+    }
     LightLock_Unlock(&g_lock);
 }
 
@@ -120,6 +166,12 @@ void game_art_pump(void)
         u32 *linear = linearAlloc(TEX_SIZE * TEX_SIZE * sizeof(u32));
         bool ok = linear && C3D_TexInit(&slot->tex, TEX_SIZE, TEX_SIZE, GPU_RGBA8);
         if (ok) {
+            /* The transfer writes the texture behind the CPU's back. After a
+             * stream this memory held video buffers the CPU wrote to; any of
+             * those lines still dirty in the data cache would later be
+             * written back over the cover (blocks of it missing). Flush
+             * them out first. */
+            GSPGPU_FlushDataCache(slot->tex.data, slot->tex.size);
             memset(linear, 0, TEX_SIZE * TEX_SIZE * sizeof(u32));
             for (int y = 0; y < GAME_ART_HEIGHT; ++y)
                 memcpy(linear + y * TEX_SIZE, pixels + y * GAME_ART_WIDTH, GAME_ART_WIDTH * sizeof(u32));
@@ -145,6 +197,7 @@ void game_art_pump(void)
         free(slot->pixels);
         slot->pixels = NULL;
         slot->state = ok ? ART_READY : ART_FAILED;
+        if (!ok) slot->failed_at = osGetTime();
         LightLock_Unlock(&g_lock);
     }
 }
@@ -251,6 +304,20 @@ static void save_to_disk(const char *key, const unsigned char *rgb)
     fclose(f);
 }
 
+/* The file ends where it should: JPEG end-of-image marker or PNG IEND. */
+static bool image_complete(const unsigned char *data, size_t size)
+{
+    if (size >= 4 && data[0] == 0xFF && data[1] == 0xD8) {
+        const size_t from = size > 32 ? size - 32 : 2;
+        for (size_t i = size - 2; i + 1 > from; --i)
+            if (data[i] == 0xFF && data[i + 1] == 0xD9) return true;
+        return false;
+    }
+    if (size >= 12 && data[0] == 0x89 && data[1] == 'P')
+        return memcmp(data + size - 8, "IEND", 4) == 0;
+    return true;
+}
+
 static unsigned char *download(const char *url)
 {
     /* img.nvidiagrid.net resizes on request; three times the display width
@@ -267,7 +334,12 @@ static unsigned char *download(const char *url)
         return NULL;
     }
     unsigned char *pixels = NULL;
-    if (response.status == 200 && response.body && response.size) {
+    if (response.status == 200 && response.body && response.size && !image_complete(
+            (const unsigned char *)response.body, response.size)) {
+        /* stb_image decodes a cut-off JPEG without complaint, grey where the
+         * data stopped; such a cover must not reach the SD cache. */
+        diagnostic_log("ART", "incomplete image bytes=%lu", (unsigned long)response.size);
+    } else if (response.status == 200 && response.body && response.size) {
         int w = 0, h = 0, comp = 0;
         unsigned char *rgb = stbi_load_from_memory((const unsigned char *)response.body,
                                                    (int)response.size, &w, &h, &comp, 3);
@@ -348,6 +420,7 @@ bool game_art_work(void)
     if (slot->state == ART_LOADING && !strcmp(slot->key, key)) {
         slot->pixels = pixels;
         slot->state = pixels ? ART_DECODED : ART_FAILED;
+        if (!pixels) slot->failed_at = osGetTime();
         pixels = NULL;
     }
     LightLock_Unlock(&g_lock);
