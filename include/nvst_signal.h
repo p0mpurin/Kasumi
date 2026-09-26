@@ -28,6 +28,7 @@ typedef struct NvstSignal {
     unsigned diagnostic_lines;
     bool peer_assigned;
     uint16_t close_code;
+    int upgrade_http; /* HTTP status of a refused WebSocket upgrade, else 0 */
     char last_event[40];
     char *offer_sdp;
     size_t offer_size;

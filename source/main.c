@@ -447,11 +447,17 @@ static void leave_session(void)
     submit_job(NET_JOB_STOP_SESSION, "Closing the cloud session...", NULL, NULL);
 }
 
+static bool session_gone(void)
+{
+    return g_signal.state == NVST_SIGNAL_ERROR && (g_signal.upgrade_http == 404 || g_signal.upgrade_http == 410);
+}
+
 static void retry_session(void)
 {
+    const bool gone = session_gone();
     close_media();
     g_app.stream_frame_base = mvd_video_decoded_frames();
-    if (g_client.session_state == GFN_SESSION_READY)
+    if (g_client.session_state == GFN_SESSION_READY && !gone)
         submit_job(NET_JOB_START_SIGNAL, "Reconnecting to the cloud rig...", NULL, NULL);
     else if (g_current_game.app_id[0])
         submit_job(NET_JOB_RESTART_SESSION, "Restarting your cloud session...", NULL, &g_current_game);
@@ -1146,15 +1152,21 @@ static const char *current_status(void);
 /* ---- Session tracking ------------------------------------------------------ */
 
 /* Lid closed or HOME opened: the app is frozen and the stream times out.
- * The hook only records when; track_session() reconnects afterwards. */
+ * The hook only records when and why; track_session() logs it and
+ * reconnects afterwards. */
 static volatile u64 g_suspended_at, g_resumed_at;
+static volatile bool g_suspend_was_sleep;
 static aptHookCookie g_apt_cookie;
 
 static void apt_hook(APT_HookType hook, void *param)
 {
     (void)param;
-    if (hook == APTHOOK_ONSLEEP || hook == APTHOOK_ONSUSPEND) g_suspended_at = osGetTime();
-    else if (hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONRESTORE) g_resumed_at = osGetTime();
+    if (hook == APTHOOK_ONSLEEP || hook == APTHOOK_ONSUSPEND) {
+        g_suspended_at = osGetTime();
+        g_suspend_was_sleep = hook == APTHOOK_ONSLEEP;
+    } else if (hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONRESTORE) {
+        g_resumed_at = osGetTime();
+    }
 }
 
 static bool g_history_open;
@@ -1276,13 +1288,21 @@ static void track_session(void)
      * media has timed out, so reconnect straight away (once Wi-Fi is back)
      * instead of waiting for the connection to be declared dead. */
     if (g_resumed_at && g_app.stream_started_at) {
-        const u64 away = g_suspended_at && g_resumed_at > g_suspended_at ? g_resumed_at - g_suspended_at : 0;
+        /* Only a pause during this stream counts: an older timestamp would
+         * make a short HOME visit look like minutes away. */
+        const bool paired = g_suspended_at >= g_app.stream_started_at && g_resumed_at > g_suspended_at;
+        const u64 away = paired ? g_resumed_at - g_suspended_at : 0;
         if (away < 4000) {
-            g_resumed_at = 0;
+            if (paired)
+                diagnostic_log("APP", "system %s for %llu ms; stream kept", g_suspend_was_sleep ? "sleep" : "HOME/applet",
+                               (unsigned long long)away);
+            g_resumed_at = g_suspended_at = 0;
         } else if ((osGetWifiStrength() > 0 || now - g_resumed_at > 15000) && !net_worker_busy() &&
                    g_client.session_state == GFN_SESSION_READY) {
-            diagnostic_log("APP", "resumed after %llu ms away; reconnecting", (unsigned long long)away);
-            g_resumed_at = 0;
+            diagnostic_log("APP", "resumed after %llu ms away (system %s, lid=%s); reconnecting",
+                           (unsigned long long)away, g_suspend_was_sleep ? "sleep" : "HOME/applet",
+                           queue_alert_lid_closed() ? "closed" : "open");
+            g_resumed_at = g_suspended_at = 0;
             g_app.reconnect_attempt = 1;
             reconnect_at = now;
             show_notice("Welcome back - reconnecting to your rig");
@@ -1322,6 +1342,13 @@ static void track_session(void)
     const bool dropped = g_transport.state == WEBRTC_FAILED || g_signal.state == NVST_SIGNAL_ERROR;
     if (!dropped || !g_app.stream_started_at || g_leave_pending || net_worker_busy()) return;
     if (g_client.session_state != GFN_SESSION_READY || g_app.reconnect_attempt > 3) return;
+    /* 404/410 on the signalling upgrade: NVIDIA has closed the session, so
+     * reconnecting cannot work. Say so; Retry starts the game again. */
+    if (session_gone()) {
+        diagnostic_log("APP", "session ended on NVIDIA's side (HTTP %d); not reconnecting", g_signal.upgrade_http);
+        g_app.reconnect_attempt = 4;
+        return;
+    }
     if (reconnect_at && now - reconnect_at < 2500) return;
     if (g_app.reconnect_attempt == 3) {
         /* Three tries failed: hand the choice back to the player. */

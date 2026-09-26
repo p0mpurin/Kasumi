@@ -276,8 +276,12 @@ static bool upgrade(NvstSignal *s, const char *url, const char *session_id)
         if (!ws_validate_upgrade(response, h, (char *)accept, protocol)) {
             int http_status = 0;
             sscanf(response, "HTTP/1.1 %d", &http_status);
+            s->upgrade_http = http_status;
             char reason[100];
-            snprintf(reason, sizeof(reason), "Invalid WebSocket upgrade HTTP=%d (challenge/headers)", http_status);
+            if (http_status == 404 || http_status == 410)
+                snprintf(reason, sizeof(reason), "NVIDIA ended this session (HTTP %d). Press A to start the game again.", http_status);
+            else
+                snprintf(reason, sizeof(reason), "Invalid WebSocket upgrade HTTP=%d (challenge/headers)", http_status);
             return fail(s, reason);
         }
         s->state = NVST_SIGNAL_WAITING;
