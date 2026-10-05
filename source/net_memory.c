@@ -8,6 +8,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "file_worker.h"
 
 #define NET_MEMORY_PATH APP_DATA_DIR "/network-memory.json"
 #define NET_MEMORY_DAYS 14
@@ -51,6 +52,7 @@ void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeat
     if (seconds < 120 || weak) return;
     char ssid[40];
     if (!current_ssid(ssid)) return;
+    file_worker_flush();
     json_error_t error;
     json_t *root = json_load_file(NET_MEMORY_PATH, 0, &error);
     if (!json_is_object(root)) {
@@ -75,7 +77,6 @@ void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeat
         snprintf(oldest_key, sizeof(oldest_key), "%s", oldest);
         json_object_del(root, oldest_key);
     }
-    json_dump_file(root, NET_MEMORY_PATH, JSON_COMPACT);
-    json_decref(root);
+    file_worker_save_json(NET_MEMORY_PATH, root, JSON_COMPACT);
     diagnostic_log("NET", "network memory: last Standard session here %s", bad ? "choppy" : "smooth");
 }

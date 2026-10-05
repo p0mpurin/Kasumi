@@ -18,6 +18,7 @@
 #define RELEASES_URL "https://api.github.com/repos/" APP_REPOSITORY "/releases?per_page=10"
 #define STATE_PATH APP_DATA_DIR "/update.json"
 #define DOWNLOAD_PATH APP_DATA_DIR "/update.download"
+#define DEV_SERVER_PATH APP_DATA_DIR "/dev_server.txt"
 #define USER_AGENT APP_NAME "-3DS/" APP_VERSION
 #define MAX_PACKAGE (32u * 1024u * 1024u)
 
@@ -33,6 +34,13 @@ static char g_dismissed[32];
  * automatic check was up to 12 hours away (beta.12). */
 static char g_seen_newer[32];
 static bool g_installed_cia;
+/* Dev mode: the PC's address, the offered build's checksum (hex and raw)
+ * and the checksum of the last build installed from it. */
+static bool g_dev;
+static char g_dev_base[128];
+static char g_dev_offered[65];
+static unsigned char g_dev_hash[32];
+static char g_dev_installed[65];
 
 /* ---- State file ----------------------------------------------------------- */
 
@@ -47,6 +55,7 @@ static void save_state(const char *whats_new_version, const char *whats_new_note
     json_object_set_new(root, "checked_at", json_integer((json_int_t)g_info.checked_at));
     json_object_set_new(root, "dismissed", json_string(g_dismissed));
     json_object_set_new(root, "available", json_string(g_seen_newer));
+    json_object_set_new(root, "dev_installed", json_string(g_dev_installed));
     if (whats_new_version)
         json_object_set_new(root, "whats_new", json_pack("{s:s,s:s}", "version", whats_new_version,
                                                          "notes", whats_new_notes ? whats_new_notes : ""));
@@ -68,6 +77,8 @@ void updater_init(const char *self_path)
         if (json_is_string(dismissed)) snprintf(g_dismissed, sizeof(g_dismissed), "%s", json_string_value(dismissed));
         json_t *available = json_object_get(root, "available");
         if (json_is_string(available)) snprintf(g_seen_newer, sizeof(g_seen_newer), "%s", json_string_value(available));
+        json_t *dev = json_object_get(root, "dev_installed");
+        if (json_is_string(dev)) snprintf(g_dev_installed, sizeof(g_dev_installed), "%s", json_string_value(dev));
     }
     json_decref(root);
     remove(DOWNLOAD_PATH);
@@ -185,9 +196,95 @@ static void plain_notes(char *out, size_t size, const char *markdown)
     out[n] = '\0';
 }
 
+/* ---- Dev mode ------------------------------------------------------------------ */
+
+/* The PC's address from dev_server.txt: "192.168.1.10:8642" or a full
+ * http:// URL. */
+static bool read_dev_server(void)
+{
+    g_dev_base[0] = '\0';
+    FILE *f = fopen(DEV_SERVER_PATH, "r");
+    if (!f) return false;
+    char line[120] = { 0 };
+    const bool read = fgets(line, sizeof(line), f) != NULL;
+    fclose(f);
+    if (!read) return false;
+    char *start = line;
+    while (*start == ' ' || *start == '\t') ++start;
+    size_t length = strlen(start);
+    while (length && (start[length - 1] == '\n' || start[length - 1] == '\r' || start[length - 1] == ' ' ||
+                      start[length - 1] == '/'))
+        start[--length] = '\0';
+    if (!length) return false;
+    snprintf(g_dev_base, sizeof(g_dev_base), "%s%s", strncmp(start, "http", 4) ? "http://" : "", start);
+    return true;
+}
+
+bool updater_dev_mode(void) { return g_dev; }
+
+static bool dev_check(void)
+{
+    char url[192];
+    snprintf(url, sizeof(url), "%s/dev.json", g_dev_base);
+    HttpResponse response;
+    http_next_request(8, NULL, NULL);
+    if (!http_request("GET", url, USER_AGENT, NULL, 0, NULL, 64 * 1024, &response))
+        return fail("Dev server not reachable at %s (%s)", g_dev_base, response.error);
+    const long status = response.status;
+    json_error_t error;
+    json_t *root = response.body ? json_loadb(response.body, response.size, 0, &error) : NULL;
+    http_response_free(&response);
+    if (status != 200 || !json_is_object(root)) {
+        json_decref(root);
+        return fail("Dev server answered HTTP %ld", status);
+    }
+    const char *kind = updater_is_3dsx() ? "3dsx" : "cia";
+    json_t *package = json_object_get(root, kind);
+    const char *sha = json_string_value(json_object_get(package, "sha256"));
+    const char *file = json_string_value(json_object_get(package, "file"));
+    const char *build = json_string_value(json_object_get(root, "build"));
+    const char *built = json_string_value(json_object_get(root, "built"));
+    const char *notes = json_string_value(json_object_get(root, "notes"));
+    bool hash_ok = sha && strlen(sha) == 64 && file;
+    for (int i = 0; hash_ok && i < 32; ++i) {
+        unsigned value;
+        if (sscanf(sha + i * 2, "%2x", &value) != 1) hash_ok = false;
+        else g_dev_hash[i] = (unsigned char)value;
+    }
+    LightLock_Lock(&g_lock);
+    g_info.checked_at = (int64_t)time(NULL);
+    g_info.error[0] = '\0';
+    const bool available = hash_ok && strcmp(sha, g_dev_installed) != 0;
+    if (hash_ok) {
+        snprintf(g_dev_offered, sizeof(g_dev_offered), "%s", sha);
+        snprintf(g_info.latest, sizeof(g_info.latest), "dev build %s", build ? build : "?");
+        snprintf(g_info.published, sizeof(g_info.published), "%.15s", built ? built : "");
+        plain_notes(g_info.notes, sizeof(g_info.notes), notes ? notes : "A build from your PC.");
+        g_info.prerelease = true;
+        json_t *size = json_object_get(package, "size");
+        g_info.size_bytes = json_is_integer(size) ? (unsigned long)json_integer_value(size) : 0;
+        snprintf(g_package_url, sizeof(g_package_url), "%s/%s", g_dev_base, file);
+        snprintf(g_package_name, sizeof(g_package_name), "%s", file);
+        /* Not used in dev mode, but install() wants both set. */
+        snprintf(g_sums_url, sizeof(g_sums_url), "dev");
+    } else {
+        snprintf(g_info.error, sizeof(g_info.error), "The dev server has no %s build", kind);
+    }
+    g_info.state = available ? UPDATE_AVAILABLE : UPDATE_UP_TO_DATE;
+    g_info.progress = 0;
+    g_seen_newer[0] = '\0';
+    LightLock_Unlock(&g_lock);
+    json_decref(root);
+    save_state(NULL, NULL);
+    diagnostic_log("UPDATE", "dev check build=%s available=%d", build ? build : "-", available);
+    return true;
+}
+
 bool updater_check(bool include_beta)
 {
     set_state(UPDATE_CHECKING, 0);
+    g_dev = read_dev_server();
+    if (g_dev) return dev_check();
     HttpResponse response;
     if (!http_request("GET", RELEASES_URL, USER_AGENT, API_HEADERS, 2, NULL, 512 * 1024, &response))
         return fail("Could not reach GitHub (%s)", response.error);
@@ -325,8 +422,14 @@ static bool sd_space_ok(unsigned long needed, char *why, size_t size)
     return false;
 }
 
+/* AM's answer when the CIA's content is exactly what is installed already
+ * (a dev build that was just put on with FBI). */
+#define AM_ALREADY_INSTALLED ((Result)0xC8E083FC)
+static bool g_already_installed;
+
 static bool install_cia(const unsigned char *data, size_t size)
 {
+    g_already_installed = false;
     if (R_FAILED(amInit())) return fail("Could not open the system installer (am)");
     Handle cia;
     Result rc = AM_StartCiaInstall(MEDIATYPE_SD, &cia);
@@ -342,6 +445,10 @@ static bool install_cia(const unsigned char *data, size_t size)
         if (R_FAILED(rc) || written != n) {
             AM_CancelCIAInstall(cia);
             amExit();
+            if (rc == AM_ALREADY_INSTALLED) {
+                g_already_installed = true;
+                return false;
+            }
             return fail("Install write failed (0x%08lX); the old version is untouched", (unsigned long)rc);
         }
         set_state(UPDATE_INSTALLING, (unsigned)((offset + n) * 1000 / size));
@@ -388,17 +495,22 @@ bool updater_install(void)
     if (!sd_space_ok(info.size_bytes ? info.size_bytes : 4u * 1024u * 1024u, why, sizeof(why)))
         return fail("%s", why);
 
-    /* Checksums first: tiny, and a release without them is never installed. */
+    /* Checksums first: tiny, and a release without them is never installed.
+     * In dev mode the PC sent the checksum with the build. */
     set_state(UPDATE_DOWNLOADING, 0);
-    HttpResponse sums;
-    if (!http_request("GET", g_sums_url, USER_AGENT, NULL, 0, NULL, 64 * 1024, &sums) || sums.status != 200) {
-        http_response_free(&sums);
-        return fail("Could not download the release checksums");
-    }
     unsigned char want[32];
-    const bool have_hash = sums.body && expected_hash(sums.body, g_package_name, want);
-    http_response_free(&sums);
-    if (!have_hash) return fail("The release checksums do not list %s", g_package_name);
+    if (g_dev) {
+        memcpy(want, g_dev_hash, sizeof(want));
+    } else {
+        HttpResponse sums;
+        if (!http_request("GET", g_sums_url, USER_AGENT, NULL, 0, NULL, 64 * 1024, &sums) || sums.status != 200) {
+            http_response_free(&sums);
+            return fail("Could not download the release checksums");
+        }
+        const bool have_hash = sums.body && expected_hash(sums.body, g_package_name, want);
+        http_response_free(&sums);
+        if (!have_hash) return fail("The release checksums do not list %s", g_package_name);
+    }
 
     HttpResponse package;
     http_next_request(300, on_download, NULL);
@@ -424,9 +536,27 @@ bool updater_install(void)
     const bool ok = updater_is_3dsx() ? install_3dsx((const unsigned char *)package.body, package.size)
                                       : install_cia((const unsigned char *)package.body, package.size);
     http_response_free(&package);
+    if (!ok && g_already_installed) {
+        /* Nothing to do: this exact build is the one running. */
+        if (g_dev) snprintf(g_dev_installed, sizeof(g_dev_installed), "%s", g_dev_offered);
+        save_state(NULL, NULL);
+        LightLock_Lock(&g_lock);
+        g_info.state = UPDATE_UP_TO_DATE;
+        g_info.progress = 0;
+        g_info.error[0] = '\0';
+        LightLock_Unlock(&g_lock);
+        diagnostic_log("UPDATE", "%s is already installed", info.latest);
+        return true;
+    }
     if (!ok) return false;
-    /* The new version shows its notes once on its first start. */
-    save_state(info.latest, info.notes);
+    /* The new version shows its notes once on its first start; a dev
+     * build is remembered so the same one is not offered again. */
+    if (g_dev) {
+        snprintf(g_dev_installed, sizeof(g_dev_installed), "%s", g_dev_offered);
+        save_state(NULL, NULL);
+    } else {
+        save_state(info.latest, info.notes);
+    }
     set_state(UPDATE_INSTALLED, 1000);
     diagnostic_log("UPDATE", "installed %s", info.latest);
     return true;

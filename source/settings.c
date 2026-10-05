@@ -3,15 +3,21 @@
 #include <jansson.h>
 
 #include "audio_output.h"
+#include "file_worker.h"
+#include "game_prefs.h"
 #include "regions.h"
 #include "stream_profile.h"
 #include "ui.h"
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 void settings_defaults(AppSettings *settings)
 {
     settings->button_layout = GFN_LAYOUT_POSITION;
+    settings->xbox_names = false;
+    settings->has_map = false;
+    memset(&settings->map, 0, sizeof(settings->map));
     settings->deadzone = DEADZONE_MEDIUM;
     settings->swap_shoulders = false;
     settings->auto_pointer = true;
@@ -36,6 +42,8 @@ void settings_defaults(AppSettings *settings)
     settings->music_mode = 0; /* MENU_MUSIC_ON */
     settings->voice_cues = true;
     settings->sound_effects = true;
+    settings->mic = false;
+    settings->discord_seen = false;
     settings->lid_mode = LID_PAUSE;
     settings->guide_done = false;
     settings->auto_update = true;
@@ -85,6 +93,8 @@ bool settings_load(AppSettings *settings)
     settings->deadzone = (DeadzoneLevel)read_int(root, "deadzone", settings->deadzone,
                                                  DEADZONE_COUNT);
     settings->swap_shoulders = read_bool(root, "swap_shoulders", settings->swap_shoulders);
+    settings->xbox_names = read_bool(root, "xbox_names", settings->xbox_names);
+    settings->has_map = game_prefs_read_map(root, &settings->map);
     settings->auto_pointer = read_bool(root, "auto_pointer", settings->auto_pointer);
     settings->show_stats = read_bool(root, "show_stats", settings->show_stats);
     settings->fast_input = read_bool(root, "fast_input", settings->fast_input);
@@ -111,6 +121,8 @@ bool settings_load(AppSettings *settings)
     settings->music_mode = (unsigned)read_int(root, "music_mode", (int)settings->music_mode, 3);
     settings->voice_cues = read_bool(root, "voice_cues", settings->voice_cues);
     settings->sound_effects = read_bool(root, "sound_effects", settings->sound_effects);
+    settings->mic = read_bool(root, "mic", settings->mic);
+    settings->discord_seen = read_bool(root, "discord_seen", settings->discord_seen);
     /* Older settings files only had lid_keeps_playing (true: keep playing). */
     const int lid_fallback = read_bool(root, "lid_keeps_playing", false) ? LID_KEEP_PLAYING : LID_PAUSE;
     settings->lid_mode = (unsigned)read_int(root, "lid_mode", lid_fallback, LID_MODE_COUNT);
@@ -132,10 +144,8 @@ bool settings_load(AppSettings *settings)
     return true;
 }
 
-bool settings_save(const AppSettings *settings)
+static json_t *settings_json(const AppSettings *settings)
 {
-    mkdir("sdmc:/3ds", 0777);
-    mkdir(APP_DATA_DIR, 0777);
     json_t *root = json_pack("{s:i,s:i,s:b,s:b,s:b,s:b,s:b,s:i,s:b,s:i,s:i,s:i,s:i,s:b,s:i,s:b,s:b,s:b,s:b,s:s,s:i,s:s,s:b,s:i,s:s,s:i,s:b,s:b}",
                              "button_layout", (int)settings->button_layout,
                              "deadzone", (int)settings->deadzone,
@@ -165,7 +175,7 @@ bool settings_save(const AppSettings *settings)
                              "music_mode", (int)settings->music_mode,
                              "voice_cues", settings->voice_cues,
                              "sound_effects", settings->sound_effects);
-    if (!root) return false;
+    if (!root) return NULL;
     json_object_set_new(root, "camera_speed", json_integer((json_int_t)settings->camera_speed));
     json_object_set_new(root, "camera_invert", json_integer((json_int_t)settings->camera_invert));
     json_object_set_new(root, "touch_camera", json_integer((json_int_t)settings->touch_camera));
@@ -174,10 +184,43 @@ bool settings_save(const AppSettings *settings)
     json_object_set_new(root, "touch_stick_size", json_integer((json_int_t)settings->touch_stick_size));
     json_object_set_new(root, "video_sharpen", json_integer((json_int_t)settings->video_sharpen));
     json_object_set_new(root, "video_color", json_integer((json_int_t)settings->video_color));
+    json_object_set_new(root, "xbox_names", json_boolean(settings->xbox_names));
+    json_object_set_new(root, "mic", json_boolean(settings->mic));
+    json_object_set_new(root, "discord_seen", json_boolean(settings->discord_seen));
+    if (settings->has_map) game_prefs_write_map(root, &settings->map);
+    return root;
+}
+
+bool settings_save(const AppSettings *settings)
+{
+    mkdir("sdmc:/3ds", 0777);
+    mkdir(APP_DATA_DIR, 0777);
+    json_t *root = settings_json(settings);
+    if (!root) return false;
     const bool ok = json_dump_file(root, SETTINGS_PATH, JSON_INDENT(2)) == 0;
     json_decref(root);
     return ok;
 }
+
+/* ---- Background saving ------------------------------------------------------ */
+
+static AppSettings g_last_queued;
+static bool g_has_queued;
+
+void settings_save_async(const AppSettings *settings)
+{
+    /* Leaving Settings saved every time, changed or not: on a slow card
+     * that was a visible pause before the menu went back (beta.34). */
+    if (g_has_queued && memcmp(&g_last_queued, settings, sizeof(*settings)) == 0) return;
+    g_last_queued = *settings;
+    g_has_queued = true;
+    file_worker_save_json(SETTINGS_PATH, settings_json(settings), JSON_INDENT(2));
+}
+
+/* The background writer logs a failed write; nothing to report here. */
+bool settings_save_failed(void) { return false; }
+
+void settings_flush(void) { file_worker_flush(); }
 
 void settings_apply_picture(const AppSettings *settings)
 {
@@ -206,4 +249,8 @@ void settings_apply_input(const AppSettings *settings)
         .camera_invert = settings->camera_invert,
     };
     gfn_input_configure(&config);
+    gfn_input_set_xbox_names(settings->xbox_names);
+    /* Every game's own map, if there is one (a game's own map or layout
+     * replaces it at launch, main.c). */
+    if (settings->has_map) gfn_input_set_custom_map(&settings->map);
 }

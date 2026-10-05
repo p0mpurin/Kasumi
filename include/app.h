@@ -103,15 +103,20 @@ typedef enum {
     ACTION_UPDATE_CLOSE,
     ACTION_UPDATE_LATER,
     ACTION_WHATS_NEW_CLOSE,
+    ACTION_DISCORD_CLOSE,
     ACTION_MAP_PREV,
     ACTION_MAP_NEXT,
     ACTION_MAP_RESET,
     ACTION_MAP_CANCEL,
     ACTION_MAP_DONE,
+    /* A row of the mapping card (screens_touched_map_field). */
+    ACTION_MAP_FIELD,
+    /* The MIC button in a game: mute or unmute voice chat. */
+    ACTION_MIC_TOGGLE,
     ACTION_CONTINUE
 } AppAction;
 
-enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
+enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
        SETTING_STATS, SETTING_FAST_INPUT, SETTING_RESOLUTION, SETTING_BITRATE,
        SETTING_FILTER, SETTING_GYRO, SETTING_GYRO_SPEED,
        SETTING_THEME, SETTING_VOLUME, SETTING_MENU_AUDIO, SETTING_LID,
@@ -120,7 +125,7 @@ enum { SETTING_LAYOUT, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
        SETTING_PROVIDER, SETTING_ACCOUNT, SETTING_COMMUNITY, SETTING_MUSIC, SETTING_VOICE, SETTING_SFX,
        SETTING_CAMERA_SPEED, SETTING_CAMERA_INVERT, SETTING_SCREENSHOTS,
        SETTING_VIDEO_SHARPEN, SETTING_VIDEO_COLOR, SETTING_TOUCH_CAMERA, SETTING_TOUCH_STICK_SIZE,
-       SETTING_FRAME_RATE, SETTING_COUNT };
+       SETTING_FRAME_RATE, SETTING_MIC, SETTING_COUNT };
 
 /* Library tabs (L / R). */
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
@@ -152,11 +157,16 @@ typedef struct {
     /* Per-game options sheet on the details page. */
     bool options_open;
     int options_index;
-    /* Button mapping editor: the input being edited and the working map. */
+    /* Button mapping editor: the input being edited, which row of it
+     * (0 sends, 1 also sends, 2 mode), the working map and what RESET
+     * goes back to. mapping_global: Settings' map for every game, else the
+     * selected game's own. */
     bool mapping_open;
+    bool mapping_global;
     int mapping_input;
-    unsigned char mapping[GFN_INPUT_COUNT];
-    unsigned char mapping_default[GFN_INPUT_COUNT];
+    int mapping_field;
+    GfnButtonMap mapping;
+    GfnButtonMap mapping_default;
     /* Library tab and the visible list: positions -> client->games. */
     int library_tab;
     unsigned short list_map[GFN_MAX_GAMES];
@@ -166,6 +176,8 @@ typedef struct {
     /* Software update page and the one-time "what's new" page. */
     bool update_open;
     bool whats_new_open;
+    /* The one-time Discord invite card. */
+    bool discord_open;
     int notes_scroll;
     char whats_new_version[32];
     const char *whats_new_notes;
@@ -271,6 +283,11 @@ typedef struct {
     unsigned look_trail_head;
     /* R3 held by a double tap on the pad (drawn lit). */
     bool look_r3;
+    /* L3 / R3 / PS held from the lower screen this frame (main.c, which
+     * also spots two fingers on L3 and R3). */
+    uint16_t touch_buttons;
+    /* Voice chat is running this game (the MIC button shows). */
+    bool mic_available;
 
     /* A network job is running on the worker; shown as a non-blocking overlay. */
     const char *busy;
@@ -315,6 +332,10 @@ UiRect screens_stream_panel(void);
 UiRect screens_look_pad(void);
 UiRect screens_look_r3(void);
 UiRect screens_look_hide(void);
+UiRect screens_look_both(void);
+UiRect screens_look_mic(void);
+/* The mapping card row a tap landed on (with ACTION_MAP_*), or -1. */
+int screens_touched_map_field(void);
 /* Settings helpers shared by input handling and drawing. The settings list
  * is grouped into sections; positions map to SETTING_* ids. */
 int screens_setting_at(int position);

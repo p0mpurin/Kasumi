@@ -52,31 +52,54 @@ enum {
     GFN_PAD_A = 0x1000, GFN_PAD_B = 0x2000, GFN_PAD_X = 0x4000, GFN_PAD_Y = 0x8000
 };
 
-/* Custom button mapping: every remappable 3DS input sends one output. */
+/* Custom button mapping: every remappable 3DS input sends one output, or
+ * two at once (a combo), held normally, as turbo or as a toggle. */
 enum {
     GFN_IN_A, GFN_IN_B, GFN_IN_X, GFN_IN_Y, GFN_IN_L, GFN_IN_R, GFN_IN_ZL, GFN_IN_ZR,
     GFN_IN_START, GFN_IN_SELECT, GFN_IN_UP, GFN_IN_DOWN, GFN_IN_LEFT, GFN_IN_RIGHT,
     GFN_INPUT_COUNT
 };
+/* Stored by number in settings.json and games.json: only ever append. */
 enum {
     GFN_OUT_NONE, GFN_OUT_CROSS, GFN_OUT_CIRCLE, GFN_OUT_SQUARE, GFN_OUT_TRIANGLE,
     GFN_OUT_L1, GFN_OUT_R1, GFN_OUT_L2, GFN_OUT_R2, GFN_OUT_L3, GFN_OUT_R3,
     GFN_OUT_OPTIONS, GFN_OUT_SHARE, GFN_OUT_PS,
     GFN_OUT_UP, GFN_OUT_DOWN, GFN_OUT_LEFT, GFN_OUT_RIGHT,
+    /* A stick pushed all the way (so the D-Pad can walk, for example). */
+    GFN_OUT_LS_UP, GFN_OUT_LS_DOWN, GFN_OUT_LS_LEFT, GFN_OUT_LS_RIGHT,
+    GFN_OUT_RS_UP, GFN_OUT_RS_DOWN, GFN_OUT_RS_LEFT, GFN_OUT_RS_RIGHT,
     GFN_OUTPUT_COUNT
 };
-/* The 3DS key of an input, and the name of an output. */
+/* Normal: held while held. Turbo: pressed ten times a second while held.
+ * Toggle: one press holds it, the next lets go. */
+enum { GFN_BIND_NORMAL, GFN_BIND_TURBO, GFN_BIND_TOGGLE, GFN_BIND_MODE_COUNT };
+typedef struct {
+    unsigned char out[GFN_INPUT_COUNT];
+    /* Sent together with out (GFN_OUT_NONE: nothing more). */
+    unsigned char also[GFN_INPUT_COUNT];
+    unsigned char mode[GFN_INPUT_COUNT];
+} GfnButtonMap;
+/* The 3DS key of an input, and the name of an output (PlayStation or Xbox
+ * names, gfn_input_set_xbox_names); the short name fits a list. */
 u32 gfn_input_key(unsigned input);
 const char *gfn_input_name(unsigned input);
 const char *gfn_output_name(unsigned output);
+const char *gfn_output_short_name(unsigned output);
+const char *gfn_bind_mode_name(unsigned mode);
+void gfn_input_set_xbox_names(bool xbox);
+bool gfn_input_xbox_names(void);
 /* What each input sends under a layout and trigger choice (no custom map). */
-void gfn_input_default_map(GfnButtonLayout layout, bool swap_shoulders, unsigned char map[GFN_INPUT_COUNT]);
+void gfn_input_default_map(GfnButtonLayout layout, bool swap_shoulders, GfnButtonMap *map);
+bool gfn_button_map_equal(const GfnButtonMap *a, const GfnButtonMap *b);
+/* Out-of-range entries become nothing / normal. */
+void gfn_button_map_clean(GfnButtonMap *map);
 /* Apply a custom map (NULL returns to the layout's own). */
-void gfn_input_set_custom_map(const unsigned char *map);
+void gfn_input_set_custom_map(const GfnButtonMap *map);
 bool gfn_input_custom_map_active(void);
 
 void gfn_input_configure(const GfnInputConfig *config);
-/* Buttons the 3DS lacks (L3, R3, Guide), held from the touch screen. */
+/* Buttons the 3DS lacks (L3, R3, Guide), held from the touch screen; they
+ * are sent as they are, whatever the map says. */
 void gfn_input_set_virtual_buttons(uint16_t buttons);
 /* The touch camera's right-stick push, -1..1 each way (y up). It follows
  * Camera stick speed and Invert camera like the C-Stick, and adds to it. */

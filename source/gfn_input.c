@@ -16,7 +16,12 @@ static unsigned g_gyro_calibration;
 static bool g_gyro_active;
 
 static bool g_custom_map_on;
-static unsigned char g_custom_map[GFN_INPUT_COUNT];
+static GfnButtonMap g_custom_map;
+/* Turbo and toggle: when each input went down, and which toggles are on. */
+static u32 g_prev_held;
+static u64 g_pressed_at[GFN_INPUT_COUNT];
+static bool g_toggled[GFN_INPUT_COUNT];
+static bool g_xbox_names;
 
 static const u32 INPUT_KEYS[GFN_INPUT_COUNT] = {
     KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_ZL, KEY_ZR, KEY_START, KEY_SELECT,
@@ -25,11 +30,32 @@ static const u32 INPUT_KEYS[GFN_INPUT_COUNT] = {
 static const char *const INPUT_NAMES[GFN_INPUT_COUNT] = {
     "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT"
 };
-static const char *const OUTPUT_NAMES[GFN_OUTPUT_COUNT] = {
+static const char *const STICK_NAMES[8] = {
+    "Left stick up", "Left stick down", "Left stick left", "Left stick right",
+    "Right stick up", "Right stick down", "Right stick left", "Right stick right"
+};
+static const char *const STICK_SHORT[8] = {
+    "LS up", "LS down", "LS left", "LS right", "RS up", "RS down", "RS left", "RS right"
+};
+/* Up to the D-Pad; the stick outputs share STICK_NAMES. */
+static const char *const PS_NAMES[GFN_OUT_LS_UP] = {
     "Nothing", "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "L3", "R3",
     "Options", "Share", "PS button", "D-Pad up", "D-Pad down", "D-Pad left", "D-Pad right"
 };
-/* Pad bits of each output; L2 / R2 are analog triggers instead. */
+static const char *const PS_SHORT[GFN_OUT_LS_UP] = {
+    "None", "Cross", "Circle", "Square", "Triangle", "L1", "R1", "L2", "R2", "L3", "R3",
+    "Options", "Share", "PS", "Up", "Down", "Left", "Right"
+};
+static const char *const XBOX_NAMES[GFN_OUT_LS_UP] = {
+    "Nothing", "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "Left stick click", "Right stick click",
+    "Menu", "View", "Xbox button", "D-Pad up", "D-Pad down", "D-Pad left", "D-Pad right"
+};
+static const char *const XBOX_SHORT[GFN_OUT_LS_UP] = {
+    "None", "A", "B", "X", "Y", "LB", "RB", "LT", "RT", "LS", "RS",
+    "Menu", "View", "Xbox", "Up", "Down", "Left", "Right"
+};
+/* Pad bits of each output; L2 / R2 are analog triggers and the stick
+ * outputs move a stick instead. */
 static const uint16_t OUTPUT_BITS[GFN_OUTPUT_COUNT] = {
     0, GFN_PAD_A, GFN_PAD_B, GFN_PAD_X, GFN_PAD_Y, GFN_PAD_LEFT_SHOULDER, GFN_PAD_RIGHT_SHOULDER,
     0, 0, GFN_PAD_LEFT_THUMB, GFN_PAD_RIGHT_THUMB, GFN_PAD_START, GFN_PAD_BACK, GFN_PAD_GUIDE,
@@ -38,34 +64,69 @@ static const uint16_t OUTPUT_BITS[GFN_OUTPUT_COUNT] = {
 
 u32 gfn_input_key(unsigned input) { return input < GFN_INPUT_COUNT ? INPUT_KEYS[input] : 0; }
 const char *gfn_input_name(unsigned input) { return input < GFN_INPUT_COUNT ? INPUT_NAMES[input] : ""; }
-const char *gfn_output_name(unsigned output) { return output < GFN_OUTPUT_COUNT ? OUTPUT_NAMES[output] : ""; }
-
-void gfn_input_default_map(GfnButtonLayout layout, bool swap, unsigned char map[GFN_INPUT_COUNT])
+const char *gfn_output_name(unsigned output)
 {
+    if (output >= GFN_OUTPUT_COUNT) return "";
+    if (output >= GFN_OUT_LS_UP) return STICK_NAMES[output - GFN_OUT_LS_UP];
+    return g_xbox_names ? XBOX_NAMES[output] : PS_NAMES[output];
+}
+const char *gfn_output_short_name(unsigned output)
+{
+    if (output >= GFN_OUTPUT_COUNT) return "";
+    if (output >= GFN_OUT_LS_UP) return STICK_SHORT[output - GFN_OUT_LS_UP];
+    return g_xbox_names ? XBOX_SHORT[output] : PS_SHORT[output];
+}
+const char *gfn_bind_mode_name(unsigned mode)
+{
+    static const char *const names[GFN_BIND_MODE_COUNT] = { "Normal", "Turbo", "Toggle" };
+    return mode < GFN_BIND_MODE_COUNT ? names[mode] : "";
+}
+void gfn_input_set_xbox_names(bool xbox) { g_xbox_names = xbox; }
+bool gfn_input_xbox_names(void) { return g_xbox_names; }
+
+void gfn_input_default_map(GfnButtonLayout layout, bool swap, GfnButtonMap *map)
+{
+    memset(map, 0, sizeof(*map));
     const bool position = layout != GFN_LAYOUT_LABEL;
     /* Position: 3DS X top, A right, B bottom, Y left like the PlayStation. */
-    map[GFN_IN_A] = position ? GFN_OUT_CIRCLE : GFN_OUT_CROSS;
-    map[GFN_IN_B] = position ? GFN_OUT_CROSS : GFN_OUT_CIRCLE;
-    map[GFN_IN_X] = position ? GFN_OUT_TRIANGLE : GFN_OUT_SQUARE;
-    map[GFN_IN_Y] = position ? GFN_OUT_SQUARE : GFN_OUT_TRIANGLE;
-    map[GFN_IN_L] = swap ? GFN_OUT_L2 : GFN_OUT_L1;
-    map[GFN_IN_R] = swap ? GFN_OUT_R2 : GFN_OUT_R1;
-    map[GFN_IN_ZL] = swap ? GFN_OUT_L1 : GFN_OUT_L2;
-    map[GFN_IN_ZR] = swap ? GFN_OUT_R1 : GFN_OUT_R2;
-    map[GFN_IN_START] = GFN_OUT_OPTIONS;
-    map[GFN_IN_SELECT] = GFN_OUT_SHARE;
-    map[GFN_IN_UP] = GFN_OUT_UP;
-    map[GFN_IN_DOWN] = GFN_OUT_DOWN;
-    map[GFN_IN_LEFT] = GFN_OUT_LEFT;
-    map[GFN_IN_RIGHT] = GFN_OUT_RIGHT;
+    map->out[GFN_IN_A] = position ? GFN_OUT_CIRCLE : GFN_OUT_CROSS;
+    map->out[GFN_IN_B] = position ? GFN_OUT_CROSS : GFN_OUT_CIRCLE;
+    map->out[GFN_IN_X] = position ? GFN_OUT_TRIANGLE : GFN_OUT_SQUARE;
+    map->out[GFN_IN_Y] = position ? GFN_OUT_SQUARE : GFN_OUT_TRIANGLE;
+    map->out[GFN_IN_L] = swap ? GFN_OUT_L2 : GFN_OUT_L1;
+    map->out[GFN_IN_R] = swap ? GFN_OUT_R2 : GFN_OUT_R1;
+    map->out[GFN_IN_ZL] = swap ? GFN_OUT_L1 : GFN_OUT_L2;
+    map->out[GFN_IN_ZR] = swap ? GFN_OUT_R1 : GFN_OUT_R2;
+    map->out[GFN_IN_START] = GFN_OUT_OPTIONS;
+    map->out[GFN_IN_SELECT] = GFN_OUT_SHARE;
+    map->out[GFN_IN_UP] = GFN_OUT_UP;
+    map->out[GFN_IN_DOWN] = GFN_OUT_DOWN;
+    map->out[GFN_IN_LEFT] = GFN_OUT_LEFT;
+    map->out[GFN_IN_RIGHT] = GFN_OUT_RIGHT;
 }
 
-void gfn_input_set_custom_map(const unsigned char *map)
+bool gfn_button_map_equal(const GfnButtonMap *a, const GfnButtonMap *b)
+{
+    return memcmp(a, b, sizeof(*a)) == 0;
+}
+
+void gfn_button_map_clean(GfnButtonMap *map)
+{
+    for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i) {
+        if (map->out[i] >= GFN_OUTPUT_COUNT) map->out[i] = GFN_OUT_NONE;
+        if (map->also[i] >= GFN_OUTPUT_COUNT) map->also[i] = GFN_OUT_NONE;
+        if (map->mode[i] >= GFN_BIND_MODE_COUNT) map->mode[i] = GFN_BIND_NORMAL;
+    }
+}
+
+void gfn_input_set_custom_map(const GfnButtonMap *map)
 {
     g_custom_map_on = map != NULL;
-    if (map)
-        for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
-            g_custom_map[i] = map[i] < GFN_OUTPUT_COUNT ? map[i] : GFN_OUT_NONE;
+    memset(g_toggled, 0, sizeof(g_toggled));
+    if (map) {
+        g_custom_map = *map;
+        gfn_button_map_clean(&g_custom_map);
+    }
 }
 
 bool gfn_input_custom_map_active(void) { return g_custom_map_on; }
@@ -178,7 +239,8 @@ uint16_t gfn_input_buttons_for_keys(u32 keys)
     uint16_t buttons = 0;
     if (g_custom_map_on) {
         for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
-            if (keys & INPUT_KEYS[i]) buttons |= OUTPUT_BITS[g_custom_map[i]];
+            if (keys & INPUT_KEYS[i])
+                buttons |= OUTPUT_BITS[g_custom_map.out[i]] | OUTPUT_BITS[g_custom_map.also[i]];
         return buttons;
     }
     if (keys & KEY_DUP) buttons |= GFN_PAD_DPAD_UP;
@@ -227,19 +289,62 @@ static void scale_stick(int raw_x, int raw_y, int rim, float gain, int16_t *out_
     *out_y = (int16_t)fy;
 }
 
+/* One output of the custom map, pressed. Stick pushes collect in sticks
+ * (one bit per GFN_OUT_LS_UP...) and are applied after the real sticks. */
+static void press_output(GfnGamepadState *state, unsigned output, unsigned *sticks)
+{
+    state->buttons |= OUTPUT_BITS[output];
+    if (output == GFN_OUT_L2) state->left_trigger = 255;
+    if (output == GFN_OUT_R2) state->right_trigger = 255;
+    if (output >= GFN_OUT_LS_UP && output < GFN_OUTPUT_COUNT) *sticks |= 1u << (output - GFN_OUT_LS_UP);
+}
+
+/* Bits 0-3 (up, down, left, right) of sticks push a stick to the rim. */
+static void push_stick(unsigned sticks, int16_t *x, int16_t *y)
+{
+    if ((sticks & 1) && !(sticks & 2)) *y = 32767;
+    if ((sticks & 2) && !(sticks & 1)) *y = -32767;
+    if ((sticks & 4) && !(sticks & 8)) *x = -32767;
+    if ((sticks & 8) && !(sticks & 4)) *x = 32767;
+}
+
+/* The custom map's buttons for what is held, with turbo and toggles. */
+static unsigned apply_custom_map(GfnGamepadState *state, u32 held)
+{
+    const u64 now = osGetTime();
+    unsigned sticks = 0;
+    for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i) {
+        const bool is_held = (held & INPUT_KEYS[i]) != 0;
+        const bool went_down = is_held && !(g_prev_held & INPUT_KEYS[i]);
+        if (went_down) g_pressed_at[i] = now;
+        bool on = is_held;
+        if (g_custom_map.mode[i] == GFN_BIND_TURBO) {
+            /* 50 ms pressed, 50 ms released: ten presses a second, which
+             * games still read as separate presses. */
+            on = is_held && ((now - g_pressed_at[i]) / 50) % 2 == 0;
+        } else if (g_custom_map.mode[i] == GFN_BIND_TOGGLE) {
+            if (went_down) g_toggled[i] = !g_toggled[i];
+            on = g_toggled[i];
+        }
+        if (!on) continue;
+        press_output(state, g_custom_map.out[i], &sticks);
+        press_output(state, g_custom_map.also[i], &sticks);
+    }
+    g_prev_held = held;
+    return sticks;
+}
+
 void gfn_input_read_3ds(GfnGamepadState *state)
 {
     memset(state, 0, sizeof(*state));
     if (g_suppressed) return;
     const u32 held = hidKeysHeld();
-    state->buttons = gfn_input_buttons_for_keys(held) | g_virtual_buttons;
+    unsigned sticks = 0;
     if (g_custom_map_on) {
-        for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i) {
-            if (!(held & INPUT_KEYS[i])) continue;
-            if (g_custom_map[i] == GFN_OUT_L2) state->left_trigger = 255;
-            if (g_custom_map[i] == GFN_OUT_R2) state->right_trigger = 255;
-        }
+        sticks = apply_custom_map(state, held);
+        state->buttons |= g_virtual_buttons;
     } else {
+        state->buttons = gfn_input_buttons_for_keys(held) | g_virtual_buttons;
         const u32 left_trigger = g_config.swap_shoulders ? KEY_L : KEY_ZL;
         const u32 right_trigger = g_config.swap_shoulders ? KEY_R : KEY_ZR;
         if (held & left_trigger) state->left_trigger = 255;
@@ -270,6 +375,9 @@ void gfn_input_read_3ds(GfnGamepadState *state)
     /* Before the gyro, which keeps its own direction. */
     if (g_config.camera_invert >= 1) state->right_y = (int16_t)-state->right_y;
     if (g_config.camera_invert == 2) state->right_x = (int16_t)-state->right_x;
+    /* Mapped stick pushes go the way they are named, inverted or not. */
+    push_stick(sticks, &state->left_x, &state->left_y);
+    push_stick(sticks >> 4, &state->right_x, &state->right_y);
     apply_gyro(state, held);
 }
 
@@ -381,7 +489,10 @@ size_t gfn_input_encode_gamepad(uint8_t output[38], const GfnGamepadState *state
     put_u32_le(output, 12);
     put_u16_le(output + 4, 26);
     put_u16_le(output + 6, 0);
-    put_u16_le(output + 8, 1);
+    /* Controller 0 connected (bit 0), as an Xbox / XInput pad (bit 8), as the
+     * official client marks one: without it the rig may not show a real
+     * Xbox controller, and games keep aim assist for those. */
+    put_u16_le(output + 8, 0x0101);
     put_u16_le(output + 10, 20);
     put_u16_le(output + 12, state->buttons);
     put_u16_le(output + 14, (uint16_t)(state->left_trigger | (state->right_trigger << 8)));

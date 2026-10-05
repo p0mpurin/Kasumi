@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "app_paths.h"
+#include "file_worker.h"
 
 #define HISTORY_PATH APP_DATA_DIR "/history.json"
 
@@ -22,9 +23,11 @@ void play_history_load(void)
     }
 }
 
+/* A copy goes to the background writer: saves happen as a game starts
+ * and ends, when the main loop must not wait for the SD card. */
 static void save(void)
 {
-    if (g_history) json_dump_file(g_history, HISTORY_PATH, JSON_COMPACT);
+    if (g_history) file_worker_save_json(HISTORY_PATH, json_deep_copy(g_history), JSON_COMPACT);
 }
 
 static json_t *entry(const char *app_id, bool create)

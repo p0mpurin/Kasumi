@@ -24,6 +24,12 @@ enum { SHARE_ASK, SHARE_YES, SHARE_NO };
 
 typedef struct {
     GfnButtonLayout button_layout;
+    /* Show Xbox names (A, LB, RT, Menu) instead of PlayStation ones. */
+    bool xbox_names;
+    /* Settings > Controls > Button mapping: every game's map, unless a
+     * game has its own (games.json) or its own layout. */
+    bool has_map;
+    GfnButtonMap map;
     DeadzoneLevel deadzone;
     bool swap_shoulders;
     /* Start Genshin Impact sessions in pointer mode for its PC login screen. */
@@ -67,6 +73,10 @@ typedef struct {
     bool voice_cues;
     /* Menu sound effects (sfx.h). */
     bool sound_effects;
+    /* Voice chat: the 3DS microphone in games (a MIC button mutes it). */
+    bool mic;
+    /* The one-time Discord invite card was shown (beta.35). */
+    bool discord_seen;
     /* Closing the lid mid-game (LID_*): pause with the connection kept,
      * sleep and reconnect on opening, or keep playing with the screens off. */
     unsigned lid_mode;
@@ -96,6 +106,13 @@ typedef struct {
 void settings_defaults(AppSettings *settings);
 bool settings_load(AppSettings *settings);
 bool settings_save(const AppSettings *settings);
+/* Save on a background thread, so leaving a menu never waits for the SD
+ * card; nothing is written when nothing changed since the last save. */
+void settings_save_async(const AppSettings *settings);
+/* True once after a background save failed (the writer logs failures). */
+bool settings_save_failed(void);
+/* Finish any background save (before exiting). */
+void settings_flush(void);
 /* Push controller-related settings into the input encoder. */
 void settings_apply_input(const AppSettings *settings);
 /* Push the picture settings into the stream profile. */

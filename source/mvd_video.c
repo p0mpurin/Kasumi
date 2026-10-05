@@ -328,9 +328,50 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     return true;
 }
 
+/* Wide zoom is a crop on the GPU (fractions of the picture), not in the
+ * decoder: after an MVD crop was set and cleared, decoding stayed ~2.5 ms a
+ * frame slower (15.5 -> 18 ms), past the 16.7 ms 60 fps has, and the frames
+ * queued up as input lag (reports GWU2AV and the build 116 export). */
+static float g_view_crop[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+
+static bool set_wide_zoom(unsigned level, unsigned center_x, unsigned center_y)
+{
+    if (level == g_zoom_level && center_x == g_zoom_center_x && center_y == g_zoom_center_y)
+        return false;
+    const float size = level == 1 ? 1.0f / 1.2f : level == 2 ? 1.0f / 1.5f : level == 3 ? 0.5f : 1.0f;
+    float x = g_input_width ? (float)center_x / (float)g_input_width - size / 2.0f : 0.0f;
+    float y = g_input_height ? (float)center_y / (float)g_input_height - size / 2.0f : 0.0f;
+    if (x < 0.0f) x = 0.0f;
+    if (y < 0.0f) y = 0.0f;
+    if (x > 1.0f - size) x = 1.0f - size;
+    if (y > 1.0f - size) y = 1.0f - size;
+    g_view_crop[0] = x;
+    g_view_crop[1] = y;
+    g_view_crop[2] = size;
+    g_view_crop[3] = size;
+    if (level != g_zoom_level)
+        diagnostic_log("MVD", "zoom=%u (GPU) view=%u%%x%u%%+%u%%+%u%%", level,
+                       (unsigned)(size * 100.0f), (unsigned)(size * 100.0f),
+                       (unsigned)(x * 100.0f), (unsigned)(y * 100.0f));
+    g_zoom_level = level;
+    g_zoom_center_x = center_x;
+    g_zoom_center_y = center_y;
+    return true;
+}
+
+void mvd_video_view_crop(float *x, float *y, float *w, float *h)
+{
+    const bool on = g_wide && g_zoom_level;
+    if (x) *x = on ? g_view_crop[0] : 0.0f;
+    if (y) *y = on ? g_view_crop[1] : 0.0f;
+    if (w) *w = on ? g_view_crop[2] : 1.0f;
+    if (h) *h = on ? g_view_crop[3] : 1.0f;
+}
+
 static bool set_zoom(unsigned level, unsigned center_x, unsigned center_y)
 {
     if (!g_active) return false;
+    if (g_wide) return set_wide_zoom(level, center_x, center_y);
 
     MVDSTD_Config next = g_config;
     if (level) {
@@ -365,24 +406,13 @@ static bool set_zoom(unsigned level, unsigned center_x, unsigned center_y)
         next.input_crop_x_pos == g_config.input_crop_x_pos &&
         next.input_crop_y_pos == g_config.input_crop_y_pos)
         return false;
-    if (g_wide) {
-        /* The decoder thread applies g_config with every render. */
-        LightLock_Lock(&g_config_lock);
-        g_config.enable_cropping = next.enable_cropping;
-        g_config.input_crop_x_pos = next.input_crop_x_pos;
-        g_config.input_crop_y_pos = next.input_crop_y_pos;
-        g_config.input_crop_width = next.input_crop_width;
-        g_config.input_crop_height = next.input_crop_height;
-        LightLock_Unlock(&g_config_lock);
-    } else {
-        Result rc = MVDSTD_SetConfig(&next);
-        if (rc != MVD_STATUS_OK) {
-            diagnostic_log("MVD", "zoom config failed enable=%u rc=%08lX",
-                           level, (unsigned long)rc);
-            return false;
-        }
-        g_config = next;
+    Result rc = MVDSTD_SetConfig(&next);
+    if (rc != MVD_STATUS_OK) {
+        diagnostic_log("MVD", "zoom config failed enable=%u rc=%08lX",
+                       level, (unsigned long)rc);
+        return false;
     }
+    g_config = next;
     g_zoom_level = level;
     g_zoom_center_x = center_x;
     g_zoom_center_y = center_y;
@@ -416,7 +446,7 @@ bool mvd_video_pan_to_touch(unsigned touch_x, unsigned touch_y)
     if (!g_active || !g_zoom_level || touch_x >= 320 || touch_y < 128 || touch_y >= 192)
         return false;
     const u64 now = osGetTime();
-    if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < 100) return false;
+    if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < (g_wide ? 16u : 100u)) return false;
     const unsigned center_x = touch_x * g_input_width / 319;
     const unsigned center_y = (touch_y - 128) * g_input_height / 63;
     g_last_zoom_pan_at = now;
@@ -427,7 +457,7 @@ bool mvd_video_pan_to(unsigned x_permille, unsigned y_permille)
 {
     if (!g_active || !g_zoom_level) return false;
     const u64 now = osGetTime();
-    if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < 100) return false;
+    if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < (g_wide ? 16u : 100u)) return false;
     if (x_permille > 1000) x_permille = 1000;
     if (y_permille > 1000) y_permille = 1000;
     g_last_zoom_pan_at = now;
@@ -486,9 +516,19 @@ unsigned mvd_video_ready_frames(void)
 }
 
 /* Pop the oldest ready frame (FIFO); caller must release it. */
+/* Held from taking a frame for the GPU until it is released, so the
+ * decoder can't be closed (a new stream size) under the copy. The UI used
+ * to hold the transport lock for this instead, and the media thread waited
+ * up to 11 ms for it while the copy waited on the GPU (report KA48GF). */
+static LightLock g_present_lock = 1;
+
 const void *mvd_video_take_gpu_frame(void)
 {
-    if (!g_wide) return NULL;
+    LightLock_Lock(&g_present_lock);
+    if (!g_wide) {
+        LightLock_Unlock(&g_present_lock);
+        return NULL;
+    }
     int index = -1;
     LightLock_Lock(&g_frame_lock);
     if (g_ready_count) {
@@ -497,16 +537,17 @@ const void *mvd_video_take_gpu_frame(void)
         g_output_state[index] = OUT_PRESENTING;
     }
     LightLock_Unlock(&g_frame_lock);
+    if (index < 0) LightLock_Unlock(&g_present_lock);
     return index >= 0 ? g_wide_outputs[index] : NULL;
 }
 
 void mvd_video_release_gpu_frame(void)
 {
-    if (!g_wide) return;
     LightLock_Lock(&g_frame_lock);
     for (unsigned i = 0; i < WIDE_OUTPUTS; ++i)
         if (g_output_state[i] == OUT_PRESENTING) g_output_state[i] = OUT_FREE;
     LightLock_Unlock(&g_frame_lock);
+    LightLock_Unlock(&g_present_lock);
 }
 
 /* Discard the oldest ready frame so latency cannot build up. */
@@ -550,6 +591,20 @@ void mvd_video_resync(void)
         ++g_frames_lost;
     }
     g_await_idr = true;
+}
+
+unsigned mvd_video_drop_backlog(void)
+{
+    if (!g_wide) return 0;
+    LightLock_Lock(&g_queue_lock);
+    /* The head may be in the decoder's hands: keep it. */
+    const unsigned dropped = g_queue_count > 1 ? g_queue_count - 1 : 0;
+    if (dropped) g_queue_count = 1;
+    LightLock_Unlock(&g_queue_lock);
+    if (!dropped) return 0;
+    g_await_idr = true;
+    g_resync_requested = true;
+    return dropped;
 }
 
 bool mvd_video_take_resync_request(void)
@@ -876,8 +931,10 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         g_await_idr = true;
         /* The first keyframe waits ~0.5 s for the decoder to set itself up,
          * so the queue fills once at every stream start: normal, not a bug
-         * (beta.28 report HPSV3B, a clean session). */
-        if (g_frames)
+         * (beta.28 report HPSV3B, a clean session). It can spill just after
+         * the first frames too (beta.34: frames 7 and 13), so only a full
+         * queue in the first two seconds' worth of frames is left out. */
+        if (g_frames > 60)
             diagnostic_flag("decoder-backlog", "decoder queue full; waiting for IDR (frame %u)", g_frames);
         else
             diagnostic_log("MVD", "queue full while the decoder starts; waiting for IDR");
@@ -899,6 +956,8 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
 
 void mvd_video_close(void)
 {
+    /* Not while a frame is on its way to the GPU. */
+    LightLock_Lock(&g_present_lock);
     if (g_decoder) {
         g_decoder_quit = true;
         LightEvent_Signal(&g_queue_event);
@@ -932,6 +991,7 @@ void mvd_video_close(void)
     g_zoom_center_x = g_zoom_center_y = 0;
     g_last_zoom_pan_at = 0;
     memset(&g_config, 0, sizeof(g_config));
+    LightLock_Unlock(&g_present_lock);
 }
 
 bool mvd_video_active(void) { return g_active; }

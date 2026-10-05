@@ -25,6 +25,8 @@ typedef struct {
     unsigned repeated, skipped, drained;
     /* Main loop iterations over 25 ms while streaming, and the longest. */
     unsigned slow_loops, loop_max_ms;
+    /* 60 fps latency guard: backlogs dropped to a keyframe. */
+    unsigned catchups;
     /* Totals over the session (baselines absorb counter resets). */
     unsigned lost, keyframes, resent, concealed, reconnects;
     unsigned last_lost, last_keyframes, last_concealed;

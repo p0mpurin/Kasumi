@@ -8,6 +8,9 @@
  * closes (the stream and the queue chime both use it). False: no sound. */
 bool audio_system_init(void);
 bool audio_system_ready(void);
+/* ndspInit failed because sdmc:/3ds/dspfirm.cdc is missing (DSP1 not run):
+ * no sound at all until it is dumped. */
+bool audio_system_firmware_missing(void);
 void audio_system_exit(void);
 
 /* 48 kHz stereo Opus from the GFN WebRTC audio track. */

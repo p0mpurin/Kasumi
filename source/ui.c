@@ -144,6 +144,8 @@ static bool g_video_ready;
 /* The picture inside the surface, and where it goes on the 800x480 view. */
 static unsigned g_video_w = VIDEO_WIDTH, g_video_h = VIDEO_HEIGHT;
 static float g_video_x, g_video_y, g_video_scale = 1.0f;
+/* The part of the picture shown (zoom), as fractions of it. */
+static float g_crop_x, g_crop_y, g_crop_w = 1.0f, g_crop_h = 1.0f;
 static C2D_TextBuf g_text;
 static u64 g_started_at;
 static u64 g_last_frame_at;
@@ -314,14 +316,16 @@ static void draw_video_look(void)
                GPU_PRIMARY_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_ADD_SIGNED, 0);
     C3D_TexEnvBufUpdate(C3D_RGB, BIT(2));
 
-    const float u1 = (float)g_video_w / MVD_TEX_WIDTH;
-    const float v1 = 1.0f - (float)g_video_h / MVD_TEX_HEIGHT;
+    const float u0 = g_crop_x * (float)g_video_w / MVD_TEX_WIDTH;
+    const float u1 = (g_crop_x + g_crop_w) * (float)g_video_w / MVD_TEX_WIDTH;
+    const float v0 = 1.0f - g_crop_y * (float)g_video_h / MVD_TEX_HEIGHT;
+    const float v1 = 1.0f - (g_crop_y + g_crop_h) * (float)g_video_h / MVD_TEX_HEIGHT;
     const float x0 = g_video_x, x1 = g_video_x + (float)g_video_w * g_video_scale;
     const float y0 = g_video_y / 2.0f, y1 = (g_video_y + (float)g_video_h * g_video_scale) / 2.0f;
     C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
-    look_vertex(x0, y0, 0.0f, 1.0f);
-    look_vertex(x0, y1, 0.0f, v1);
-    look_vertex(x1, y0, u1, 1.0f);
+    look_vertex(x0, y0, u0, v0);
+    look_vertex(x0, y1, u0, v1);
+    look_vertex(x1, y0, u1, v0);
     look_vertex(x1, y1, u1, v1);
     C3D_ImmDrawEnd();
 
@@ -402,9 +406,23 @@ void ui_exit(void)
     C3D_Fini();
 }
 
+static void frame_started(void);
+
 void ui_frame_begin(bool sync_vblank)
 {
     C3D_FrameBegin(sync_vblank ? C3D_FRAME_SYNCDRAW : 0);
+    frame_started();
+}
+
+bool ui_frame_try_begin(void)
+{
+    if (!C3D_FrameBegin(C3D_FRAME_NONBLOCK)) return false;
+    frame_started();
+    return true;
+}
+
+static void frame_started(void)
+{
     /* The GPU has finished the last frame: a replaced wallpaper can go. */
     for (int i = 0; i < 2; ++i)
         if (g_retired[i]) {
@@ -535,6 +553,15 @@ void ui_set_video_size(unsigned width, unsigned height)
     g_video_y = floorf(((float)VIDEO_HEIGHT - (float)height * scale) / 2.0f);
 }
 
+void ui_set_video_crop(float x, float y, float w, float h)
+{
+    if (!(w > 0.0f && h > 0.0f && w <= 1.0f && h <= 1.0f)) x = y = 0.0f, w = h = 1.0f;
+    g_crop_x = x;
+    g_crop_y = y;
+    g_crop_w = w;
+    g_crop_h = h;
+}
+
 void ui_draw_video(void)
 {
     if (!g_video_ready) return;
@@ -542,7 +569,13 @@ void ui_draw_video(void)
         draw_video_look();
         return;
     }
-    const C2D_Image image = { &g_video_tex, &g_video_subtex };
+    /* Same size on screen; the zoom only narrows the texture coordinates. */
+    Tex3DS_SubTexture sub = g_video_subtex;
+    sub.left = g_crop_x * (float)g_video_w / MVD_TEX_WIDTH;
+    sub.right = (g_crop_x + g_crop_w) * (float)g_video_w / MVD_TEX_WIDTH;
+    sub.top = 1.0f - g_crop_y * (float)g_video_h / MVD_TEX_HEIGHT;
+    sub.bottom = 1.0f - (g_crop_y + g_crop_h) * (float)g_video_h / MVD_TEX_HEIGHT;
+    const C2D_Image image = { &g_video_tex, &sub };
     /* Full width, half height: 800x480 -> 800x240 with a 2:1 row average. */
     C2D_DrawImageAt(image, g_video_x, g_video_y / 2.0f, 0.0f, NULL, g_video_scale, 0.5f * g_video_scale);
 }
@@ -1165,6 +1198,14 @@ void ui_ps_triangle(float cx, float cy, float s, u32 color)
     const float ih = inner * 0.87f;
     ui_triangle(cx, cy - ih * 0.62f + 0.6f, cx - inner / 2, cy + ih * 0.38f + 0.6f,
                 cx + inner / 2, cy + ih * 0.38f + 0.6f, UI_BG);
+}
+
+void ui_xbox_face(float cx, float cy, float s, char letter, u32 color)
+{
+    ui_circle(cx, cy, s / 2 + 1.0f, color);
+    const char text[2] = { letter, '\0' };
+    const float size = s * 0.9f;
+    ui_text(cx, cy - size / 2, size, UI_BG, UI_ALIGN_CENTER, text);
 }
 
 void ui_ps_circle(float cx, float cy, float s, u32 color)

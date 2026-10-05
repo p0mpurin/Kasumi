@@ -150,6 +150,39 @@ static void media_mid(const char *offer, const char *media, char *out, size_t ca
     }
 }
 
+/* The offer's mic track: the second m=audio (mid "3" in NVIDIA's offers,
+ * opus/48000/2). Its mid and Opus payload type, or false if there is none. */
+static bool mic_section(const char *offer, char *mid, size_t cap, int *payload)
+{
+    const char *first = strstr(offer, "m=audio ");
+    const char *start = first ? strstr(first + 8, "m=audio ") : NULL;
+    if (!start) return false;
+    const char *end = strstr(start + 2, "\r\nm=");
+    mid[0] = 0;
+    *payload = -1;
+    for (const char *p = start; p && (!end || p < end); p = strstr(p, "\r\n")) {
+        if (*p == '\r') p += 2;
+        if (!strncmp(p, "a=mid:", 6)) {
+            const char *eol = strstr(p, "\r\n");
+            size_t n = eol ? (size_t)(eol - p - 6) : strlen(p + 6);
+            if (n >= cap) n = cap - 1;
+            memcpy(mid, p + 6, n);
+            mid[n] = 0;
+        }
+        int pt = 0;
+        if (*payload < 0 && sscanf(p, "a=rtpmap:%d opus/48000", &pt) == 1) *payload = pt;
+        if (!*p) break;
+    }
+    return mid[0] && *payload > 0;
+}
+
+static bool g_mic_wanted;
+/* The transport voice chat goes out on (set when its answer had a mic
+ * section, cleared on close); used under g_peer_lock. */
+static WebRtcTransport *g_mic_transport;
+
+void webrtc_transport_set_mic(bool wanted) { g_mic_wanted = wanted; }
+
 static char *prepare_offer(const char *offer, const char *media_ip)
 {
     size_t n = strlen(offer), ipn = media_ip ? strlen(media_ip) : 0;
@@ -172,10 +205,24 @@ static char *prepare_offer(const char *offer, const char *media_ip)
     return result;
 }
 
-static char *adapt_answer(const char *answer, const char *offer)
+static char *adapt_answer(const char *answer, const char *offer, bool *mic_added)
 {
     char *out = calloc(1, SDP_LIMIT);
     if (!out) return NULL;
+    /* Voice chat: answer the offer's mic track with our Opus sender
+     * (libpeer's SSRC 6, payload 111), and keep the game audio receive
+     * only so that SSRC belongs to the mic. Only when asked for: the
+     * stream is unchanged otherwise. */
+    char mic_mid[32];
+    int mic_pt = -1;
+    bool mic = g_mic_wanted && mic_section(offer, mic_mid, sizeof(mic_mid), &mic_pt);
+    if (g_mic_wanted && mic && mic_pt != 111) {
+        diagnostic_log("MIC", "offer's mic uses payload %d, not 111: voice chat off", mic_pt);
+        mic = false;
+    } else if (g_mic_wanted && !mic) {
+        diagnostic_log("MIC", "offer has no mic track: voice chat off");
+    }
+    bool mic_written = false;
     const int video_pt = h264_payload(offer);
     char video_mid[32] = "video", audio_mid[32] = "audio", data_mid[32] = "datachannel";
     char offer_group[192] = "";
@@ -200,6 +247,17 @@ static char *adapt_answer(const char *answer, const char *offer)
             section = SECTION_AUDIO; emit = "m=audio 9 UDP/TLS/RTP/SAVPF 111";
         } else if (!strncmp(line, "m=application ", 14)) {
             section = SECTION_DATA; emit = "m=application 9 UDP/DTLS/SCTP webrtc-datachannel";
+            if (mic && !mic_written) {
+                /* The mic section goes before the data channel's, which
+                 * carries the session's ICE and DTLS lines at the end. */
+                char mic_lines[256];
+                snprintf(mic_lines, sizeof(mic_lines),
+                         "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\n"
+                         "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=0\r\n"
+                         "a=ssrc:6 cname:kasumi-mic\r\na=sendonly\r\na=mid:%s\r\na=rtcp-mux", mic_mid);
+                append(out, SDP_LIMIT, mic_lines);
+                mic_written = true;
+            }
         } else if (!strncmp(line, "a=mid:", 6)) {
             snprintf(replacement, sizeof(replacement), "a=mid:%s",
                 section == SECTION_VIDEO ? video_mid : section == SECTION_AUDIO ? audio_mid : data_mid); emit = replacement;
@@ -210,14 +268,18 @@ static char *adapt_answer(const char *answer, const char *offer)
         } else if (section == SECTION_VIDEO && !strncmp(line, "a=rtcp-fb:96", 12)) {
             snprintf(replacement, sizeof(replacement), "a=rtcp-fb:%d%.980s", video_pt, line + 12); emit = replacement;
         } else if (section == SECTION_VIDEO && !strcmp(line, "a=sendrecv")) emit = "a=recvonly";
-        append(out, SDP_LIMIT, emit);
-        if (!strcmp(emit, "c=IN IP4 0.0.0.0") && section == SECTION_VIDEO) {
+        else if (mic && section == SECTION_AUDIO && !strcmp(line, "a=sendrecv")) emit = "a=recvonly";
+        else if (mic && section == SECTION_AUDIO && !strncmp(line, "a=ssrc:", 7)) emit = NULL;
+        if (emit) append(out, SDP_LIMIT, emit);
+        if (emit && !strcmp(emit, "c=IN IP4 0.0.0.0") && section == SECTION_VIDEO) {
             char bandwidth[32];
             snprintf(bandwidth, sizeof(bandwidth), "b=AS:%u", stream_profile_max_bitrate());
             append(out, SDP_LIMIT, bandwidth);
         }
         p = *end ? end + 2 : NULL;
     }
+    *mic_added = mic_written;
+    if (mic_written) diagnostic_log("MIC", "answer includes the mic track (mid %s)", mic_mid);
     return out;
 }
 
@@ -744,7 +806,8 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
     diagnostic_log("ICE", "gathered local_candidates=%u", t->local_candidates);
     for (unsigned i = 0; i < t->local_candidates; ++i)
         diagnostic_log("ICE", "local[%u]=%s", i, t->pending_local_candidates[i]);
-    char *answer = raw ? adapt_answer(raw, offer) : NULL;
+    bool mic_added = false;
+    char *answer = raw ? adapt_answer(raw, offer, &mic_added) : NULL;
     char *nvst = answer ? build_nvst(answer) : NULL;
     bool sent = answer && nvst && nvst_signal_send_answer(signal, answer, nvst);
     free(nvst); free(answer);
@@ -753,6 +816,10 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
         goto fail;
     }
     free(offer);
+    t->mic_negotiated = mic_added;
+    RecursiveLock_Lock(&g_peer_lock);
+    g_mic_transport = mic_added ? t : NULL;
+    RecursiveLock_Unlock(&g_peer_lock);
     t->state = WEBRTC_ANSWER_SENT;
     t->answer_sent_at = osGetTime();
     send_local_candidates(t, signal);
@@ -949,8 +1016,12 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
                 uint8_t move[34];
                 const size_t move_size = gfn_input_encode_mouse_move(move, (int16_t)dx, (int16_t)dy,
                     timestamp_us, t->input_protocol_version);
-                if (peer_connection_datachannel_send_binary_sid(pc, (char *)move,
-                                                                  move_size, 0) >= 0)
+                /* Lossy like the gamepad state: a lost nudge is a few
+                 * pixels, while reliable moves (up to 60 a second) filled
+                 * the resend queue on weak Wi-Fi and every button after
+                 * them was dropped (beta.34 reports 74HGAW, EP4QMP). */
+                if (peer_connection_datachannel_send_binary_lossy_sid(pc, (char *)move,
+                                                                        move_size, 0) >= 0)
                     t->mouse_moves++;
             }
             t->last_mouse_move_at = now_input;
@@ -1034,7 +1105,8 @@ bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
     const size_t size = gfn_input_encode_mouse_move(packet, dx, dy,
         timestamp_us, t->input_protocol_version);
     RecursiveLock_Lock(&g_peer_lock);
-    const bool ok = peer_connection_datachannel_send_binary_sid(t->peer,
+    /* Lossy, as above; clicks and keys stay reliable. */
+    const bool ok = peer_connection_datachannel_send_binary_lossy_sid(t->peer,
         (char *)packet, size, 0) >= 0;
     RecursiveLock_Unlock(&g_peer_lock);
     if (ok) t->mouse_moves++;
@@ -1098,8 +1170,23 @@ void webrtc_transport_close(WebRtcTransport *t)
 {
     if (!t) return;
     media_thread_stop(t);
+    /* Under the lock: the mic thread may be sending on this peer. */
+    RecursiveLock_Lock(&g_peer_lock);
+    if (g_mic_transport == t) g_mic_transport = NULL;
     if (t->peer) peer_connection_destroy(t->peer);
+    t->peer = NULL;
+    RecursiveLock_Unlock(&g_peer_lock);
     audio_output_close();
     mvd_video_close();
     memset(t, 0, sizeof(*t));
+}
+
+bool webrtc_transport_send_mic(const uint8_t *opus, size_t size)
+{
+    RecursiveLock_Lock(&g_peer_lock);
+    WebRtcTransport *t = g_mic_transport;
+    const bool ok = t && t->peer && t->state == WEBRTC_CONNECTED &&
+                    peer_connection_send_audio(t->peer, opus, size) == 0;
+    RecursiveLock_Unlock(&g_peer_lock);
+    return ok;
 }

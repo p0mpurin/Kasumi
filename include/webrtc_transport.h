@@ -57,6 +57,8 @@ typedef struct {
     unsigned keyboard_keys;
     bool pointer_mode;
     bool keyboard_mode;
+    /* The answer carried a mic section (voice chat can be sent). */
+    bool mic_negotiated;
     bool data_open;
     bool input_ready;
     bool input_channel_requested;
@@ -134,5 +136,9 @@ unsigned webrtc_transport_resent_packets(const WebRtcTransport *transport);
 void webrtc_transport_set_pointer_mode(WebRtcTransport *transport, bool enabled);
 bool webrtc_transport_mouse_move(WebRtcTransport *transport, int16_t dx, int16_t dy);
 bool webrtc_transport_mouse_button(WebRtcTransport *transport, bool pressed);
+/* Voice chat: answer the offer's mic track at the next connect, and send
+ * one 20 ms Opus frame on it (any thread; false when not connected). */
+void webrtc_transport_set_mic(bool wanted);
+bool webrtc_transport_send_mic(const uint8_t *opus, size_t size);
 bool webrtc_transport_send_key(WebRtcTransport *transport, uint16_t keycode,
                                uint16_t scancode, uint16_t modifiers);

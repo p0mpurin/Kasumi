@@ -30,6 +30,15 @@ void http_next_request(long timeout_seconds, HttpProgress progress, void *contex
 static HttpProgress g_progress;
 static void *g_progress_context;
 
+static bool body_contains(const char *data, size_t size, const char *needle)
+{
+    const size_t n = strlen(needle);
+    if (!data || size < n) return false;
+    for (size_t i = 0; i + n <= size; ++i)
+        if (data[i] == needle[0] && !memcmp(data + i, needle, n)) return true;
+    return false;
+}
+
 static int transfer_progress(void *userdata, curl_off_t dl_total, curl_off_t dl_now,
                              curl_off_t ul_total, curl_off_t ul_now)
 {
@@ -179,7 +188,9 @@ bool http_request(const char *method, const char *url, const char *user_agent,
         response->size = buffer.size;
         /* A server falling over is NVIDIA's problem, but a new one we have
          * not seen means some call is malformed or a route moved. */
-        if (response->status >= 500)
+        /* Except NVIDIA's limited mode, a 500 that gfn_client already
+         * waits out (55 of beta.34's http-5xx flags, each a report). */
+        if (response->status >= 500 && !body_contains(buffer.data, buffer.size, "LIMITED_MODE"))
             diagnostic_flag("http-5xx", "%s %s -> %ld (%lu bytes)", method, host, response->status,
                             (unsigned long)buffer.size);
     } else {

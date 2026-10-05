@@ -1,6 +1,9 @@
 #pragma once
 
+#include <jansson.h>
 #include <stdbool.h>
+
+#include "gfn_input.h"
 
 /* Favourites and per-game options ("before you play"), keyed by the game's
  * library ID and kept in APP_DATA_DIR/games.json. */
@@ -17,9 +20,9 @@ typedef struct {
     int gyro_speed;
     /* Touch camera (AppSettings.touch_camera). */
     int touch_camera;
-    /* Custom button mapping (GFN_OUT_* per GFN_IN_*), when has_map. */
+    /* Custom button mapping, when has_map. */
     bool has_map;
-    unsigned char map[14];
+    GfnButtonMap map;
 } GamePrefs;
 
 void game_prefs_load(void);
@@ -32,3 +35,6 @@ void game_prefs_set(const char *app_id, const GamePrefs *prefs);
 bool game_prefs_favourite(const char *app_id);
 /* Bumped whenever favourites change, so the library list can refresh. */
 unsigned game_prefs_version(void);
+/* A button map inside a JSON object (also used by settings.json). */
+bool game_prefs_read_map(json_t *object, GfnButtonMap *map);
+void game_prefs_write_map(json_t *object, const GfnButtonMap *map);

@@ -85,6 +85,10 @@ u32 ui_theme_color(UiTheme theme);
 
 /* One frame: begin, draw into one or both targets, end. */
 void ui_frame_begin(bool sync_vblank);
+/* Begin a frame only if the GPU has finished the last one (false: it is
+ * still busy, try again shortly). The stream uses it so the main loop
+ * never sits waiting on the GPU while buttons go unread. */
+bool ui_frame_try_begin(void);
 void ui_frame_end(void);
 void ui_begin_top(void);
 void ui_begin_bottom(void);
@@ -101,6 +105,9 @@ void ui_top_classic_video(void);
 void ui_draw_video(void);
 /* The picture's size inside the wide surface (mvd_video_wide_size). */
 void ui_set_video_size(unsigned width, unsigned height);
+/* Show only part of the picture (fractions, 0..1), filling the same area:
+ * the Wide zoom. 0, 0, 1, 1 shows all of it. */
+void ui_set_video_crop(float x, float y, float w, float h);
 /* The picture filter for wide video, done on the GPU while drawing:
  * sharpening 0 (off) ... 3 and colour 0 (natural) ... 2. */
 void ui_set_video_look(unsigned sharpen, unsigned color);
@@ -200,3 +207,5 @@ void ui_ps_triangle(float cx, float cy, float size, u32 color);
 void ui_ps_circle(float cx, float cy, float size, u32 color);
 void ui_ps_cross(float cx, float cy, float size, u32 color);
 void ui_ps_square(float cx, float cy, float size, u32 color);
+/* Xbox face buttons: the letter on a disc of the button's colour. */
+void ui_xbox_face(float cx, float cy, float size, char letter, u32 color);

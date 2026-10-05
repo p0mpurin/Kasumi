@@ -7,6 +7,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "file_worker.h"
 #include "provider.h"
 #include "regions.h"
 
@@ -72,15 +73,6 @@ void launch_end(const char *outcome, const char *install_id)
                                "c", g_launch.conflict ? 1 : 0, "rs", g_launch.resumed ? 1 : 0,
                                "m", g_launch.weak ? 1 : 0, "aw", g_launch.auto_weak ? 1 : 0);
     if (!record) return;
-    json_error_t error;
-    json_t *list = json_load_file(LAUNCH_PENDING_PATH, 0, &error);
-    if (!json_is_array(list)) {
-        json_decref(list);
-        list = json_array();
-    }
-    json_array_append_new(list, record);
-    while (json_array_size(list) > LAUNCH_KEEP) json_array_remove(list, 0);
-    if (json_dump_file(list, LAUNCH_PENDING_PATH, JSON_COMPACT) != 0)
-        diagnostic_log("LAUNCH", "could not save the launch record");
-    json_decref(list);
+    /* Written in the background: this runs as the picture appears. */
+    file_worker_append_json(LAUNCH_PENDING_PATH, record, LAUNCH_KEEP, JSON_COMPACT);
 }

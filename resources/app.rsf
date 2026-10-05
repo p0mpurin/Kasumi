@@ -135,6 +135,7 @@ AccessControlInfo:
     - fs:USER
     - gsp::Gpu
     - hid:USER
+    - mic:u
     - soc:U
     - ndm:u
     - ps:ps
@@ -150,6 +151,7 @@ SystemControlInfo:
     dsp: 0x0004013000001a02
     gsp: 0x0004013000001c02
     hid: 0x0004013000001d02
+    mic: 0x0004013000002002
     mvd: 0x0004013020004102
     ps: 0x0004013000003102
     socket: 0x0004013000002e02

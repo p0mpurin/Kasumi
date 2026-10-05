@@ -6,6 +6,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "file_worker.h"
 #include "mvd_video.h"
 #include "report.h"
 #include "stream_profile.h"
@@ -104,11 +105,14 @@ bool perf_end(const char *install_id)
     json_object_set_new(s, "lm", json_integer(g_perf.loop_max_ms));
     /* 60 fps asked for, and whether it fell back to 30 (experimental). */
     json_object_set_new(s, "fr", json_integer(stream_profile_fps60_requested() ? 60 : 30));
-    json_object_set_new(s, "fb", json_integer(stream_profile_fps60_blocked() ? 1 : 0));
-    const bool ok = json_dump_file(s, REPORT_STATS_PENDING_PATH, JSON_COMPACT) == 0;
-    diagnostic_log("REPORT", "session summary %us ping=%d lost=%u repeated=%u saved=%d", n,
+    /* fb (fell back to 30) is gone with the fallback (build 114); cu counts
+     * the latency guard's catch-ups instead. */
+    json_object_set_new(s, "fb", json_integer(0));
+    json_object_set_new(s, "cu", json_integer(g_perf.catchups));
+    diagnostic_log("REPORT", "session summary %us ping=%d lost=%u repeated=%u saved=1", n,
                    g_perf.ping_samples ? (int)(g_perf.ping_sum / g_perf.ping_samples) : -1,
-                   g_perf.lost, g_perf.repeated, ok);
-    json_decref(s);
-    return ok;
+                   g_perf.lost, g_perf.repeated);
+    /* In the background: this runs as the game closes (file_worker.h). */
+    file_worker_save_json(REPORT_STATS_PENDING_PATH, s, JSON_COMPACT);
+    return true;
 }

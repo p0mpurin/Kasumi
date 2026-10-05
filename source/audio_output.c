@@ -62,6 +62,7 @@ static bool g_attempted;
 static bool g_ndsp_ready;
 static char g_status[96] = "not started";
 static bool g_system_ready;
+static bool g_firmware_missing;
 static bool g_system_attempted;
 
 /* ndsp writes its variables into DSP shared memory at 0x1ff50000 and
@@ -99,12 +100,15 @@ bool audio_system_init(void)
     diagnostic_checkpoint();
     const Result result = ndspInit();
     g_system_ready = R_SUCCEEDED(result);
+    /* D880A7FA: the DSP firmware dump (dspfirm.cdc) is not on the card. */
+    g_firmware_missing = result == (Result)0xD880A7FA;
     diagnostic_log("AUDIO", "dsp init %s rc=%08lX", g_system_ready ? "ok" : "failed (no sound)",
                    (unsigned long)result);
     return g_system_ready;
 }
 
 bool audio_system_ready(void) { return g_system_ready; }
+bool audio_system_firmware_missing(void) { return g_firmware_missing; }
 
 void audio_system_exit(void)
 {

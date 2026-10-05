@@ -14,6 +14,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "file_worker.h"
 #include "http_client.h"
 #include "launch_stats.h"
 
@@ -46,6 +47,7 @@ bool report_stats_pending(void)
 static bool send_launches(void)
 {
     size_t length = 0;
+    file_worker_flush();
     char *list = read_file(LAUNCH_PENDING_PATH, 12 * 1024, &length);
     if (!list) return false;
     char *body = malloc(length + 40);
@@ -73,6 +75,7 @@ bool report_send_stats(void)
     struct stat st;
     if (stat(LAUNCH_PENDING_PATH, &st) == 0 && st.st_size > 2) send_launches();
     size_t length = 0;
+    file_worker_flush();
     char *summary = read_file(REPORT_STATS_PENDING_PATH, 4096, &length);
     if (!summary) return false;
     static const char *const headers[] = { "Content-Type: application/json" };

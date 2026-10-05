@@ -1,14 +1,16 @@
 #include "remote_keyboard.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "gfn_input.h"
+#include "phone_keyboard.h"
 #include "ui.h"
 
 typedef enum {
     KEY_KIND_CHAR, KEY_KIND_SHIFT, KEY_KIND_BACKSPACE, KEY_KIND_SYMBOLS,
     KEY_KIND_SPACE, KEY_KIND_ENTER, KEY_KIND_TAB, KEY_KIND_ESC,
-    KEY_KIND_MOUSE, KEY_KIND_DONE
+    KEY_KIND_MOUSE, KEY_KIND_DONE, KEY_KIND_PHONE
 } KeyKind;
 
 typedef struct {
@@ -19,6 +21,8 @@ typedef struct {
 } Key;
 
 enum { MAX_KEYS = 56, SHIFT_OFF = 0, SHIFT_ONCE = 1, SHIFT_LOCK = 2 };
+/* The tool keys along the top come first; FIRST_FOCUS is "q". */
+enum { HEADER_KEYS = 5, FIRST_FOCUS = 15 };
 
 #define MARGIN 4.0f
 #define GAP 3.0f
@@ -28,7 +32,10 @@ enum { MAX_KEYS = 56, SHIFT_OFF = 0, SHIFT_ONCE = 1, SHIFT_LOCK = 2 };
 
 static int g_shift;
 static bool g_symbols;
-static int g_focus = 14;
+static int g_focus = FIRST_FOCUS;
+/* The phone keyboard's QR sheet, and whether its page failed to start. */
+static bool g_phone_open, g_phone_failed;
+static const UiRect PHONE_CLOSE = { 214, 194, 96, 40 };
 static int g_flash = -1;
 static u64 g_flash_until;
 static u64 g_last_shift_at;
@@ -62,11 +69,12 @@ static int add_key(Key *keys, int count, float x, float y, float w, KeyKind kind
 static int build_layout(Key *keys)
 {
     int count = 0;
-    /* Header: two tools on each side, mirrored. */
+    /* Header: two tools on each side, mirrored, and PHONE between. */
     count = add_key(keys, count, 4.0f, 4.0f, 50.0f, KEY_KIND_ESC, 0, "ESC");
     count = add_key(keys, count, 58.0f, 4.0f, 50.0f, KEY_KIND_TAB, 0, "TAB");
     count = add_key(keys, count, 212.0f, 4.0f, 50.0f, KEY_KIND_MOUSE, 0, "MOUSE");
     count = add_key(keys, count, 266.0f, 4.0f, 50.0f, KEY_KIND_DONE, 0, "DONE");
+    count = add_key(keys, count, 112.0f, 4.0f, 96.0f, KEY_KIND_PHONE, 0, "PHONE");
 
     const char *const *rows = g_symbols ? SYMBOL_ROWS : LETTER_ROWS;
     const float kw = key_width();
@@ -114,7 +122,8 @@ void remote_keyboard_open(void)
 {
     g_shift = SHIFT_OFF;
     g_symbols = false;
-    g_focus = 14;
+    g_focus = FIRST_FOCUS;
+    g_phone_open = false;
     g_flash = -1;
     g_last_send_ok = true;
 }
@@ -157,12 +166,21 @@ static bool press(WebRtcTransport *t, const Key *key, int index)
         webrtc_transport_set_pointer_mode(t, true);
         return true;
     case KEY_KIND_DONE: return true;
+    case KEY_KIND_PHONE:
+        /* The page keeps running for the rest of the game. */
+        g_phone_failed = !phone_keyboard_start();
+        g_phone_open = true;
+        break;
     }
     return false;
 }
 
 bool remote_keyboard_touch(WebRtcTransport *t, int x, int y)
 {
+    if (g_phone_open) {
+        if (ui_hit(PHONE_CLOSE, x, y)) g_phone_open = false;
+        return false;
+    }
     Key keys[MAX_KEYS];
     const int count = build_layout(keys);
     for (int i = 0; i < count; ++i) {
@@ -170,7 +188,7 @@ bool remote_keyboard_touch(WebRtcTransport *t, int x, int y)
         UiRect hit = keys[i].rect;
         hit.x -= GAP / 2; hit.y -= ROW_GAP / 2; hit.w += GAP; hit.h += ROW_GAP;
         if (ui_hit(hit, x, y)) {
-            if (i >= 4) g_focus = i;
+            if (i >= HEADER_KEYS) g_focus = i;
             return press(t, &keys[i], i);
         }
     }
@@ -179,12 +197,12 @@ bool remote_keyboard_touch(WebRtcTransport *t, int x, int y)
 
 static void move_focus(const Key *keys, int count, int dx, int dy)
 {
-    if (g_focus < 0 || g_focus >= count) g_focus = 14;
+    if (g_focus < 0 || g_focus >= count) g_focus = FIRST_FOCUS;
     const float cx = keys[g_focus].rect.x + keys[g_focus].rect.w / 2;
     const float cy = keys[g_focus].rect.y + keys[g_focus].rect.h / 2;
     int best = -1;
     float best_score = 1e9f;
-    for (int i = 4; i < count; ++i) {
+    for (int i = HEADER_KEYS; i < count; ++i) {
         if (i == g_focus) continue;
         const float x = keys[i].rect.x + keys[i].rect.w / 2 - cx;
         const float y = keys[i].rect.y + keys[i].rect.h / 2 - cy;
@@ -200,9 +218,13 @@ static void move_focus(const Key *keys, int count, int dx, int dy)
 
 bool remote_keyboard_buttons(WebRtcTransport *t, u32 down)
 {
+    if (g_phone_open) {
+        if (down & (KEY_A | KEY_B | KEY_X)) g_phone_open = false;
+        return false;
+    }
     Key keys[MAX_KEYS];
     int count = build_layout(keys);
-    if (g_focus < 4 || g_focus >= count) g_focus = 14;
+    if (g_focus < HEADER_KEYS || g_focus >= count) g_focus = FIRST_FOCUS;
     if (down & KEY_DUP) move_focus(keys, count, 0, -1);
     if (down & KEY_DDOWN) move_focus(keys, count, 0, 1);
     if (down & KEY_DLEFT) move_focus(keys, count, -1, 0);
@@ -221,28 +243,76 @@ bool remote_keyboard_buttons(WebRtcTransport *t, u32 down)
     return (down & (KEY_X | KEY_SELECT)) != 0;
 }
 
+/* The QR code for the phone page, how to use it, and whether a phone
+ * has come by. */
+static void draw_phone_sheet(void)
+{
+    ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_BG);
+    ui_text(UI_BOTTOM_WIDTH / 2, 2.0f, 12.0f, UI_ACCENT, UI_ALIGN_CENTER, "スマホ");
+    ui_label(UI_BOTTOM_WIDTH / 2, 16.0f, 11.0f, UI_TEXT, UI_ALIGN_CENTER, "TYPE ON YOUR PHONE");
+    ui_hline(0, 30.0f, UI_BOTTOM_WIDTH, UI_LINE);
+    const unsigned char *modules;
+    const int n = phone_keyboard_qr(&modules);
+    if (g_phone_failed || !n) {
+        ui_text_wrap(UI_BOTTOM_WIDTH / 2, 84.0f, 12.0f, UI_TEXT_DIM, UI_ALIGN_CENTER, 280.0f, 3, 15.0f,
+                     "The phone keyboard could not start. Check that the 3DS is on Wi-Fi, then try again.");
+    } else {
+        /* Whole pixels per module, on white with a quiet border, so any
+         * phone camera reads it whatever the theme. */
+        const int border = 3;
+        const float scale = floorf(150.0f / (float)(n + 2 * border));
+        const float size = (float)(n + 2 * border) * scale, x0 = 10.0f, y0 = 36.0f;
+        ui_rect(x0, y0, size, size, C2D_Color32(0xFF, 0xFF, 0xFF, 0xFF));
+        for (int y = 0; y < n; ++y)
+            for (int x = 0; x < n; ++x)
+                if (modules[y * n + x])
+                    ui_rect(x0 + (float)(x + border) * scale, y0 + (float)(y + border) * scale, scale, scale,
+                            C2D_Color32(0x00, 0x00, 0x00, 0xFF));
+        static const char *const steps[3] = {
+            "Put your phone on the same Wi-Fi as the 3DS.",
+            "Scan the code with the phone's camera.",
+            "Type there: it goes straight into the game.",
+        };
+        float y = 38.0f;
+        for (int i = 0; i < 3; ++i) {
+            char number[4] = { (char)('1' + i), '\0' };
+            ui_text(170.0f, y, 12.0f, UI_ACCENT, UI_ALIGN_CENTER, number);
+            y += 14.0f * (float)ui_text_wrap(180.0f, y, 12.0f, UI_TEXT, UI_ALIGN_LEFT, 132.0f, 3, 14.0f, steps[i]);
+            y += 6.0f;
+        }
+        ui_text_wrap(170.0f, y + 2.0f, 10.0f, UI_TEXT_FAINT, UI_ALIGN_LEFT, 142.0f, 2, 12.0f, phone_keyboard_url());
+        const bool connected = phone_keyboard_connected();
+        ui_label(12.0f, 206.0f, 11.0f, connected ? UI_ACCENT : UI_KIN, UI_ALIGN_LEFT,
+                 connected ? "PHONE CONNECTED" : "WAITING FOR YOUR PHONE");
+    }
+    ui_button(PHONE_CLOSE, "CLOSE", NULL, UI_BUTTON_PRIMARY, false);
+}
+
 void remote_keyboard_draw(const WebRtcTransport *t, bool touching, int tx, int ty)
 {
+    if (g_phone_open) {
+        draw_phone_sheet();
+        return;
+    }
     Key keys[MAX_KEYS];
     const int count = build_layout(keys);
     const u64 now = osGetTime();
 
-    ui_text(UI_BOTTOM_WIDTH / 2, 1.0f, 12.0f, UI_ACCENT, UI_ALIGN_CENTER, "キーボード");
-    ui_label(UI_BOTTOM_WIDTH / 2, 15.0f, 10.0f,
-             !g_last_send_ok ? UI_DANGER : t->input_ready ? UI_ACCENT : UI_KIN, UI_ALIGN_CENTER,
-             !g_last_send_ok ? "NOT SENT" : t->input_ready ? "CONNECTED" : "CONNECTING");
+    /* Under the tool keys: whether keys get through, and the shortcuts. */
     ui_hline(0, 30.0f, UI_BOTTOM_WIDTH, UI_LINE);
-    ui_rect(UI_BOTTOM_WIDTH / 2 - 12, 30.0f, 24.0f, 1.0f, UI_ACCENT);
+    ui_label(8.0f, 35.0f, 10.0f,
+             !g_last_send_ok ? UI_DANGER : t->input_ready ? UI_ACCENT : UI_KIN, UI_ALIGN_LEFT,
+             !g_last_send_ok ? "NOT SENT" : t->input_ready ? "CONNECTED" : "CONNECTING");
     static const char *const hints[] = {
-        "A", "Type", "B", "Delete", "Y", "Space", "X", "Close", NULL
+        "B", "Delete", "Y", "Space", "X", "Close", NULL
     };
-    ui_hint_row(UI_BOTTOM_WIDTH / 2, 34.0f, hints);
+    ui_hint_row(206.0f, 34.0f, hints);
 
     for (int i = 0; i < count; ++i) {
         const Key *key = &keys[i];
         const bool held = touching && ui_hit(key->rect, tx, ty);
         const bool flash = i == g_flash && now < g_flash_until;
-        const bool header = i < 4;
+        const bool header = i < HEADER_KEYS;
         u32 fill = header ? UI_BG : UI_SURFACE;
         u32 border = UI_LINE;
         u32 text = UI_TEXT;
@@ -254,6 +324,7 @@ void remote_keyboard_draw(const WebRtcTransport *t, bool touching, int tx, int t
         }
         if (key->kind == KEY_KIND_SYMBOLS && g_symbols) { border = UI_ACCENT; text = UI_ACCENT; }
         if (key->kind == KEY_KIND_MOUSE && t->pointer_mode) { border = UI_ACCENT; text = UI_ACCENT; }
+        if (key->kind == KEY_KIND_PHONE && phone_keyboard_running()) { border = UI_ACCENT; text = UI_ACCENT; }
         if (held || flash) { fill = UI_ACCENT; text = UI_BG; border = UI_ACCENT; }
         ui_rect_r(key->rect, fill);
         ui_outline(key->rect.x, key->rect.y, key->rect.w, key->rect.h, 1.0f, border);

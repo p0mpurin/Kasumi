@@ -11,7 +11,11 @@
  * the .3dsx) is downloaded to the SD card, verified against SHA256SUMS from
  * the same release, then installed: the CIA through the system installer,
  * which only commits once the whole title is written, the .3dsx by writing
- * a new file and swapping it in. Network steps run on the network worker. */
+ * a new file and swapping it in. Network steps run on the network worker.
+ *
+ * Dev mode: when APP_DATA_DIR/dev_server.txt holds a PC's address (from
+ * tools/dev_server.py), checks ask that PC instead, and any build there
+ * that differs from the last one installed from it is offered. */
 
 typedef enum {
     UPDATE_IDLE,
@@ -44,6 +48,8 @@ void updater_init(const char *self_path);
 UpdateInfo updater_info(void);
 /* True when installing replaces a .3dsx rather than the installed CIA. */
 bool updater_is_3dsx(void);
+/* The last check went to a dev server (dev_server.txt). */
+bool updater_dev_mode(void);
 /* Auto-check is due (at most every 12 hours). */
 bool updater_check_due(void);
 

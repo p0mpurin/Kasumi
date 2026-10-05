@@ -37,6 +37,9 @@
 #include "mvd_video.h"
 #include "net_worker.h"
 #include "nvst_signal.h"
+#include "file_worker.h"
+#include "mic_capture.h"
+#include "phone_keyboard.h"
 #include "remote_keyboard.h"
 #include "settings.h"
 #include "stream_profile.h"
@@ -93,6 +96,9 @@ static u64 g_combo_started_at;
 
 static void shutdown_services(void)
 {
+    mic_capture_stop();
+    file_worker_exit();
+    phone_keyboard_stop();
     webrtc_transport_close(&g_transport);
     nvst_signal_close(&g_signal);
     diagnostic_log("APP", REPORT_CLEAN_EXIT);
@@ -215,9 +221,10 @@ static void render_wide_video(bool draw_bottom)
             rate_since = now_ms;
             rate_frames = decoded_now;
         }
-        /* The same cap at 60 fps: a longer queue there was felt as input
-         * lag (report EM7YGV). */
-        while (ready > reserve + 3) {
+        /* Decoded frames waiting to be shown are input lag: at 60 fps keep
+         * one beyond the reserve (~33-50 ms in all), not three (report
+         * EM7YGV felt the 30 fps cap as lag at 60). */
+        while (ready > reserve + (sixty ? 1u : 3u)) {
             mvd_video_skip_oldest_frame();
             --ready;
             ++skipped;
@@ -274,9 +281,26 @@ static void render_wide_video(bool draw_bottom)
         }
         webrtc_transport_unlock();
     }
+    /* A lower-screen redraw the GPU was too busy for goes out on the next
+     * pass: build 116 dropped it, and a menu move waited for the 250 ms
+     * refresh (the stream menu felt laggy). */
+    static bool bottom_pending;
+    draw_bottom = draw_bottom || bottom_pending;
     if (!present && !draw_bottom) return;
     const u64 start = svcGetSystemTick();
-    webrtc_transport_lock();
+    /* A video frame waits for the GPU: build 115 skipped the pass instead
+     * and came back later, but a frame put off past the next refresh grew
+     * the queue and was trimmed (15 of every 120 skipped, report GWU2AV).
+     * A bottom-screen-only redraw can wait for a free GPU. */
+    if (present) {
+        ui_frame_begin(false);
+    } else if (!ui_frame_try_begin()) {
+        bottom_pending = true;
+        return;
+    }
+    bottom_pending = false;
+    /* The frame is guarded by mvd_video's own present lock, not the
+     * transport's: the media thread keeps reading packets meanwhile. */
     const void *frame = present ? mvd_video_take_gpu_frame() : NULL;
     if (frame && g_screenshot_requested) {
         g_screenshot_requested = false;
@@ -286,13 +310,14 @@ static void render_wide_video(bool draw_bottom)
         ui_video_upload(frame);
         mvd_video_release_gpu_frame();
     }
-    webrtc_transport_unlock();
-    ui_frame_begin(false);
     if (frame) {
         ui_begin_top_video();
         unsigned video_w, video_h;
         mvd_video_wide_size(&video_w, &video_h);
         ui_set_video_size(video_w, video_h);
+        float crop_x, crop_y, crop_w, crop_h;
+        mvd_video_view_crop(&crop_x, &crop_y, &crop_w, &crop_h);
+        ui_set_video_crop(crop_x, crop_y, crop_w, crop_h);
         ui_draw_video();
     }
     if (draw_bottom) {
@@ -580,8 +605,6 @@ static void launch_game(const GfnGame *game)
     prepare_game_session(game);
     g_app.limit_wait_until = g_app.limit_retry_at = 0;
     g_app.limit_unclosable = g_app.limit_rate = g_app.limit_busy = false;
-    /* Each game gets a fresh try at 60 fps. */
-    stream_profile_block_fps60(false);
     launch_begin(false, stream_profile_weak(), g_app.auto_weak);
     submit_job(NET_JOB_START_SESSION, "Creating your cloud session...", NULL, &g_current_game);
     if (g_app.settings.voice_cues) menu_audio_cue(MENU_CUE_ITTERASSHAI);
@@ -634,7 +657,7 @@ static bool session_gone(void)
     return g_signal.state == NVST_SIGNAL_ERROR && (g_signal.upgrade_http == 404 || g_signal.upgrade_http == 410);
 }
 
-static bool fps60_watchdog(u64 now);
+static void fps60_latency_guard(u64 now);
 
 static void retry_session(void)
 {
@@ -662,11 +685,16 @@ static void retry_session(void)
     }
 }
 
+static void apply_session_input(void);
+static void open_mapping(const GamePrefs *prefs);
+
 static void save_settings(void)
 {
-    settings_apply_input(&g_app.settings);
-    if (!settings_save(&g_app.settings))
-        show_notice("Settings could not be saved to SD");
+    /* Mid-game this keeps the game's own camera speeds and button map
+     * (the stream menu's layout switch used to drop a game's map). */
+    apply_session_input();
+    settings_save_async(&g_app.settings);
+    if (settings_save_failed()) show_notice("Settings could not be saved to SD");
 }
 
 /* ---- Software update ------------------------------------------------------- */
@@ -738,6 +766,29 @@ static void handle_whats_new(u32 down, u32 repeat, AppAction action)
         g_app.whats_new_open = false;
 }
 
+static u64 g_shortcut_launch_at;
+
+/* The Discord invite, once per console: in the library, when nothing else
+ * is open (after What's new and the first-run guide). */
+static void discord_invite_tick(void)
+{
+    if (g_app.settings.discord_seen || g_app.discord_open || g_app.view != VIEW_LIBRARY ||
+        g_app.modal != MODAL_NONE || g_app.whats_new_open || g_app.guide_page >= 0 || g_app.update_open ||
+        g_app.settings_open || g_app.details_open || g_app.busy || g_shortcut_launch_at)
+        return;
+    g_app.discord_open = true;
+    diagnostic_log("UI", "discord invite shown");
+}
+
+static void handle_discord(u32 down, AppAction action)
+{
+    if ((down & (KEY_A | KEY_B | KEY_START)) || action == ACTION_DISCORD_CLOSE) {
+        g_app.discord_open = false;
+        g_app.settings.discord_seen = true;
+        save_settings();
+    }
+}
+
 /* Quiet daily check from the menus; never during a session. */
 static void auto_update_check(void)
 {
@@ -775,7 +826,10 @@ static void change_setting(int direction)
     }
     if (index == SETTING_SHARE_STATS) {
         screens_setting_change(&g_app, index, direction);
-        if (!g_app.settings.share_stats) { remove(REPORT_STATS_PENDING_PATH); remove(LAUNCH_PENDING_PATH); }
+        if (!g_app.settings.share_stats) {
+            file_worker_remove(REPORT_STATS_PENDING_PATH);
+            file_worker_remove(LAUNCH_PENDING_PATH);
+        }
         diagnostic_log("REPORT", "share stats %s", g_app.settings.share_stats ? "on" : "off");
         return;
     }
@@ -798,9 +852,69 @@ static void change_setting(int direction)
         open_updates();
         return;
     }
+    if (index == SETTING_MAPPING) {
+        open_mapping(NULL);
+        return;
+    }
     screens_setting_change(&g_app, index, direction);
     settings_apply_input(&g_app.settings);
     settings_apply_picture(&g_app.settings);
+}
+
+/* ---- Voice chat -------------------------------------------------------------- */
+
+/* The mic runs while a game streams with Settings > Microphone on and the
+ * session's answer included the mic track; it starts muted (MIC button),
+ * and closing the lid mutes it. */
+static void mic_tick(bool streaming)
+{
+    static bool failed_this_game;
+    webrtc_transport_set_mic(g_app.settings.mic);
+    const bool want = streaming && g_app.settings.mic && g_transport.mic_negotiated &&
+                      g_transport.state == WEBRTC_CONNECTED;
+    if (!streaming) failed_this_game = false;
+    if (want && !mic_capture_running() && !failed_this_game) {
+        if (!mic_capture_start()) {
+            failed_this_game = true;
+            show_notice("The microphone could not start");
+        }
+    } else if (!want && mic_capture_running()) {
+        mic_capture_stop();
+    }
+    if (g_app.lid_paused && mic_capture_running() && !mic_capture_muted()) mic_capture_set_muted(true);
+    g_app.mic_available = mic_capture_running();
+}
+
+/* ---- Touch L3 / R3 / PS ----------------------------------------------------- */
+
+/* The touch screen reads two fingers as one point halfway between them, so
+ * a finger on L3 and another on R3 shows up in the middle: the stats panel
+ * (which is itself an L3 + R3 zone) or, lower down, the PS button. A jump
+ * from L3 or R3 into the middle is the second finger arriving; both stay
+ * held until the reading lands back on L3 or R3 (one finger lifted). */
+static uint16_t stream_touch_buttons(bool touch_down, touchPosition touch)
+{
+    static uint16_t last;
+    static int last_x;
+    static bool both;
+    const uint16_t sticks = GFN_PAD_LEFT_THUMB | GFN_PAD_RIGHT_THUMB;
+    if (!g_app.touching) {
+        last = 0;
+        both = false;
+        return 0;
+    }
+    const int x = touch.px;
+    uint16_t buttons = screens_stream_held_buttons(&g_app, x, touch.py);
+    if (!g_app.look_mode && !touch_down && !g_transport.pointer_mode && !mvd_video_zoomed()) {
+        const bool one_stick = buttons == GFN_PAD_LEFT_THUMB || buttons == GFN_PAD_RIGHT_THUMB;
+        const bool was_one_stick = last == GFN_PAD_LEFT_THUMB || last == GFN_PAD_RIGHT_THUMB;
+        if (both && one_stick) both = false;
+        else if (was_one_stick && abs(x - last_x) >= 60 && x >= 68 && x <= 252) both = true;
+    }
+    if (touch_down) both = false;
+    last = buttons;
+    last_x = x;
+    return both ? sticks : buttons;
 }
 
 /* ---- Touch camera ---------------------------------------------------------- */
@@ -921,7 +1035,8 @@ static void look_tick(bool touch_down, bool touching, touchPosition touch)
         else g_look.last_move_at = now;
     }
     if (!g_look.active && touching && touch_down && ui_hit(screens_look_pad(), x, y) &&
-        !ui_hit(screens_look_r3(), x, y) && !ui_hit(screens_look_hide(), x, y))
+        !ui_hit(screens_look_r3(), x, y) && !ui_hit(screens_look_hide(), x, y) &&
+        !ui_hit(screens_look_both(), x, y) && !(g_app.mic_available && ui_hit(screens_look_mic(), x, y)))
         look_begin(x, y, now);
 
     if (g_look.active && touching) {
@@ -1103,7 +1218,10 @@ static void handle_modal(u32 down, AppAction action)
         g_app.settings.share_stats = confirm;
         g_app.settings.share_consent = SHARE_CONSENT_VERSION;
         diagnostic_log("REPORT", "share diagnostics answered %s", confirm ? "yes" : "no");
-        if (!confirm) { remove(REPORT_STATS_PENDING_PATH); remove(LAUNCH_PENDING_PATH); }
+        if (!confirm) {
+            file_worker_remove(REPORT_STATS_PENDING_PATH);
+            file_worker_remove(LAUNCH_PENDING_PATH);
+        }
         save_settings();
         show_notice(confirm ? "Thank you! Change it anytime in Settings > System"
                             : "Nothing will be sent. Change it anytime in Settings > System");
@@ -1366,9 +1484,11 @@ static void handle_guide(u32 down, AppAction action)
     }
 }
 
-static void reapply_game_map(void)
+/* A game's own map, or its own layout, replaces the map for every game. */
+static void apply_game_map(const GamePrefs *prefs)
 {
-    if (gfn_session_active(&g_client) && g_session_prefs.has_map) gfn_input_set_custom_map(g_session_prefs.map);
+    if (prefs->has_map) gfn_input_set_custom_map(&prefs->map);
+    else if (prefs->layout >= 0) gfn_input_set_custom_map(NULL);
 }
 
 /* Settings for this game's session: the global ones with its options. */
@@ -1395,7 +1515,7 @@ static void apply_game_options(const GamePrefs *prefs)
             show_notice("This game uses its own Bitrate (game page, X > Options)");
     }
     g_session_prefs = *prefs;
-    if (prefs->has_map) gfn_input_set_custom_map(prefs->map);
+    apply_game_map(prefs);
 }
 
 /* Settings changed mid-game (the stream menu's gyro switch): apply them
@@ -1408,8 +1528,10 @@ static void apply_session_input(void)
         if (p->camera_speed >= 0 && p->camera_speed < 4) session.camera_speed = (unsigned)p->camera_speed;
         if (p->camera_invert >= 0 && p->camera_invert < 3) session.camera_invert = (unsigned)p->camera_invert;
         if (p->gyro_speed >= 0 && p->gyro_speed < 3) session.gyro_speed = (unsigned)p->gyro_speed;
+        if (p->layout >= 0 && p->layout < 2) session.button_layout = (GfnButtonLayout)p->layout;
     }
     settings_apply_input(&session);
+    if (gfn_session_active(&g_client)) apply_game_map(p);
 }
 
 /* Launch a library game from one of its stores, with its own options. */
@@ -1432,41 +1554,67 @@ static void launch_with_options(const GfnGame *base, unsigned variant)
 
 /* ---- Button mapping editor ---------------------------------------------- */
 
-static void open_mapping(const GfnGame *game, const GamePrefs *prefs)
+/* The editor for one game (prefs) or, with NULL, for every game. */
+static void open_mapping(const GamePrefs *prefs)
 {
-    (void)game;
-    const GfnButtonLayout layout = prefs->layout >= 0 ? (GfnButtonLayout)prefs->layout : g_app.settings.button_layout;
-    gfn_input_default_map(layout, g_app.settings.swap_shoulders, g_app.mapping_default);
-    memcpy(g_app.mapping, prefs->has_map ? prefs->map : g_app.mapping_default, sizeof(g_app.mapping));
+    const AppSettings *s = &g_app.settings;
+    const GfnButtonLayout layout = prefs && prefs->layout >= 0 ? (GfnButtonLayout)prefs->layout : s->button_layout;
+    gfn_input_default_map(layout, s->swap_shoulders, &g_app.mapping_default);
+    /* A game without a layout of its own starts from the map for every
+     * game, and RESET goes back to it. */
+    if (prefs && prefs->layout < 0 && s->has_map) g_app.mapping_default = s->map;
+    if (prefs) g_app.mapping = prefs->has_map ? prefs->map : g_app.mapping_default;
+    else g_app.mapping = s->has_map ? s->map : g_app.mapping_default;
+    g_app.mapping_global = prefs == NULL;
     g_app.mapping_input = GFN_IN_A;
+    g_app.mapping_field = 0;
     g_app.mapping_open = true;
 }
 
 static void handle_mapping(u32 down, u32 repeat, AppAction action)
 {
     const GfnGame *game = app_game(&g_app, g_app.selected);
-    if (!game) { g_app.mapping_open = false; return; }
-    /* Pressing a 3DS button picks it; the Circle Pad changes what it sends
-     * (every button, D-Pad included, is itself remappable). */
+    if (!g_app.mapping_global && !game) { g_app.mapping_open = false; return; }
+    /* Pressing a 3DS button picks it (every button, D-Pad included, is
+     * itself remappable). The Circle Pad changes the chosen row: up and
+     * down the button, left and right the value; the C-Stick or a tap
+     * picks the row. */
     for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i)
         if (down & gfn_input_key(i)) g_app.mapping_input = (int)i;
-    unsigned char *out = &g_app.mapping[g_app.mapping_input];
-    if ((repeat & KEY_CPAD_LEFT) || action == ACTION_MAP_PREV)
-        *out = (unsigned char)((*out + GFN_OUTPUT_COUNT - 1) % GFN_OUTPUT_COUNT);
-    if ((repeat & KEY_CPAD_RIGHT) || action == ACTION_MAP_NEXT)
-        *out = (unsigned char)((*out + 1) % GFN_OUTPUT_COUNT);
+    if (screens_touched_map_field() >= 0 &&
+        (action == ACTION_MAP_FIELD || action == ACTION_MAP_PREV || action == ACTION_MAP_NEXT))
+        g_app.mapping_field = screens_touched_map_field();
+    if (repeat & KEY_CSTICK_UP) g_app.mapping_field = (g_app.mapping_field + 2) % 3;
+    if (repeat & KEY_CSTICK_DOWN) g_app.mapping_field = (g_app.mapping_field + 1) % 3;
+    int step = 0;
+    if ((repeat & KEY_CPAD_LEFT) || action == ACTION_MAP_PREV) step = -1;
+    if ((repeat & KEY_CPAD_RIGHT) || action == ACTION_MAP_NEXT) step = 1;
+    const int input = g_app.mapping_input;
+    if (step) {
+        unsigned char *value = g_app.mapping_field == 0 ? &g_app.mapping.out[input]
+                             : g_app.mapping_field == 1 ? &g_app.mapping.also[input] : &g_app.mapping.mode[input];
+        const int count = g_app.mapping_field == 2 ? GFN_BIND_MODE_COUNT : GFN_OUTPUT_COUNT;
+        *value = (unsigned char)((*value + count + step) % count);
+    }
     if (repeat & KEY_CPAD_UP) g_app.mapping_input = (g_app.mapping_input + GFN_INPUT_COUNT - 1) % GFN_INPUT_COUNT;
     if (repeat & KEY_CPAD_DOWN) g_app.mapping_input = (g_app.mapping_input + 1) % GFN_INPUT_COUNT;
-    if (action == ACTION_MAP_RESET) memcpy(g_app.mapping, g_app.mapping_default, sizeof(g_app.mapping));
+    if (action == ACTION_MAP_RESET) g_app.mapping = g_app.mapping_default;
     if (action == ACTION_MAP_CANCEL) g_app.mapping_open = false;
-    if (action == ACTION_MAP_DONE) {
-        GamePrefs prefs = game_prefs_get(game->app_id);
-        prefs.has_map = memcmp(g_app.mapping, g_app.mapping_default, sizeof(g_app.mapping)) != 0;
-        memcpy(prefs.map, g_app.mapping, sizeof(prefs.map));
-        game_prefs_set(game->app_id, &prefs);
-        g_app.mapping_open = false;
-        show_notice(prefs.has_map ? "Button mapping saved for this game" : "This game uses the normal layout");
+    if (action != ACTION_MAP_DONE) return;
+    g_app.mapping_open = false;
+    const bool custom = !gfn_button_map_equal(&g_app.mapping, &g_app.mapping_default);
+    if (g_app.mapping_global) {
+        g_app.settings.has_map = custom;
+        g_app.settings.map = g_app.mapping;
+        save_settings();
+        show_notice(custom ? "Button mapping saved for every game" : "Every game uses the normal layout");
+        return;
     }
+    GamePrefs prefs = game_prefs_get(game->app_id);
+    prefs.has_map = custom;
+    prefs.map = g_app.mapping;
+    game_prefs_set(game->app_id, &prefs);
+    show_notice(custom ? "Button mapping saved for this game" : "This game uses the normal mapping");
 }
 
 static void handle_options(u32 down, u32 repeat, AppAction action)
@@ -1498,7 +1646,7 @@ static void handle_options(u32 down, u32 repeat, AppAction action)
     case OPTION_TOUCH_CAMERA: CYCLE(prefs.touch_camera, 3); break;
     case OPTION_GYRO_SPEED: CYCLE(prefs.gyro_speed, 3); break;
     case OPTION_MAPPING:
-        if ((down & KEY_A) || action == ACTION_OPTION_NEXT || action == ACTION_OPTION_PREV) open_mapping(game, &prefs);
+        if ((down & KEY_A) || action == ACTION_OPTION_NEXT || action == ACTION_OPTION_PREV) open_mapping(&prefs);
         return;
     case OPTION_CONNECTION:
         if ((down & KEY_A) || action == ACTION_OPTION_NEXT)
@@ -1622,6 +1770,10 @@ static void handle_gallery(u32 down, u32 repeat, AppAction action)
 
 static void handle_settings(u32 down, u32 repeat, AppAction action)
 {
+    if (g_app.mapping_open) {
+        handle_mapping(down, repeat, action);
+        return;
+    }
     if (g_app.gallery_open) {
         handle_gallery(down, repeat, action);
         return;
@@ -1750,12 +1902,18 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
             g_app.sound_muted = !g_app.sound_muted;
         } else if (action == ACTION_MENU_GYRO) {
             screens_setting_change(&g_app, SETTING_GYRO, 1);
-            apply_session_input();
-            reapply_game_map();
             save_settings();
         } else if (action == ACTION_MENU_LAYOUT) {
-            screens_setting_change(&g_app, SETTING_LAYOUT, 1);
-            save_settings();
+            /* A button map decides every button, layout or not, and a
+             * game's own layout outranks the global one. */
+            if (g_session_prefs.has_map || g_session_prefs.layout >= 0) {
+                show_notice("This game has its own buttons (game page > X > Options)");
+            } else if (gfn_input_custom_map_active()) {
+                show_notice("Your button mapping is in use (Settings > Controls)");
+            } else {
+                screens_setting_change(&g_app, SETTING_LAYOUT, 1);
+                save_settings();
+            }
 
         } else if (action == ACTION_MENU_DISCONNECT) {
             leave_session();
@@ -1786,11 +1944,15 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
     case ACTION_LOOK_TOGGLE:
         /* Kept for the next game too. */
         g_app.settings.touch_camera_shown = !g_app.settings.touch_camera_shown;
-        settings_save(&g_app.settings);
+        settings_save_async(&g_app.settings);
         return;
     case ACTION_STREAM_MENU:
         g_app.stream_menu = true;
         g_app.stream_menu_index = STREAM_MENU_RESUME;
+        return;
+    case ACTION_MIC_TOGGLE:
+        mic_capture_set_muted(!mic_capture_muted());
+        show_notice(mic_capture_muted() ? "Mic muted" : "Mic on: your team can hear you");
         return;
     default: break;
     }
@@ -1842,6 +2004,17 @@ static void phase_end(int phase)
 /* Any HOME, sleep or applet event: a long main-loop gap around one is not
  * a stall (see watch_for_bugs). */
 static volatile unsigned g_apt_events;
+/* The buttons held at the last input scan (see rosalina_combo). */
+static u32 g_last_held;
+
+/* Luma's Rosalina menu (L + Down + Select) freezes the whole app while it
+ * is open, with no HOME or sleep event, and players open it mid-game for
+ * screenshots: beta.34 flagged a 57 s "stall" with exactly that combo in
+ * the input log. Select with L or Down is close enough to tell. */
+static bool rosalina_combo(u32 held)
+{
+    return (held & KEY_SELECT) && (held & (KEY_L | KEY_DDOWN));
+}
 
 static void apt_hook(APT_HookType hook, void *param)
 {
@@ -2143,7 +2316,7 @@ static void track_session(void)
     /* The video thread can stamp a frame after `now` was read: unsigned
      * now - last then wrapped to 2^64 and every such reconnect in beta.23
      * reports was bogus (one broke a working game). */
-    if (fps60_watchdog(now)) return;
+    fps60_latency_guard(now);
     const u64 last_frame = g_transport.last_decoded_frame_at;
     const bool frozen = g_app.view == VIEW_STREAM && g_transport.state == WEBRTC_CONNECTED &&
                         last_frame && now > last_frame && now - last_frame > 12000 &&
@@ -2610,9 +2783,13 @@ static void watch_for_bugs(void)
     } else {
         connect_since = 0;
     }
-    /* Opus packets the decoder refused (not lost ones: those are Wi-Fi). */
+    /* Opus packets the decoder refused (not lost ones: those are Wi-Fi).
+     * Without the DSP every packet "fails" (one console raised 1906 flags
+     * in a run): that case is told to the player instead. */
     static unsigned audio_errors_flagged;
-    if (g_transport.audio_errors >= audio_errors_flagged + 25) {
+    if (!audio_system_ready()) {
+        audio_errors_flagged = g_transport.audio_errors;
+    } else if (g_transport.audio_errors >= audio_errors_flagged + 25) {
         audio_errors_flagged = g_transport.audio_errors;
         diagnostic_flag("audio-decode", "%u audio packets failed to decode (%u decoded)", g_transport.audio_errors,
                         g_transport.audio_decoded);
@@ -2630,6 +2807,23 @@ static void watch_for_bugs(void)
             diagnostic_flag("low-memory", "linear free %lu KiB (view %d)", (unsigned long)(free_bytes / 1024),
                             (int)g_app.view);
         }
+    }
+}
+
+/* No DSP firmware dump: no sound in menus or games. Beta.34 reports had a
+ * console play a whole session silent with nothing on screen to say why.
+ * Said once per run in the library, and again when a game starts. */
+static void sound_hint_tick(void)
+{
+    static bool told_menu, told_game;
+    if (!audio_system_firmware_missing()) return;
+    if (!told_menu && g_app.view == VIEW_LIBRARY && g_app.modal == MODAL_NONE && g_app.guide_page < 0) {
+        told_menu = true;
+        show_notice("No sound: this 3DS's sound firmware is missing. Run DSP1 once, then restart Kasumi");
+    }
+    if (!told_game && g_app.view == VIEW_STREAM && g_app.stream_started_at) {
+        told_game = true;
+        show_notice("No sound on this 3DS: run DSP1 once (see Settings > Sound & Look)");
     }
 }
 
@@ -2985,65 +3179,50 @@ static void launch_failed(void)
     launch_end(g_client.fail_code[0] ? g_client.fail_code : "error", launch_share_id());
 }
 
-/* 60 fps (experimental) needs the decoder under 16.7 ms a frame. When a
- * game is too heavy for it (DOOM Eternal: 15-18 ms, then a full queue and
- * freezes, report EM7YGV), frames pile up and are felt as input lag: go
- * back to 30 for this game rather than play on lagging. */
-static bool fps60_watchdog(u64 now)
+/* 60 fps without falling back. The decoder takes about 14 ms of the 16.7 a
+ * frame has (beta.34 export), so it keeps up on average; heavy scenes and
+ * Wi-Fi bunching still queue encoded frames, and every queued frame is
+ * input lag. A frame can't be skipped (each needs the one before), so a
+ * backlog that lasts is dropped to the next keyframe: a short hitch instead
+ * of lag that grows. Beta.33-34 reconnected at 30 fps instead (about 20 s,
+ * in 52 of 58 sessions). */
+static void fps60_latency_guard(u64 now)
 {
-    static u64 window_at, backed_up_since;
-    static unsigned long long sum_base;
-    static unsigned count_base, heavy_windows;
-    /* The first keyframe waits ~0.5 s for the decoder to set itself up, so
-     * frames always queue at the start (beta.33 report QQPDYV fell back 75 ms
-     * after the first frame): watch only after 5 s of picture. */
+    static u64 backed_up_since, last_catchup, window_at;
+    static unsigned window_catchups;
+    static u64 hinted_for;
     if (stream_profile_fps() < 60 || g_app.view != VIEW_STREAM || !g_app.stream_started_at ||
-        g_transport.state != WEBRTC_CONNECTED || now < g_app.stream_started_at + 5000) {
-        window_at = 0;
-        heavy_windows = 0;
+        g_transport.state != WEBRTC_CONNECTED || now < g_app.stream_started_at + 3000) {
         backed_up_since = 0;
-        return false;
+        return;
     }
-    unsigned long long sum;
-    unsigned count, max_us;
-    mvd_video_decode_totals(&sum, &count, &max_us, false);
-    /* Frames waiting to be decoded: more than ~4 (67 ms) for 2 s is lag. */
-    /* Beta.33 stored "since" as now|1, one past now on even milliseconds,
-     * so now - since wrapped and the 2 s test passed at once. */
-    if (mvd_video_pending_units() > 4) {
+    /* Six in the queue: five waiting behind the one being decoded, about
+     * 85 ms. A Wi-Fi burst or a busy moment clears in well under a second.
+     * Each catch-up is itself a hitch (the drop plus ~60 ms for the
+     * keyframe), and one every 2 s in a scene heavier than the decoder
+     * read as constant stutter (report GWU2AV): at most one per 6 s. */
+    if (mvd_video_pending_units() >= 6) {
         if (!backed_up_since) backed_up_since = now;
     } else {
         backed_up_since = 0;
     }
-    const bool backed_up = backed_up_since && now >= backed_up_since + 2000;
-    if (!window_at || count < count_base) {
-        window_at = now;
-        sum_base = sum;
-        count_base = count;
-    } else if (now - window_at >= 2000) {
-        const unsigned frames = count - count_base;
-        const unsigned avg = frames ? (unsigned)((sum - sum_base) / frames) : 0;
-        /* Three 2 s windows in a row over 15.5 ms: no headroom left. */
-        heavy_windows = frames >= 60 && avg > 15500 ? heavy_windows + 1 : 0;
-        window_at = now;
-        sum_base = sum;
-        count_base = count;
-        if (heavy_windows >= 3) {
-            diagnostic_flag("fps60-fallback", "decode %u us a frame over 6 s; back to 30 fps", avg);
-        }
-    }
-    if (heavy_windows < 3 && !backed_up) return false;
-    if (backed_up)
-        diagnostic_flag("fps60-fallback", "%u frames waiting to decode for 2 s; back to 30 fps",
-                        mvd_video_pending_units());
-    heavy_windows = 0;
+    if (!backed_up_since || now - backed_up_since < 600 || now - last_catchup < 6000) return;
+    const unsigned dropped = mvd_video_drop_backlog();
     backed_up_since = 0;
-    window_at = 0;
-    stream_profile_block_fps60(true);
-    show_notice("This game is too heavy for 60 fps on the 3DS - switching to 30");
-    ++g_perf.reconnects;
-    retry_session();
-    return true;
+    if (!dropped) return;
+    last_catchup = now;
+    ++g_perf.catchups;
+    diagnostic_log("VIDEO", "60 fps catch-up: dropped %u queued frames, waiting for a keyframe", dropped);
+    /* Often (four in a minute): the game is heavier than the 3DS decodes
+     * at 60. Said once per game; 30 fps stays the player's choice. */
+    if (!window_at || now - window_at > 60000) {
+        window_at = now;
+        window_catchups = 0;
+    }
+    if (++window_catchups >= 4 && hinted_for != g_app.stream_started_at) {
+        hinted_for = g_app.stream_started_at;
+        show_notice("Heavy game for 60 fps on the 3DS: 30 fps will feel smoother (Settings > Picture)");
+    }
 }
 
 /* The limit-wait countdown, and its retry. */
@@ -3159,9 +3338,9 @@ static void finish_jobs(void)
 typedef struct {
     AppView view;
     AppModal modal;
-    bool settings_open, details_open, options_open, mapping_open, update_open, whats_new_open;
+    bool settings_open, details_open, options_open, mapping_open, update_open, whats_new_open, discord_open;
     bool stream_menu, controls_open, guide_open;
-    int library_tab, setting_index, options_index, stream_menu_index, guide_page, mapping_input;
+    int library_tab, setting_index, options_index, stream_menu_index, guide_page, mapping_input, mapping_field;
     int settings_section, settings_grid;
     size_t selected;
     unsigned details_variant;
@@ -3180,6 +3359,7 @@ static void ui_state(UiState *s)
     s->mapping_open = g_app.mapping_open;
     s->update_open = g_app.update_open;
     s->whats_new_open = g_app.whats_new_open;
+    s->discord_open = g_app.discord_open;
     s->stream_menu = g_app.stream_menu;
     s->controls_open = g_app.controls_open;
     s->guide_open = g_app.guide_page >= 0;
@@ -3191,6 +3371,7 @@ static void ui_state(UiState *s)
     s->stream_menu_index = g_app.stream_menu_index;
     s->guide_page = g_app.guide_page;
     s->mapping_input = g_app.mapping_input;
+    s->mapping_field = g_app.mapping_field;
     s->selected = g_app.selected;
     s->details_variant = g_app.details_variant;
     s->busy = g_app.busy != NULL;
@@ -3201,7 +3382,7 @@ static void ui_state(UiState *s)
 static unsigned ui_overlays(const UiState *s)
 {
     return (s->settings_open ? 1u : 0) | (s->details_open ? 2u : 0) | (s->options_open ? 4u : 0) |
-           (s->mapping_open ? 8u : 0) | (s->update_open ? 16u : 0) | (s->whats_new_open ? 32u : 0) |
+           (s->mapping_open ? 8u : 0) | (s->update_open ? 16u : 0) | (s->whats_new_open ? 32u : 0) | (s->discord_open ? 512u : 0) |
            (s->stream_menu ? 64u : 0) | (s->controls_open ? 128u : 0) | (s->guide_open ? 256u : 0);
 }
 
@@ -3249,6 +3430,7 @@ static void ui_sounds(u32 down, AppAction action)
                now.settings_grid != was->settings_grid ||
                now.options_index != was->options_index || now.stream_menu_index != was->stream_menu_index ||
                now.guide_page != was->guide_page || now.mapping_input != was->mapping_input ||
+               now.mapping_field != was->mapping_field ||
                now.details_variant != was->details_variant) {
         sound = SFX_MOVE;
     } else if (now.view != was->view && now.view != VIEW_STREAM && was->view != VIEW_STREAM) {
@@ -3319,6 +3501,7 @@ int main(int argc, char **argv)
     providers_load();
     regions_load();
     settings_load(&g_app.settings);
+    file_worker_init();
     if (!g_app.settings.install_id[0]) {
         /* Anonymous: random, made here, not linked to any account. */
         srand((unsigned)(svcGetSystemTick() ^ osGetTime()));
@@ -3429,7 +3612,10 @@ int main(int argc, char **argv)
             static unsigned apt_seen;
             /* An hour or more is the clock being changed, not a stall (a beta.31
              * report showed 38 days). */
-            if (loop_ms > 2500 && loop_ms < 3600000 && apt_seen == g_apt_events) {
+            const bool interrupted = apt_seen != g_apt_events || rosalina_combo(g_last_held);
+            if (loop_ms > 2500 && loop_ms < 3600000 && apt_seen == g_apt_events && rosalina_combo(g_last_held)) {
+                diagnostic_log("APP", "paused %u ms by the system menu (L+Down+Select)", loop_ms);
+            } else if (loop_ms > 2500 && loop_ms < 3600000 && !interrupted) {
                 unsigned measured = 0;
                 for (int i = 0; i < PHASE_COUNT; ++i) measured += g_phase_ms[i];
                 diagnostic_flag("ui-stall", "main loop blocked %u ms (view %d, job %d) sync=%u ticks=%u input=%u "
@@ -3440,7 +3626,7 @@ int main(int argc, char **argv)
             }
             apt_seen = g_apt_events;
             g_phase_at = loop_now;
-            if (g_app.view == VIEW_STREAM && loop_ms < 5000) {
+            if (g_app.view == VIEW_STREAM && loop_ms < 5000 && !interrupted) {
                 if (loop_ms > g_loop_max_ms) g_loop_max_ms = loop_ms;
                 if (loop_ms > 25) {
                     ++g_loop_slow;
@@ -3457,6 +3643,7 @@ int main(int argc, char **argv)
         hidScanInput();
         const u32 down = hidKeysDown();
         const u32 held = hidKeysHeld();
+        g_last_held = held;
         const u32 repeat = hidKeysDownRepeat();
         touchPosition touch = {0, 0};
         if (held & KEY_TOUCH) hidTouchRead(&touch);
@@ -3474,17 +3661,21 @@ int main(int argc, char **argv)
         const AppAction action = touch_down ? screens_touch(&g_app, touch.px, touch.py) : ACTION_NONE;
         if (g_app.view != VIEW_STREAM) {
             auto_update_check();
+            discord_invite_tick();
             share_prompt_tick();
             auto_report_tick();
             stats_tick();
         }
         keep_login_tick();
+        sound_hint_tick();
         shortcut_tick();
         shortcut_launch_tick();
         library_upgrade_tick();
         phase_end(PHASE_TICKS);
         if (g_app.whats_new_open && g_app.view != VIEW_STREAM) {
             handle_whats_new(down, repeat, action);
+        } else if (g_app.discord_open && g_app.view != VIEW_STREAM) {
+            handle_discord(down, action);
         } else if (g_app.guide_page >= 0 && g_app.view != VIEW_STREAM && !g_app.busy) {
             handle_guide(down, action);
         } else if (g_app.update_open && g_app.view != VIEW_STREAM && !g_app.busy) {
@@ -3523,9 +3714,14 @@ int main(int argc, char **argv)
         g_app.look_available = look != 0;
         g_app.look_mode = g_app.settings.touch_camera_shown ? look : 0;
         look_tick(touch_down, g_app.touching, touch);
-        gfn_input_set_virtual_buttons((streaming && g_app.touching
-            ? screens_stream_held_buttons(&g_app, touch.px, touch.py) : 0) |
-            (g_app.look_r3 ? GFN_PAD_RIGHT_THUMB : 0));
+        g_app.touch_buttons = streaming ? stream_touch_buttons(touch_down, touch) : 0;
+        gfn_input_set_virtual_buttons(g_app.touch_buttons | (g_app.look_r3 ? GFN_PAD_RIGHT_THUMB : 0));
+        mic_tick(streaming);
+        /* The phone keyboard lives as long as the game. */
+        if (phone_keyboard_running()) {
+            if (streaming) phone_keyboard_tick(&g_transport);
+            else phone_keyboard_stop();
+        }
         gfn_input_set_suppressed(!streaming || g_app.stream_menu || g_app.controls_open || g_app.modal != MODAL_NONE ||
                                  g_app.lid_paused);
 

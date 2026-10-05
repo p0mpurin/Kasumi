@@ -281,8 +281,9 @@ const STAT_FIELDS = {
   k: "number", kn: "number", kx: "number", f: "number", rp: "number", sk: "number",
   dr: "number", lo: "number", kf: "number", rs: "number", cc: "number", rc: "number",
   da: "number", dx: "number", sl: "number", lm: "number",
-  // Frame rate asked for (30/60) and whether 60 fell back to 30.
-  fr: "number", fb: "number",
+  // Frame rate asked for (30/60), whether 60 fell back to 30 (until build
+  // 113), and the 60 fps latency guard's catch-ups (build 114 on).
+  fr: "number", fb: "number", cu: "number",
 };
 
 async function limited(env, request, prefix, perHour) {
@@ -332,7 +333,9 @@ const LAUNCH_FIELDS = {
 
 async function submitLaunches(request, env) {
   if (Number(request.headers.get("content-length") || 0) > 16384) return json({ error: "too large" }, 413);
-  if (await limited(env, request, "rl:", STATS_PER_HOUR)) return json({ error: "rate limited" }, 429);
+  // "la:", not "rl:": launch records shared the report limit's key, so a
+  // few sessions used up a tester's six reports for the hour.
+  if (await limited(env, request, "la:", STATS_PER_HOUR)) return json({ error: "rate limited" }, 429);
   let raw;
   try {
     raw = JSON.parse(await request.text());

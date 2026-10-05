@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "app_paths.h"
+#include "file_worker.h"
 
 #define ZONES_PATH APP_DATA_DIR "/zones.json"
 
@@ -35,6 +36,8 @@ void zoom_zones_select(const char *app_id)
 static void save(void)
 {
     if (!g_app_id[0]) return;
+    /* Read back what the last save wrote, then write in the background. */
+    file_worker_flush();
     json_error_t error;
     json_t *root = json_load_file(ZONES_PATH, 0, &error);
     if (!json_is_object(root)) {
@@ -47,8 +50,7 @@ static void save(void)
                                               (int)g_zones[i].x, (int)g_zones[i].y));
     if (g_count) json_object_set_new(root, g_app_id, list);
     else { json_decref(list); json_object_del(root, g_app_id); }
-    json_dump_file(root, ZONES_PATH, JSON_COMPACT);
-    json_decref(root);
+    file_worker_save_json(ZONES_PATH, root, JSON_COMPACT);
 }
 
 unsigned zoom_zones_count(void) { return g_count; }

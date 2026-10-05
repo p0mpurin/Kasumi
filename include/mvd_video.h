@@ -31,6 +31,10 @@ void mvd_video_skip_ready_frame(unsigned index);
 void mvd_video_resync(void);
 /* True once after the decode queue overflowed and a keyframe is needed. */
 bool mvd_video_take_resync_request(void);
+/* Latency guard: throw away the encoded frames waiting behind the one being
+ * decoded and resume at the next keyframe (asked for at once). Returns how
+ * many were dropped. */
+unsigned mvd_video_drop_backlog(void);
 bool mvd_video_submit(const unsigned char *annex_b, size_t size);
 bool mvd_video_toggle_zoom(void);
 /* Jump to a zoom level (0 = off) centred at x, y percent of the picture. */
@@ -39,6 +43,9 @@ bool mvd_video_pan_to_touch(unsigned touch_x, unsigned touch_y);
 /* Center the magnified view on a point given in thousandths of the frame. */
 bool mvd_video_pan_to(unsigned x_permille, unsigned y_permille);
 bool mvd_video_zoomed(void);
+/* The part of the picture shown (fractions, 0..1): the Wide zoom, drawn by
+ * the GPU. The whole picture when not zoomed. */
+void mvd_video_view_crop(float *x, float *y, float *w, float *h);
 unsigned mvd_video_zoom_level(void);
 void mvd_video_zoom_position(unsigned *x, unsigned *y);
 void mvd_video_close(void);

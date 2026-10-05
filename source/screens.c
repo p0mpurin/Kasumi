@@ -6,7 +6,9 @@
 #include <string.h>
 #include <time.h>
 
+#include "audio_output.h"
 #include "game_art.h"
+#include "mic_capture.h"
 #include "game_prefs.h"
 #include "shortcut.h"
 #include "gallery.h"
@@ -73,6 +75,8 @@ static const UiRect STR_GUIDE = { 132, 146, 56, 42 };
 /* Modal and stream menu. */
 static const UiRect MODAL_LEFT = { 40, 132, 116, 46 };
 static const UiRect MODAL_RIGHT = { 164, 132, 116, 46 };
+/* A modal with one button: centred where the pair sits. */
+static const UiRect MODAL_ONLY = { 102, 132, 116, 46 };
 static const UiRect MENU_PANEL = { 12, 6, 296, 228 };
 
 /* Game details, lower screen. */
@@ -88,8 +92,6 @@ static const UiRect OPT_CLOSE = { 246, 3, 64, 30 };
 #define OPT_ROW_H 19.5f
 
 /* Button mapping editor, lower screen. */
-static const UiRect MAP_PREV = { 16, 96, 48, 48 };
-static const UiRect MAP_NEXT = { 256, 96, 48, 48 };
 static const UiRect MAP_RESET = { 16, 196, 92, 38 };
 static const UiRect MAP_CANCEL = { 114, 196, 92, 38 };
 static const UiRect MAP_DONE = { 212, 196, 92, 38 };
@@ -195,6 +197,8 @@ typedef struct {
 static const SettingEntry SETTING_ENTRIES[] = {
     { -1, "操作", "CONTROLS" },
     { SETTING_LAYOUT, NULL, NULL },
+    { SETTING_PAD_NAMES, NULL, NULL },
+    { SETTING_MAPPING, NULL, NULL },
     { SETTING_TRIGGERS, NULL, NULL },
     { SETTING_DEADZONE, NULL, NULL },
     { SETTING_CAMERA_SPEED, NULL, NULL },
@@ -216,6 +220,7 @@ static const SettingEntry SETTING_ENTRIES[] = {
     { -1, "音と色", "SOUND & LOOK" },
     { SETTING_VOLUME, NULL, NULL },
     { SETTING_MENU_AUDIO, NULL, NULL },
+    { SETTING_MIC, NULL, NULL },
     { SETTING_MUSIC, NULL, NULL },
     { SETTING_VOICE, NULL, NULL },
     { SETTING_SFX, NULL, NULL },
@@ -310,6 +315,8 @@ int screens_setting_at(int position)
 
 static const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_LAYOUT] = "Button layout", [SETTING_TRIGGERS] = "Triggers",
+    [SETTING_PAD_NAMES] = "Button names", [SETTING_MAPPING] = "Button mapping",
+    [SETTING_MIC] = "Microphone",
     [SETTING_DEADZONE] = "Stick deadzone", [SETTING_POINTER] = "Mouse mode at start",
     [SETTING_STATS] = "Stream stats", [SETTING_FAST_INPUT] = "Fast input",
     [SETTING_RESOLUTION] = "Screen mode", [SETTING_BITRATE] = "Bitrate",
@@ -331,6 +338,8 @@ static const char *const SETTING_LABELS[SETTING_COUNT] = {
 };
 static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_LAYOUT] = "ボタン配置", [SETTING_TRIGGERS] = "トリガー",
+    [SETTING_PAD_NAMES] = "表記", [SETTING_MAPPING] = "割り当て",
+    [SETTING_MIC] = "マイク",
     [SETTING_DEADZONE] = "デッドゾーン", [SETTING_POINTER] = "ポインタ",
     [SETTING_STATS] = "統計", [SETTING_FAST_INPUT] = "高速入力",
     [SETTING_RESOLUTION] = "表示", [SETTING_BITRATE] = "ビットレート",
@@ -418,6 +427,8 @@ static unsigned setting_option(const App *app, int setting, unsigned *count)
     const AppSettings *s = &app->settings;
     switch (setting) {
     case SETTING_LAYOUT: *count = 2; return s->button_layout == GFN_LAYOUT_POSITION ? 0 : 1;
+    case SETTING_PAD_NAMES: *count = 2; return s->xbox_names ? 1 : 0;
+    case SETTING_MIC: *count = 2; return s->mic ? 1 : 0;
     case SETTING_TRIGGERS: *count = 2; return s->swap_shoulders ? 1 : 0;
     case SETTING_DEADZONE: *count = DEADZONE_COUNT; return (unsigned)s->deadzone;
     case SETTING_POINTER: *count = 2; return s->auto_pointer ? 0 : 1;
@@ -458,6 +469,9 @@ static const char *setting_value(const App *app, int setting)
     const AppSettings *s = &app->settings;
     switch (setting) {
     case SETTING_LAYOUT: return s->button_layout == GFN_LAYOUT_POSITION ? "Position" : "Letters";
+    case SETTING_PAD_NAMES: return s->xbox_names ? "Xbox" : "PlayStation";
+    case SETTING_MIC: return s->mic ? "On" : "Off";
+    case SETTING_MAPPING: return s->has_map ? "Custom" : "Default";
     case SETTING_TRIGGERS: return s->swap_shoulders ? "L / R" : "ZL / ZR";
     case SETTING_DEADZONE:
         return s->deadzone == DEADZONE_SMALL ? "Small" : s->deadzone == DEADZONE_LARGE ? "Large" : "Medium";
@@ -488,7 +502,7 @@ static const char *setting_value(const App *app, int setting)
     case SETTING_TOUCH_CAMERA: return s->touch_camera == 1 ? "Stick" : s->touch_camera == 2 ? "Trackpad" : "Off";
     case SETTING_TOUCH_STICK_SIZE:
         return s->touch_stick_size == 0 ? "Small" : s->touch_stick_size == 2 ? "Large" : "Medium";
-    case SETTING_FRAME_RATE: return s->fps60 ? "60 fps (experimental)" : "30 fps";
+    case SETTING_FRAME_RATE: return s->fps60 ? "60 fps (beta)" : "30 fps";
     case SETTING_THEME: return ui_theme_name((UiTheme)s->theme);
     case SETTING_VOLUME: {
         static const char *const levels[6] = { "Muted", "20 %", "40 %", "60 %", "80 %", "100 %" };
@@ -550,7 +564,7 @@ static const char *setting_value(const App *app, int setting)
         return text;
     }
     case SETTING_AUTO_UPDATE: return s->auto_update ? "On" : "Off";
-    case SETTING_UPDATE_CHANNEL: return s->update_beta ? "Beta" : "Stable";
+    case SETTING_UPDATE_CHANNEL: return updater_dev_mode() ? "Dev (your PC)" : s->update_beta ? "Beta" : "Stable";
     case SETTING_ACCOUNT: return gfn_has_session(app->client) ? "Sign out" : "Signed out";
     case SETTING_PROVIDER: {
         static char text[56];
@@ -573,10 +587,32 @@ static const char *setting_description(const App *app, int setting)
     const AppSettings *s = &app->settings;
     switch (setting) {
     case SETTING_LAYOUT:
+        if (s->has_map) return "Your button mapping (below) decides every button, so this layout is not used.";
+        if (s->xbox_names)
+            return s->button_layout == GFN_LAYOUT_POSITION
+                ? "Buttons match their place on the pad: bottom is A, right is B, like an Xbox controller. 3DS A sends B."
+                : "The printed letters match: 3DS A sends A, 3DS B sends B. A and B sit swapped compared with an Xbox pad.";
         return s->button_layout == GFN_LAYOUT_POSITION
             ? "Buttons match their place on the pad: bottom is Cross, right is Circle. Plays like a PlayStation controller."
             : "The printed letters match: 3DS A sends A. Cross and Circle end up swapped compared with a PlayStation pad.";
+    case SETTING_MIC:
+        return s->mic
+            ? "Voice chat in games: tap MIC on the lower screen to talk, again to mute (starts muted). Use headphones, "
+              "or your team hears the game through the mic. Next game."
+            : "Talk in games with voice chat, using the 3DS microphone. Off: nothing is ever recorded.";
+    case SETTING_PAD_NAMES:
+        return s->xbox_names
+            ? "Kasumi shows Xbox buttons: A, B, LB, RT, Menu. Most PC games on GeForce NOW show these too."
+            : "Kasumi shows PlayStation buttons: Cross, Circle, L1, R2, Options.";
+    case SETTING_MAPPING:
+        return s->has_map
+            ? "Your own map for every game: press A to change it. A game's own mapping (game page > X > Options) goes first."
+            : "Choose what each 3DS button sends, for every game: two buttons at once, turbo, toggle, or a stick push.";
     case SETTING_TRIGGERS:
+        if (s->xbox_names)
+            return s->swap_shoulders
+                ? "The big L and R buttons act as the LT / RT triggers; ZL and ZR become LB / RB."
+                : "ZL and ZR are the LT / RT triggers; L and R are the LB / RB bumpers.";
         return s->swap_shoulders
             ? "The big L and R buttons act as the L2 / R2 triggers; ZL and ZR become L1 / R1."
             : "ZL and ZR are the L2 / R2 triggers; L and R are the L1 / R1 bumpers.";
@@ -603,7 +639,7 @@ static const char *setting_description(const App *app, int setting)
     case SETTING_FRAME_RATE:
         if (!s->wide_video) return "Needs Screen mode: Wide 800. 60 frames a second for smoother motion.";
         return s->fps60
-            ? "Experimental: smoother motion in lighter games, a softer picture. Heavy games can lag, so Kasumi switches them back to 30 by itself. Next launch."
+            ? "Smoother motion and quicker controls. Most games keep up; a very heavy one can hitch now and then (Kasumi says so), and 30 suits it better. Next launch."
             : "30 frames a second: the most detail in every frame. Next launch.";
     case SETTING_TOUCH_STICK_SIZE:
         return s->touch_stick_size == 0 ? "A short push turns at full speed: quick, for small thumbs or fast games."
@@ -649,6 +685,9 @@ static const char *setting_description(const App *app, int setting)
     case SETTING_THEME:
         return "The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.";
     case SETTING_VOLUME:
+        if (audio_system_firmware_missing())
+            return "No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the "
+                   "Homebrew Launcher, then restart Kasumi.";
         return "Game audio volume on this console, on top of the 3DS volume slider.";
     case SETTING_MENU_AUDIO:
         return s->mute_in_menus
@@ -705,6 +744,8 @@ static const char *setting_description(const App *app, int setting)
         return s->auto_update ? "Kasumi looks for a new version every few hours, only in the menus, never while you play."
                               : "Kasumi only looks for updates when you open Software update.";
     case SETTING_UPDATE_CHANNEL:
+        if (updater_dev_mode())
+            return "dev_server.txt is on the SD card: updates come from tools/dev_server.py on your PC. Delete the file to go back.";
         return s->update_beta ? "Beta: get test versions first. They may have rough edges."
                               : "Stable: only finished releases.";
     case SETTING_LID:
@@ -750,6 +791,8 @@ void screens_setting_change(App *app, int setting, int direction)
                                                                    : GFN_LAYOUT_POSITION;
         break;
     case SETTING_TRIGGERS: s->swap_shoulders = !s->swap_shoulders; break;
+    case SETTING_PAD_NAMES: s->xbox_names = !s->xbox_names; break;
+    case SETTING_MIC: s->mic = !s->mic; break;
     case SETTING_DEADZONE:
         s->deadzone = (DeadzoneLevel)((s->deadzone + DEADZONE_COUNT + step) % DEADZONE_COUNT);
         break;
@@ -1825,63 +1868,117 @@ static void draw_options_sheet(const App *app, float p)
     ui_offset(0.0f, 0.0f);
 }
 
-/* PlayStation symbol for face outputs, next to its name. */
+static void draw_face_slot(int slot, bool xbox, float cx, float cy, float size);
+
+/* An output's name, with the symbol for face buttons. */
 static float draw_output(float cx, float y, float size, unsigned output, u32 color)
 {
-    const char *name = gfn_output_name(output);
-    const float w = ui_text_width(name, size);
+    const bool xbox = gfn_input_xbox_names();
     const bool face = output >= GFN_OUT_CROSS && output <= GFN_OUT_TRIANGLE;
+    char name[32];
+    snprintf(name, sizeof(name), xbox && face ? "%s button" : "%s", gfn_output_name(output));
+    const float w = ui_text_width(name, size);
     float x = cx - (w + (face ? size + 6 : 0)) / 2;
     if (face) {
+        /* Cross, Circle, Square, Triangle sit bottom, right, left, top. */
+        static const int slots[4] = { 2, 1, 3, 0 };
         const float s = size * 0.8f, sy = y + size * 0.55f;
-        if (output == GFN_OUT_CROSS) ui_ps_cross(x + s / 2, sy, s, UI_AI);
-        else if (output == GFN_OUT_CIRCLE) ui_ps_circle(x + s / 2, sy, s, UI_DANGER);
-        else if (output == GFN_OUT_SQUARE) ui_ps_square(x + s / 2, sy, s, UI_SAKURA);
-        else ui_ps_triangle(x + s / 2, sy, s, UI_MATCHA);
+        draw_face_slot(slots[output - GFN_OUT_CROSS], xbox, x + s / 2, sy, s);
         x += size + 6;
     }
     ui_text(x, y, size, color, UI_ALIGN_LEFT, name);
     return w;
 }
 
+/* What an input sends, short enough for the list: "LB + RB". */
+static void binding_text(char *out, size_t size, const GfnButtonMap *map, int input)
+{
+    if (map->also[input] != GFN_OUT_NONE)
+        snprintf(out, size, "%s + %s", gfn_output_short_name(map->out[input]),
+                 gfn_output_short_name(map->also[input]));
+    else
+        snprintf(out, size, "%s", gfn_output_short_name(map->out[input]));
+}
+
+static bool binding_changed(const App *app, int input)
+{
+    const GfnButtonMap *a = &app->mapping, *b = &app->mapping_default;
+    return a->out[input] != b->out[input] || a->also[input] != b->also[input] || a->mode[input] != b->mode[input];
+}
+
 static void draw_mapping_top(const App *app)
 {
     const GfnGame *game = app_game(app, app->selected);
     draw_title(200, 31, "ボタン設定", "BUTTON MAPPING");
-    if (game) ui_text_fit(200, 60, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, 340, game->title);
+    if (app->mapping_global)
+        ui_text_fit(200, 60, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, 340, "Every game (a game's own mapping goes first)");
+    else if (game)
+        ui_text_fit(200, 60, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, 340, game->title);
     /* Two columns of seven: 3DS button -> what it sends. */
     for (int i = 0; i < GFN_INPUT_COUNT; ++i) {
         const float x = i < 7 ? 22 : 206, y = 80 + (i % 7) * 19.0f;
         const bool on = i == app->mapping_input;
-        const bool changed = app->mapping[i] != app->mapping_default[i];
+        const bool changed = binding_changed(app, i);
         if (on) {
             ui_rect(x - 6, y - 2, 178, 18, UI_RAISED);
             ui_rect(x - 6, y - 2, 2, 18, UI_ACCENT);
         }
         ui_button_chip(x, y, gfn_input_name((unsigned)i), on ? UI_TEXT : UI_TEXT_DIM);
-        ui_text(x + 74, y, 12, changed ? UI_ACCENT : on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT,
-                gfn_output_name(app->mapping[i]));
+        char text[48];
+        binding_text(text, sizeof(text), &app->mapping, i);
+        const unsigned mode = app->mapping.mode[i];
+        ui_text_fit(x + 56, y, 12, changed ? UI_ACCENT : on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_LEFT,
+                    mode ? 70 : 112, text);
+        if (mode)
+            ui_label(x + 170, y + 2, 9, UI_ACCENT, UI_ALIGN_RIGHT, mode == GFN_BIND_TURBO ? "TURBO" : "TOGGLE");
     }
-    static const char *const hints[] = { "ANY BUTTON", "Pick", "CIRCLE PAD", "Change", NULL };
+    static const char *const hints[] = { "ANY BUTTON", "Pick", "CIRCLE PAD", "Change", "C-STICK", "Row", NULL };
     draw_footer(UI_TOP_WIDTH, hints);
 }
 
+/* The mapping card's rows: what the button sends, a second output sent
+ * with it, and how it is held. */
+static UiRect map_row(int field) { return (UiRect){ 16, 40.0f + field * 47.0f, 288, 42 }; }
+static UiRect map_prev(int field) { const UiRect r = map_row(field); return (UiRect){ r.x, r.y, 44, r.h }; }
+static UiRect map_next(int field) { const UiRect r = map_row(field); return (UiRect){ r.x + r.w - 44, r.y, 44, r.h }; }
+static int g_touched_map_field = -1;
+int screens_touched_map_field(void) { return g_touched_map_field; }
+
 static void draw_mapping_bottom(const App *app)
 {
-    ui_label(160, 8, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "PRESS ANY 3DS BUTTON TO PICK IT");
-    const UiRect card = { 70, 30, 180, 128 };
-    ui_panel(card, UI_ACCENT);
+    ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_BG);
     const unsigned input = (unsigned)app->mapping_input;
-    ui_label(160, card.y + 12, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "3DS BUTTON");
-    const float chip_w = ui_text_width(gfn_input_name(input), 10) + 10;
-    ui_button_chip(160 - (strlen(gfn_input_name(input)) == 1 ? 7.5f : chip_w / 2), card.y + 30,
-                   gfn_input_name(input), UI_TEXT);
-    ui_label(160, card.y + 60, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "SENDS");
-    draw_output(160, card.y + 78, 16, app->mapping[input],
-                app->mapping[input] != app->mapping_default[input] ? UI_ACCENT : UI_TEXT);
-    draw_arrow(MAP_PREV, -1, true, pressed(app, MAP_PREV));
-    draw_arrow(MAP_NEXT, 1, true, pressed(app, MAP_NEXT));
-    ui_text(160, 168, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Circle Pad left / right also changes it");
+    const char *name = gfn_input_name(input);
+    const bool round = strlen(name) == 1;
+    const float chip_w = round ? 15.0f : ui_text_width(name, 10) + 10;
+    ui_label(160, 4, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "PRESS ANY 3DS BUTTON TO PICK IT");
+    ui_button_chip(160 - chip_w / 2, 19, name, UI_TEXT);
+
+    static const char *const captions[3] = { "SENDS", "AND AT THE SAME TIME", "HOW" };
+    const GfnButtonMap *m = &app->mapping, *d = &app->mapping_default;
+    for (int f = 0; f < 3; ++f) {
+        const UiRect r = map_row(f);
+        const bool focus = f == app->mapping_field;
+        ui_rect_r(r, focus ? UI_RAISED : UI_SURFACE);
+        ui_outline(r.x, r.y, r.w, r.h, 1.0f, focus ? UI_ACCENT : UI_LINE);
+        draw_arrow(map_prev(f), -1, true, pressed(app, map_prev(f)));
+        draw_arrow(map_next(f), 1, true, pressed(app, map_next(f)));
+        ui_label(160, r.y + 4, 10, focus ? UI_ACCENT : UI_TEXT_FAINT, UI_ALIGN_CENTER, captions[f]);
+        const float vy = r.y + 19;
+        if (f == 0) {
+            draw_output(160, vy, 14, m->out[input], m->out[input] != d->out[input] ? UI_ACCENT : UI_TEXT);
+        } else if (f == 1) {
+            if (m->also[input] == GFN_OUT_NONE) ui_text(160, vy, 14, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Nothing more");
+            else draw_output(160, vy, 14, m->also[input], UI_ACCENT);
+        } else {
+            static const char *const modes[GFN_BIND_MODE_COUNT] = {
+                "Normal", "Turbo: 10 presses a second", "Toggle: press once to hold"
+            };
+            ui_text(160, vy, 14, m->mode[input] ? UI_ACCENT : UI_TEXT, UI_ALIGN_CENTER,
+                    modes[m->mode[input] < GFN_BIND_MODE_COUNT ? m->mode[input] : 0]);
+        }
+    }
+    ui_text(160, 180, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Circle Pad: button and value  ·  C-Stick: row");
     ui_button(MAP_RESET, "RESET", "初期化", UI_BUTTON_NORMAL, pressed(app, MAP_RESET));
     ui_button(MAP_CANCEL, "CANCEL", "取消", UI_BUTTON_NORMAL, pressed(app, MAP_CANCEL));
     ui_button(MAP_DONE, "SAVE", "保存", UI_BUTTON_PRIMARY, pressed(app, MAP_DONE));
@@ -1915,7 +2012,6 @@ static void draw_details_bottom(const App *app, float overlay_p)
     if (app->shortcut_sheet != SHORTCUT_SHEET_NONE) {
         draw_shortcut_bottom(app);
     } else if (app->mapping_open) {
-        ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_BG);
         draw_mapping_bottom(app);
     } else if (app->options_open) {
         draw_options_sheet(app, overlay_p);
@@ -2143,6 +2239,27 @@ static void draw_whats_new_bottom(const App *app)
     ui_button(NEW_CONTINUE, "CONTINUE", "続ける", UI_BUTTON_PRIMARY, pressed(app, NEW_CONTINUE));
 }
 
+/* ---- Discord invite (once) ----------------------------------------------------- */
+
+static void draw_discord_top(void)
+{
+    draw_title(200, 31, "仲間", "JOIN THE KASUMI DISCORD");
+    ui_text_wrap(200, 70, 13, UI_TEXT, UI_ALIGN_CENTER, 330, 4, 18,
+                 "New versions first, help from other players, and a say in what Kasumi gets next.");
+    ui_text(200, 150, 14, UI_ACCENT, UI_ALIGN_CENTER, "discord.gg/K9Jy3t7YHE");
+    ui_text(200, 172, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Also in Settings > System > Kasumi Discord");
+    static const char *const hints[] = { "A", "Continue", NULL };
+    draw_footer(UI_TOP_WIDTH, hints);
+}
+
+static void draw_discord_bottom(const App *app)
+{
+    ui_label(160, 10, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "SCAN WITH YOUR PHONE");
+    /* The QR art carries its own white margin, so it scans on every theme. */
+    ui_image(UI_IMAGE_DISCORD, 107, 40, 1.0f, 1.0f);
+    ui_button(NEW_CONTINUE, "CONTINUE", "続ける", UI_BUTTON_PRIMARY, pressed(app, NEW_CONTINUE));
+}
+
 /* ---- First-run guide ------------------------------------------------------- */
 
 typedef struct {
@@ -2159,8 +2276,8 @@ static const GuidePage GUIDE[GUIDE_PAGES] = {
       "password is ever typed on the 3DS.",
       "Your login stays only on this console's SD card." },
     { "操", "操作", "CONTROLS",
-      "The 3DS plays like a PlayStation pad: bottom is Cross, right is Circle. L3, R3 and PS are on "
-      "the lower screen.",
+      "The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 "
+      "and PS are on the lower screen.",
       "Hold START + SELECT during play for the stream menu." },
     { "画", "画質", "PICTURE & WI-FI",
       "Stay close to your router (3 bars). Adaptive is the default; Sharp gives more detail on strong "
@@ -2215,13 +2332,17 @@ void screens_draw_top(const App *app)
     const bool menus = app->view != VIEW_STREAM;
     const bool guide = app->guide_page >= 0 && menus;
     if (app->whats_new_open && menus) draw_whats_new_top(app);
+    else if (app->discord_open && menus) draw_discord_top();
     else if (guide) draw_guide_top(app);
     else if (app->update_open && menus) draw_update_top(app);
     else switch (app->view) {
     case VIEW_WELCOME: draw_welcome_top(); break;
     case VIEW_LOGIN: draw_login_top(app); break;
     case VIEW_LIBRARY: draw_library_top(app, entering); break;
-    case VIEW_SETTINGS: draw_settings_top(app, entering); break;
+    case VIEW_SETTINGS:
+        if (app->mapping_open) draw_mapping_top(app);
+        else draw_settings_top(app, entering);
+        break;
     case VIEW_SESSION: draw_session_top(app); break;
     case VIEW_DETAILS:
         if (app->mapping_open) draw_mapping_top(app);
@@ -2358,13 +2479,17 @@ static void draw_library_bottom(const App *app)
     ui_button(l->settings, "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, l->settings));
 }
 
-/* PlayStation symbol produced by a 3DS face button in the current layout.
- * key: 0 X (top), 1 A (right), 2 B (bottom), 3 Y (left). */
-static void draw_ps_symbol_for_key(int key, bool position_layout, float cx, float cy, float size)
+/* The symbol for a face button slot of the pad: 0 top, 1 right, 2 bottom,
+ * 3 left (Triangle / Y, Circle / B, Cross / A, Square / X). */
+static void draw_face_slot(int slot, bool xbox, float cx, float cy, float size)
 {
-    static const int by_position[4] = { 0, 1, 2, 3 };
-    static const int by_letter[4] = { 3, 2, 1, 0 };
-    switch (position_layout ? by_position[key] : by_letter[key]) {
+    if (xbox) {
+        static const char letters[4] = { 'Y', 'B', 'A', 'X' };
+        const u32 colors[4] = { UI_KIN, UI_DANGER, UI_MATCHA, UI_AI };
+        ui_xbox_face(cx, cy, size, letters[slot & 3], colors[slot & 3]);
+        return;
+    }
+    switch (slot) {
     case 0: ui_ps_triangle(cx, cy, size, UI_MATCHA); break;
     case 1: ui_ps_circle(cx, cy, size, UI_DANGER); break;
     case 2: ui_ps_cross(cx, cy, size, UI_AI); break;
@@ -2372,7 +2497,15 @@ static void draw_ps_symbol_for_key(int key, bool position_layout, float cx, floa
     }
 }
 
-static void draw_face_diamond(float cx, float cy, bool playstation, bool position_layout)
+/* The symbol a 3DS face button sends in the current layout.
+ * key: 0 X (top), 1 A (right), 2 B (bottom), 3 Y (left). */
+static void draw_ps_symbol_for_key(int key, bool position_layout, bool xbox, float cx, float cy, float size)
+{
+    static const int by_letter[4] = { 3, 2, 1, 0 };
+    draw_face_slot(position_layout ? key : by_letter[key], xbox, cx, cy, size);
+}
+
+static void draw_face_diamond(float cx, float cy, bool playstation, bool position_layout, bool xbox)
 {
     const float d = 17.0f, r = 10.0f;
     /* Order: top, right, bottom, left. */
@@ -2381,7 +2514,7 @@ static void draw_face_diamond(float cx, float cy, bool playstation, bool positio
     static const char *const letters[4] = { "X", "A", "B", "Y" };
     for (int i = 0; i < 4; ++i) {
         ui_ring(px[i], py[i], r, 1.2f, UI_LINE_STRONG, UI_SURFACE);
-        if (playstation) draw_ps_symbol_for_key(i, position_layout, px[i], py[i], 11);
+        if (playstation) draw_ps_symbol_for_key(i, position_layout, xbox, px[i], py[i], 11);
         else ui_text(px[i], py[i] - 6.5f, 12, UI_TEXT, UI_ALIGN_CENTER, letters[i]);
     }
 }
@@ -2448,6 +2581,10 @@ static void draw_settings_grid(const App *app)
 
 static void draw_settings_bottom(const App *app)
 {
+    if (app->mapping_open) {
+        draw_mapping_bottom(app);
+        return;
+    }
     if (app->gallery_open) {
         draw_gallery_bottom(app);
         return;
@@ -2466,14 +2603,18 @@ static void draw_settings_bottom(const App *app)
     const bool account = setting == SETTING_ACCOUNT;
     if (setting == SETTING_LAYOUT || setting == SETTING_TRIGGERS) {
         const bool position = app->settings.button_layout == GFN_LAYOUT_POSITION;
-        draw_face_diamond(96, 116, false, position);
-        draw_face_diamond(224, 116, true, position);
+        const bool xbox = app->settings.xbox_names;
+        draw_face_diamond(96, 116, false, position, xbox);
+        draw_face_diamond(224, 116, true, position, xbox);
         ui_triangle(152, 110, 152, 122, 164, 116, UI_ACCENT);
         ui_label(96, 146, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "3DS");
-        ui_label(224, 146, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "PLAYSTATION");
+        ui_label(224, 146, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, xbox ? "XBOX" : "PLAYSTATION");
         const bool swap = app->settings.swap_shoulders;
+        const char *bumper[2] = { xbox ? "LB" : "L1", xbox ? "RB" : "R1" };
+        const char *trigger[2] = { xbox ? "LT" : "L2", xbox ? "RT" : "R2" };
         ui_textf(160, 163, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "L  %s     ZL  %s     R  %s     ZR  %s",
-                 swap ? "L2" : "L1", swap ? "L1" : "L2", swap ? "R2" : "R1", swap ? "R1" : "R2");
+                 swap ? trigger[0] : bumper[0], swap ? bumper[0] : trigger[0],
+                 swap ? trigger[1] : bumper[1], swap ? bumper[1] : trigger[1]);
     } else {
         const float value_y = setting == SETTING_GYRO || setting == SETTING_BITRATE ? 146.0f : 104.0f;
         if (setting == SETTING_GYRO) draw_gyro_preview(app);
@@ -2677,26 +2818,27 @@ static void draw_controls_sheet(const App *app, float p)
 
     const AppSettings *s = &app->settings;
     const bool position = s->button_layout == GFN_LAYOUT_POSITION;
-    /* Face buttons with the PlayStation symbol each one sends. */
+    /* Face buttons with the symbol each one sends. */
+    const bool xbox = s->xbox_names;
     static const char *const keys[4] = { "X", "A", "B", "Y" };
     float x = 26;
     for (int i = 0; i < 4; ++i) {
         ui_button_chip(x, 40, keys[i], UI_TEXT_DIM);
-        draw_ps_symbol_for_key(i, position, x + 28, 47.5f, 11);
+        draw_ps_symbol_for_key(i, position, xbox, x + 28, 47.5f, 11);
         x += 72;
     }
     float y = 64;
     const float dy = 17;
     controls_row(y, "CIRCLE", "Left stick"); y += dy;
     controls_row(y, "C-STICK", s->gyro_mode != GFN_GYRO_OFF ? "Right stick + gyro" : "Right stick"); y += dy;
-    controls_row(y, s->swap_shoulders ? "ZL ZR" : "L R", "L1 / R1"); y += dy;
-    controls_row(y, s->swap_shoulders ? "L R" : "ZL ZR", "L2 / R2 triggers"); y += dy;
-    controls_row(y, "START", "Options"); y += dy;
-    controls_row(y, "SELECT", "Share / View"); y += dy;
-    controls_row(y, "TOUCH", "L3 / R3 / PS buttons"); y += dy;
+    controls_row(y, s->swap_shoulders ? "ZL ZR" : "L R", xbox ? "LB / RB" : "L1 / R1"); y += dy;
+    controls_row(y, s->swap_shoulders ? "L R" : "ZL ZR", xbox ? "LT / RT triggers" : "L2 / R2 triggers"); y += dy;
+    controls_row(y, "START", xbox ? "Menu" : "Options"); y += dy;
+    controls_row(y, "SELECT", xbox ? "View" : "Share / View"); y += dy;
+    controls_row(y, "TOUCH", xbox ? "LS / RS / Xbox · middle: both" : "L3 / R3 / PS · middle: both"); y += dy;
     controls_row(y, "START+SELECT", "Hold for the stream menu"); y += dy;
     if (gfn_input_custom_map_active())
-        ui_text(160, y + 4, 11, UI_ACCENT, UI_ALIGN_CENTER, "This game uses its own button mapping (Options)");
+        ui_text(160, y + 4, 11, UI_ACCENT, UI_ALIGN_CENTER, "Your own button mapping is in use");
     else
         ui_textf(160, y + 4, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Gyro aim: %s  ·  change it in the stream menu",
                  gyro_mode_name(s->gyro_mode));
@@ -2772,6 +2914,12 @@ static const UiRect LOOK_PAD = { 68, 52, 246, 136 };
 static const UiRect LOOK_R3 = { 262, 162, 48, 22 };
 /* HIDE in the pad's top corner, C-STICK on the rule right of PS. */
 static const UiRect LOOK_HIDE = { 262, 56, 48, 20 };
+/* L3 and R3 together (two fingers would land on the pad). */
+static const UiRect LOOK_BOTH = { 262, 136, 48, 22 };
+/* Voice chat's mute button: under HIDE on the pad, or on the left rule
+ * between L3 and PS in the usual layout. */
+static const UiRect LOOK_MIC = { 262, 80, 48, 20 };
+static const UiRect STR_MIC = { 70, 156, 56, 22 };
 static const UiRect STR_LOOK = { 194, 156, 58, 22 };
 #define LOOK_TRAIL_MS 320.0f
 #define LOOK_RELEASE_MS 260.0f
@@ -2779,6 +2927,23 @@ static const UiRect STR_LOOK = { 194, 156, 58, 22 };
 UiRect screens_look_pad(void) { return LOOK_PAD; }
 UiRect screens_look_r3(void) { return LOOK_R3; }
 UiRect screens_look_hide(void) { return LOOK_HIDE; }
+UiRect screens_look_both(void) { return LOOK_BOTH; }
+UiRect screens_look_mic(void) { return LOOK_MIC; }
+
+/* MIC ON (lit, with a level bar) or MIC OFF. */
+static void mic_chip(UiRect r)
+{
+    const bool live = !mic_capture_muted();
+    ui_rect_r(r, live ? UI_ACCENT : ui_with_alpha(UI_BG, 0xC0));
+    ui_outline(r.x, r.y, r.w, r.h, 1.0f, live ? UI_ACCENT : UI_LINE_STRONG);
+    ui_label(r.x + r.w / 2, r.y + (r.h - 11) / 2, 11, live ? UI_BG : UI_TEXT_DIM, UI_ALIGN_CENTER,
+             live ? "MIC ON" : "MIC OFF");
+    if (live) {
+        float level = mic_capture_level() * 3.0f;
+        if (level > 1.0f) level = 1.0f;
+        ui_rect(r.x + 3, r.y + r.h - 3, (r.w - 6) * level, 2, UI_BG);
+    }
+}
 
 /* A small square key with one word, lit while active. */
 static void look_chip(UiRect r, const char *label, bool lit, bool down)
@@ -2839,7 +3004,7 @@ static void look_dot(float cx, float cy, float size, u32 color)
     ui_image_tint(UI_IMAGE_LOOK_DOT, cx - 16.0f * scale, cy - 16.0f * scale, scale, color);
 }
 
-static void draw_look_pad(const App *app, bool r3_held)
+static void draw_look_pad(const App *app, bool r3_held, bool both_held)
 {
     const UiRect p = LOOK_PAD;
     /* The theme's own wallpaper, calmed down so the ink reads over it. */
@@ -2852,12 +3017,16 @@ static void draw_look_pad(const App *app, bool r3_held)
     const bool stick = app->look_mode == 1;
     ui_text(p.x + 8, p.y + 5, 11, UI_ACCENT, UI_ALIGN_LEFT, "視点");
     ui_label(p.x + 32, p.y + 6, 11, UI_TEXT_DIM, UI_ALIGN_LEFT, stick ? "PUSH TO LOOK" : "DRAG TO LOOK");
-    ui_label(p.x + 8, p.y + p.h - 18, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, "DOUBLE-TAP  R3");
+    ui_label(p.x + 8, p.y + p.h - 18, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT,
+             app->settings.xbox_names ? "DOUBLE-TAP  RS" : "DOUBLE-TAP  R3");
 
     /* R3 in the corner, for presses without a double tap; HIDE above it
      * brings the stats back. */
-    look_chip(LOOK_R3, "R3", r3_held, false);
+    const bool xbox = app->settings.xbox_names;
+    look_chip(LOOK_R3, xbox ? "RS" : "R3", r3_held && !both_held, false);
+    look_chip(LOOK_BOTH, xbox ? "LS+RS" : "L3+R3", both_held, false);
     look_chip(LOOK_HIDE, "HIDE", false, pressed(app, LOOK_HIDE));
+    if (app->mic_available) mic_chip(LOOK_MIC);
 
     /* Idle: a faint ensō says "touch here". */
     const float since_release = app->look_released_at ? (float)(now - app->look_released_at) : 1e9f;
@@ -2898,15 +3067,23 @@ static void draw_look_pad(const App *app, bool r3_held)
     }
 }
 
+/* The PS / Xbox button: a ring with its name. */
+static void draw_guide_button(const App *app, float gx, float gy, bool guide)
+{
+    const bool xbox = app->settings.xbox_names;
+    ui_ring(gx, gy, 17, 1.5f, guide ? UI_ACCENT : UI_LINE_STRONG, guide ? UI_ACCENT : UI_BG);
+    ui_text(gx, gy - (xbox ? 5.5f : 7.0f), xbox ? 10.0f : 12.0f, guide ? UI_BG : UI_TEXT, UI_ALIGN_CENTER,
+            xbox ? "XBOX" : "PS");
+}
+
 static void draw_look_layout(const App *app, uint16_t held)
 {
-    draw_stick_button(LOOK_L3, "L3", "左", (held & GFN_PAD_LEFT_THUMB) != 0);
-    const bool guide = (held & GFN_PAD_GUIDE) != 0;
-    const float gx = LOOK_PS.x + LOOK_PS.w / 2, gy = LOOK_PS.y + LOOK_PS.h / 2;
-    ui_ring(gx, gy, 17, 1.5f, guide ? UI_ACCENT : UI_LINE_STRONG, guide ? UI_ACCENT : UI_BG);
-    ui_text(gx, gy - 7, 12, guide ? UI_BG : UI_TEXT, UI_ALIGN_CENTER, "PS");
+    const bool xbox = app->settings.xbox_names;
+    const uint16_t both = GFN_PAD_LEFT_THUMB | GFN_PAD_RIGHT_THUMB;
+    draw_stick_button(LOOK_L3, xbox ? "LS" : "L3", "左", (held & GFN_PAD_LEFT_THUMB) != 0);
+    draw_guide_button(app, LOOK_PS.x + LOOK_PS.w / 2, LOOK_PS.y + LOOK_PS.h / 2, (held & GFN_PAD_GUIDE) != 0);
     draw_look_stats(app);
-    draw_look_pad(app, (held & GFN_PAD_RIGHT_THUMB) != 0);
+    draw_look_pad(app, (held & GFN_PAD_RIGHT_THUMB) != 0, (held & both) == both);
 }
 
 /* The usual layout: L3 and R3 columns, stats (or the mouse pad or zoom map)
@@ -2914,18 +3091,28 @@ static void draw_look_layout(const App *app, uint16_t held)
 static void draw_classic_layout(const App *app, uint16_t held)
 {
     const WebRtcTransport *t = app->transport;
-    draw_stick_button(STR_L3, "L3", "左", (held & GFN_PAD_LEFT_THUMB) != 0);
-    draw_stick_button(STR_R3, "R3", "右", (held & GFN_PAD_RIGHT_THUMB) != 0);
+    const bool xbox = app->settings.xbox_names;
+    draw_stick_button(STR_L3, xbox ? "LS" : "L3", "左", (held & GFN_PAD_LEFT_THUMB) != 0);
+    draw_stick_button(STR_R3, xbox ? "RS" : "R3", "右", (held & GFN_PAD_RIGHT_THUMB) != 0);
 
-    if (t->pointer_mode) draw_touchpad();
-    else if (mvd_video_zoomed()) draw_zoom_map();
-    else draw_stats(app);
+    if (t->pointer_mode) {
+        draw_touchpad();
+    } else if (mvd_video_zoomed()) {
+        draw_zoom_map();
+    } else {
+        draw_stats(app);
+        /* The stats panel is also both sticks pressed together. */
+        const uint16_t both = GFN_PAD_LEFT_THUMB | GFN_PAD_RIGHT_THUMB;
+        if ((held & both) == both) {
+            ui_rect_r(STR_PANEL, ui_with_alpha(UI_ACCENT, 0xE0));
+            ui_text(STR_PANEL.x + STR_PANEL.w / 2, STR_PANEL.y + STR_PANEL.h / 2 - 9, 18, UI_BG, UI_ALIGN_CENTER,
+                    xbox ? "LS + RS" : "L3 + R3");
+        }
+    }
 
     /* Guide / PS button, centred between the stick buttons. */
-    const bool guide = (held & GFN_PAD_GUIDE) != 0;
     const float gx = STR_GUIDE.x + STR_GUIDE.w / 2, gy = STR_GUIDE.y + STR_GUIDE.h / 2;
-    ui_ring(gx, gy, 17, 1.5f, guide ? UI_ACCENT : UI_LINE_STRONG, guide ? UI_ACCENT : UI_BG);
-    ui_text(gx, gy - 7, 12, guide ? UI_BG : UI_TEXT, UI_ALIGN_CENTER, "PS");
+    draw_guide_button(app, gx, gy, (held & GFN_PAD_GUIDE) != 0);
     ui_hline(STR_L3.x + STR_L3.w + 6, gy, gx - 17 - (STR_L3.x + STR_L3.w + 6) - 4, UI_LINE);
     if (app->look_available) {
         /* C-STICK sits on the right-hand rule: tap it for the touch camera. */
@@ -2934,7 +3121,10 @@ static void draw_classic_layout(const App *app, uint16_t held)
     } else {
         ui_hline(gx + 21, gy, STR_R3.x - 6 - (gx + 21), UI_LINE);
     }
-    if (app->settings.gyro_mode != GFN_GYRO_OFF) {
+    if (app->mic_available) {
+        /* Voice chat's button takes the left rule (gyro shows in the menu). */
+        mic_chip(STR_MIC);
+    } else if (app->settings.gyro_mode != GFN_GYRO_OFF) {
         /* Gyro badge on the left rule, lit while gyro is steering. */
         const bool live = gfn_input_gyro_active();
         ui_rect(78, gy - 8, 44, 16, UI_BG);
@@ -2951,8 +3141,7 @@ static void draw_stream_bottom(const App *app, float overlay_p)
     }
     draw_stream_header(app);
 
-    const uint16_t held = (app->touching ? screens_stream_held_buttons(app, app->touch_x, app->touch_y) : 0) |
-                          (app->look_r3 ? GFN_PAD_RIGHT_THUMB : 0);
+    const uint16_t held = app->touch_buttons | (app->look_r3 ? GFN_PAD_RIGHT_THUMB : 0);
     if (app->look_mode) draw_look_layout(app, held);
     else draw_classic_layout(app, held);
 
@@ -3014,7 +3203,7 @@ static void draw_modal_bottom(const App *app, float p)
     const bool error = app->modal == MODAL_ERROR, resume = app->modal == MODAL_RESUME;
     if (app->modal == MODAL_REPORT_SENT) {
         ui_text(160, 104, 22, UI_TEXT, UI_ALIGN_CENTER, app->report_code);
-        ui_button(MODAL_LEFT, "OK", "了解", UI_BUTTON_PRIMARY, pressed(app, MODAL_LEFT));
+        ui_button(MODAL_ONLY, "OK", "了解", UI_BUTTON_PRIMARY, pressed(app, MODAL_ONLY));
         ui_offset(0.0f, 0.0f);
         return;
     }
@@ -3081,6 +3270,7 @@ void screens_draw_bottom(const App *app)
     ui_offset(0.0f, (1.0f - p) * 8.0f);
     const bool guide = app->guide_page >= 0 && menus;
     if (app->whats_new_open && menus) draw_whats_new_bottom(app);
+    else if (app->discord_open && menus) draw_discord_bottom(app);
     else if (guide) draw_guide_bottom(app);
     else if (app->update_open && menus) draw_update_bottom(app);
     else switch (app->view) {
@@ -3113,7 +3303,9 @@ uint16_t screens_stream_held_buttons(const App *app, int x, int y)
 {
     if (app->view != VIEW_STREAM || app->keyboard_open || app->stream_menu || app->controls_open)
         return 0;
+    const uint16_t both = GFN_PAD_LEFT_THUMB | GFN_PAD_RIGHT_THUMB;
     if (app->look_mode) {
+        if (ui_hit(LOOK_BOTH, x, y)) return both;
         if (ui_hit(LOOK_L3, x, y)) return GFN_PAD_LEFT_THUMB;
         if (ui_hit(LOOK_R3, x, y)) return GFN_PAD_RIGHT_THUMB;
         if (ui_hit(LOOK_PS, x, y)) return GFN_PAD_GUIDE;
@@ -3122,7 +3314,25 @@ uint16_t screens_stream_held_buttons(const App *app, int x, int y)
     if (ui_hit(STR_L3, x, y)) return GFN_PAD_LEFT_THUMB;
     if (ui_hit(STR_R3, x, y)) return GFN_PAD_RIGHT_THUMB;
     if (ui_hit(STR_GUIDE, x, y)) return GFN_PAD_GUIDE;
+    /* The stats panel, unless it is the mouse pad or the zoom map. */
+    if (!app->transport->pointer_mode && !mvd_video_zoomed() && ui_hit(STR_PANEL, x, y)) return both;
     return 0;
+}
+
+static AppAction mapping_touch(int x, int y)
+{
+    g_touched_map_field = -1;
+    for (int f = 0; f < 3; ++f) {
+        if (!ui_hit(map_row(f), x, y)) continue;
+        g_touched_map_field = f;
+        if (ui_hit(map_prev(f), x, y)) return ACTION_MAP_PREV;
+        if (ui_hit(map_next(f), x, y)) return ACTION_MAP_NEXT;
+        return ACTION_MAP_FIELD;
+    }
+    if (ui_hit(MAP_RESET, x, y)) return ACTION_MAP_RESET;
+    if (ui_hit(MAP_CANCEL, x, y)) return ACTION_MAP_CANCEL;
+    if (ui_hit(MAP_DONE, x, y)) return ACTION_MAP_DONE;
+    return ACTION_NONE;
 }
 
 AppAction screens_touch(const App *app, int x, int y)
@@ -3131,6 +3341,8 @@ AppAction screens_touch(const App *app, int x, int y)
     g_touched_option_row = -1;
     if (app->whats_new_open && app->view != VIEW_STREAM)
         return ui_hit(NEW_CONTINUE, x, y) ? ACTION_WHATS_NEW_CLOSE : ACTION_NONE;
+    if (app->discord_open && app->view != VIEW_STREAM)
+        return ui_hit(NEW_CONTINUE, x, y) ? ACTION_DISCORD_CLOSE : ACTION_NONE;
     if (app->update_open && app->view != VIEW_STREAM && app->guide_page < 0) {
         if (ui_hit(UPD_PRIMARY, x, y)) return ACTION_UPDATE_PRIMARY;
         if (updater_info().state == UPDATE_AVAILABLE) {
@@ -3148,6 +3360,7 @@ AppAction screens_touch(const App *app, int x, int y)
         return ACTION_NONE;
     }
     if (app->modal != MODAL_NONE) {
+        if (app->modal == MODAL_REPORT_SENT) return ui_hit(MODAL_ONLY, x, y) ? ACTION_CONFIRM : ACTION_NONE;
         if (ui_hit(MODAL_LEFT, x, y)) return app->modal == MODAL_ERROR ? ACTION_RETRY : ACTION_CONFIRM;
         if (app->modal != MODAL_REPORT_SENT && ui_hit(MODAL_RIGHT, x, y)) return ACTION_DISMISS;
         return ACTION_NONE;
@@ -3176,6 +3389,7 @@ AppAction screens_touch(const App *app, int x, int y)
     }
         break;
     case VIEW_SETTINGS:
+        if (app->mapping_open) return mapping_touch(x, y);
         if (app->gallery_open) {
             if (ui_hit(SET_PREV, x, y)) return ACTION_GALLERY_PREV;
             if (ui_hit(SET_NEXT, x, y)) return ACTION_GALLERY_NEXT;
@@ -3211,14 +3425,7 @@ AppAction screens_touch(const App *app, int x, int y)
             return ACTION_NONE;
         }
         if (app->shortcut_sheet != SHORTCUT_SHEET_NONE) return ui_hit(SINGLE, x, y) ? ACTION_CONFIRM : ACTION_NONE;
-        if (app->mapping_open) {
-            if (ui_hit(MAP_PREV, x, y)) return ACTION_MAP_PREV;
-            if (ui_hit(MAP_NEXT, x, y)) return ACTION_MAP_NEXT;
-            if (ui_hit(MAP_RESET, x, y)) return ACTION_MAP_RESET;
-            if (ui_hit(MAP_CANCEL, x, y)) return ACTION_MAP_CANCEL;
-            if (ui_hit(MAP_DONE, x, y)) return ACTION_MAP_DONE;
-            return ACTION_NONE;
-        }
+        if (app->mapping_open) return mapping_touch(x, y);
         if (app->options_open) {
             if (ui_hit(OPT_CLOSE, x, y)) return ACTION_OPTIONS_CLOSE;
             for (int i = 0; i < OPTION_COUNT; ++i) {
@@ -3246,6 +3453,7 @@ AppAction screens_touch(const App *app, int x, int y)
             break;
         }
         if (app->look_mode && ui_hit(LOOK_HIDE, x, y)) return ACTION_LOOK_TOGGLE;
+        if (app->mic_available && ui_hit(app->look_mode ? LOOK_MIC : STR_MIC, x, y)) return ACTION_MIC_TOGGLE;
         if (app->look_available && !app->look_mode && ui_hit(STR_LOOK, x, y)) return ACTION_LOOK_TOGGLE;
         if (ui_hit(stream_button(0), x, y)) return ACTION_STREAM_KEYBOARD;
         if (ui_hit(stream_button(1), x, y)) return ACTION_STREAM_POINTER;

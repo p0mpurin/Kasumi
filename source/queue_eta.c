@@ -7,6 +7,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "file_worker.h"
 #include "http_client.h"
 
 #define QUEUE_ETA_PATH APP_DATA_DIR "/queue.json"
@@ -49,8 +50,8 @@ static void save(void)
         if (m->local_seconds > 0) json_object_set_new(local, m->code, json_real(m->local_seconds));
     }
     json_t *root = json_pack("{s:o,s:o}", "providers", providers, "local", local);
-    if (root) json_dump_file(root, QUEUE_ETA_PATH, JSON_COMPACT);
-    json_decref(root);
+    /* In the background: a queue ending froze the loop on a slow card. */
+    if (root) file_worker_save_json(QUEUE_ETA_PATH, root, JSON_COMPACT);
 }
 
 /* Under the lock: the "providers" object of a saved file or of /eta. */

@@ -51,11 +51,8 @@ void stream_profile_set_sharpen(bool sharpen);
 /* Test: ask NVIDIA for 60 frames a second instead of 30 (next launch). */
 void stream_profile_set_fps60(bool on);
 unsigned stream_profile_fps(void);
-/* 60 fps asked for in Settings, and whether this session fell back to 30
- * because the decoder could not keep up (reset at each launch). */
+/* 60 fps asked for in Settings. */
 bool stream_profile_fps60_requested(void);
-void stream_profile_block_fps60(bool blocked);
-bool stream_profile_fps60_blocked(void);
 /* Weak Wi-Fi / phone hotspot: 0.6-1 Mbps whatever the bitrate setting (fewer
  * packets per frame, so fewer frames hit by a loss), a longer wait for
  * retransmissions and a bigger frame reserve. */
