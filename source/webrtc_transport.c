@@ -176,6 +176,24 @@ static bool mic_section(const char *offer, char *mid, size_t cap, int *payload)
     return mid[0] && *payload > 0;
 }
 
+/* The offer's mic m-section, line by line (media lines only: no ICE
+ * credentials or fingerprints), so a report shows what NVIDIA expects of
+ * the mic: frame size, extensions, direction. */
+static void log_mic_offer(const char *offer)
+{
+    const char *first = strstr(offer, "m=audio ");
+    const char *start = first ? strstr(first + 8, "m=audio ") : NULL;
+    if (!start) return;
+    const char *end = strstr(start + 2, "\r\nm=");
+    for (const char *p = start; p && *p && (!end || p < end);) {
+        const char *eol = strstr(p, "\r\n");
+        const size_t n = eol ? (size_t)(eol - p) : strlen(p);
+        if (strncmp(p, "a=ice", 5) && strncmp(p, "a=fingerprint", 13) && strncmp(p, "a=candidate", 11))
+            diagnostic_log("MIC", "offer: %.*s", (int)(n > 160 ? 160 : n), p);
+        p = eol ? eol + 2 : NULL;
+    }
+}
+
 static bool g_mic_wanted;
 /* The transport voice chat goes out on (set when its answer had a mic
  * section, cleared on close); used under g_peer_lock. */
@@ -216,6 +234,7 @@ static char *adapt_answer(const char *answer, const char *offer, bool *mic_added
     char mic_mid[32];
     int mic_pt = -1;
     bool mic = g_mic_wanted && mic_section(offer, mic_mid, sizeof(mic_mid), &mic_pt);
+    if (g_mic_wanted) log_mic_offer(offer);
     if (g_mic_wanted && mic && mic_pt != 111) {
         diagnostic_log("MIC", "offer's mic uses payload %d, not 111: voice chat off", mic_pt);
         mic = false;

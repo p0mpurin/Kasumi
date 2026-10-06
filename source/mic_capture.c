@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "diagnostic.h"
+#include "echo_cancel.h"
 #include "webrtc_transport.h"
 
 /* The shared buffer the MIC service records into (a ring, about 3 s). */
@@ -13,12 +14,18 @@
 /* The 3DS records at 16360 Hz; Opus wants 16000. Voice needs no more. */
 #define MIC_RATE_IN 16360.0f
 #define OPUS_RATE 16000
-/* 20 ms frames, the official client's size and the RTP sender's step. */
-#define FRAME_SAMPLES (OPUS_RATE / 50)
+/* 10 ms frames: NVIDIA's mic is set up for them (mic.frameSize:10) and
+ * stays silent on 20 ms ones (OpenNOW's native client; beta.35 sent 20 and
+ * nothing reached the game). libpeer's RTP step matches (config.h). */
+#define FRAME_SAMPLES (OPUS_RATE / 100)
 /* Mono voice; the official client sends 16 kbps. */
 #define VOICE_BITRATE 20000
-/* The 3DS microphone is quiet: a fixed lift, clipped. */
-#define SOFTWARE_GAIN 3
+/* The mic amplifier's gain (0-119), as TriCord (the 3DS Discord client,
+ * whose voice chat works well) sets it. Beta.35 left the amplifier at its
+ * default and lifted the samples x3 in software instead: the level bar
+ * moved, but the voice may have been too quiet to hear. */
+#define MIC_GAIN 60
+#define SOFTWARE_GAIN 1
 
 static u8 *g_buffer;
 static u32 g_data_size;
@@ -32,6 +39,9 @@ static unsigned g_frames_sent, g_send_failures;
 static void encode_and_send(int16_t *frame)
 {
     if (g_muted) memset(frame, 0, FRAME_SAMPLES * sizeof(*frame));
+    /* Take the game sound from the speakers back out (FRAME_SAMPLES is
+     * ECHO_CANCEL_BLOCK: 10 ms at 16 kHz). */
+    else echo_cancel_process(frame);
     unsigned char packet[256];
     const int bytes = opus_encode(g_encoder, frame, FRAME_SAMPLES, packet, sizeof(packet));
     if (bytes <= 0) return;
@@ -92,6 +102,9 @@ bool mic_capture_start(void)
         return false;
     }
     g_data_size = micGetSampleDataSize();
+    MICU_SetPower(true);
+    MICU_SetGain(MIC_GAIN);
+    MICU_SetClamp(false);
     rc = MICU_StartSampling(MICU_ENCODING_PCM16_SIGNED, MICU_SAMPLE_RATE_16360, 0, g_data_size, true);
     if (R_FAILED(rc)) {
         diagnostic_log("MIC", "sampling refused rc=%08lX", (unsigned long)rc);
@@ -134,6 +147,7 @@ bool mic_capture_start(void)
         return false;
     }
     g_running = true;
+    echo_cancel_start();
     diagnostic_log("MIC", "capture started (muted)");
     return true;
 }
@@ -144,6 +158,7 @@ void mic_capture_stop(void)
     g_quit = true;
     threadJoin(g_thread, U64_MAX);
     threadFree(g_thread);
+    echo_cancel_stop();
     g_thread = NULL;
     MICU_StopSampling();
     micExit();

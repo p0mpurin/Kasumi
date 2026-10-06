@@ -1,5 +1,6 @@
 #include "audio_output.h"
 #include "diagnostic.h"
+#include "echo_cancel.h"
 
 #include <3ds.h>
 #include <opus/opus.h>
@@ -219,6 +220,9 @@ static int queue_frame(const uint8_t *packet, size_t packet_size)
         : opus_decode(g_decoder, NULL, 0, wave->data_pcm16, g_last_frame_samples, 0);
     if (decoded <= 0) return decoded < 0 ? decoded : 0;
     DSP_FlushDataCache(wave->data_pcm16, (size_t)decoded * AUDIO_CHANNELS * sizeof(int16_t));
+    /* What the speakers are about to play, for voice chat's echo canceller
+     * (does nothing while the mic is off). */
+    echo_cancel_far_end(wave->data_pcm16, (size_t)decoded);
     wave->nsamples = (u32)decoded;
     ndspChnWaveBufAdd(AUDIO_CHANNEL, wave);
     g_next_wavebuf = (g_next_wavebuf + 1) % AUDIO_WAVEBUFS;

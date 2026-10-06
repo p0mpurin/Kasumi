@@ -53,8 +53,9 @@
 #define CONFIG_KEEPALIVE_TIMEOUT 10000
 #endif
 
+/* Kasumi: the mic sends 10 ms Opus frames, the size GeForce NOW expects. */
 #ifndef CONFIG_AUDIO_DURATION
-#define CONFIG_AUDIO_DURATION 20
+#define CONFIG_AUDIO_DURATION 10
 #endif
 
 #ifndef CONFIG_MAX_NALU_SIZE

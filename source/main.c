@@ -789,6 +789,22 @@ static void handle_discord(u32 down, AppAction action)
     }
 }
 
+/* A background SD write failed (full or locked card, a bad sector): say so,
+ * at most once a minute. Settings, history and the one-time Discord invite
+ * were lost silently before (a beta.35 tester saw the invite every launch). */
+static void sd_write_watch(void)
+{
+    static unsigned seen;
+    static u64 told_at;
+    const unsigned failed = file_worker_failed_writes();
+    if (failed == seen) return;
+    seen = failed;
+    const u64 now = osGetTime();
+    if (told_at && now - told_at < 60000) return;
+    told_at = now;
+    show_notice("Couldn't save to the SD card: check it isn't full or locked");
+}
+
 /* Quiet daily check from the menus; never during a session. */
 static void auto_update_check(void)
 {
@@ -3754,6 +3770,7 @@ int main(int argc, char **argv)
         watch_for_bugs();
         launch_track(&g_client);
         limit_wait_tick();
+        sd_write_watch();
         {
             const u64 last_frame = g_transport.last_decoded_frame_at, at = osGetTime();
             g_app.video_stalled = g_app.view == VIEW_STREAM && last_frame && at > last_frame &&

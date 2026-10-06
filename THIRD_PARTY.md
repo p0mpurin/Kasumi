@@ -13,6 +13,7 @@ its own licence. All of these licences are compatible with GPL-3.0.
 | [usrsctp](https://github.com/sctplab/usrsctp) | BSD-3-Clause (`vendor/usrsctp/LICENSE.md`) | SCTP data channels (input) |
 | [Mbed TLS](https://github.com/Mbed-TLS/mbedtls) 2.28.8 | Apache-2.0 OR GPL-2.0-or-later (`vendor/mbedtls/LICENSE`) | DTLS for WebRTC; `config.h` and `timing.c` adapted |
 | [stb_image, stb_image_write](https://github.com/nothings/stb) | MIT or public domain (in each header) | Box art decoding, PNG screenshots |
+| [WebRTC](https://webrtc.googlesource.com/src) AECM (mobile echo canceller), the subset packaged by [TriCord](https://github.com/2b-zipper/TriCord) | BSD-3-Clause with patent grant (`vendor/webrtc-aecm/LICENSE`, `PATENTS`) | Echo cancellation for voice chat |
 
 ## Linked from devkitPro portlibs
 
@@ -37,6 +38,7 @@ and its MVD video decoding was informed by Moonlight-N3DS:
 - [OpenNOW-Switch](https://github.com/OpenCloudGaming/OpenNOW-Switch), MIT, Copyright (c) 2026 OpenCloudGaming
 - OpenNOW-Vita, MPL-2.0
 - [Moonlight-N3DS](https://github.com/zoeyjodon/moonlight-N3DS), GPL-3.0
+- [TriCord](https://github.com/2b-zipper/TriCord), GPL-3.0: voice chat's echo cancellation and microphone setup
 
 GeForce NOW and NVIDIA are trademarks of NVIDIA Corporation. Nintendo 3DS is a
 trademark of Nintendo. Kasumi is not affiliated with or endorsed by either.

@@ -408,6 +408,8 @@ jansson, libopus, stb_image, citro2d and libctru. MVD and zoom work was
 informed by [Moonlight-N3DS](https://github.com/zoeyjodon/moonlight-N3DS), and its
 [moonlight-common-c](https://github.com/moonlight-stream/moonlight-common-c)
 3DS socket code showed how to get the largest receive buffer the 3DS allows.
+Voice chat's echo cancellation and microphone setup follow
+[TriCord](https://github.com/2b-zipper/TriCord), the 3DS Discord client.
 
 Kasumi's voice is VOICEVOX:春日部つむぎ ([VOICEVOX](https://voicevox.hiroshiba.jp)).
 The Home Menu jingle and sound effects are original, made with

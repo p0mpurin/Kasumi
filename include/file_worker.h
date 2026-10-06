@@ -22,5 +22,8 @@ void file_worker_remove(const char *path);
 /* Wait for everything queued so far (before reading such a file back, or
  * before exiting). */
 void file_worker_flush(void);
+/* Writes that failed so far (full or locked SD card): the player is told,
+ * else settings like the one-time Discord invite are lost without a word. */
+unsigned file_worker_failed_writes(void);
 /* Stop the thread after finishing the queue (exit). */
 void file_worker_exit(void);

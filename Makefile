@@ -24,7 +24,7 @@ APP_AUTHOR := p0mpurin
 VERSION_MAJOR := 0
 VERSION_MINOR := 9
 VERSION_MICRO := 0
-VERSION_SUFFIX := -beta.35
+VERSION_SUFFIX := -beta.36
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 APP_PRODUCT_CODE := CTR-P-KSMI
 APP_UNIQUE_ID := 0x4B534
@@ -45,6 +45,8 @@ LDFLAGS := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $(OUTPUT)).map
 LIBDIRS := $(PORTLIBS) $(CTRULIB)
 # Transport: separate DTLS/SRTP-enabled crypto (prefixed symbols) + peer + srtp
 TRANSPORT_LIBS := -L$(TOPDIR)/build-transport/dist -lpeer -lsrtp2 -lonow_mbedtls -lonow_mbedx509 -lonow_mbedcrypto
+# Voice chat's echo canceller (tools/build-aecm.sh).
+TRANSPORT_LIBS += -L$(TOPDIR)/build-aecm -laecm
 # Order matters: peer/srtp depend on both prefixed crypto and system ctr/socket libs.
 # Place transport before the system libs and wrap with --start-group to handle circular deps.
 LIBS := -Wl,--start-group $(TRANSPORT_LIBS) -lcurl -ljansson -lopus -lmbedtls -lmbedx509 -lmbedcrypto -lz -lcitro2d -lcitro3d -lctru -lm -Wl,--end-group

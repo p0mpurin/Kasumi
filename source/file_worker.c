@@ -26,6 +26,9 @@ static LightLock g_lock = 1;
 static LightEvent g_wake, g_idle;
 static Thread g_thread;
 static bool g_started, g_quit;
+static volatile unsigned g_failed_writes;
+
+unsigned file_worker_failed_writes(void) { return g_failed_writes; }
 
 static const char *base_name(const char *path)
 {
@@ -38,8 +41,10 @@ static void run(Job *job)
     const u64 start = osGetTime();
     switch (job->kind) {
     case JOB_SAVE:
-        if (json_dump_file(job->data, job->path, job->flags) != 0)
+        if (json_dump_file(job->data, job->path, job->flags) != 0) {
             diagnostic_log("FILE", "could not write %s", base_name(job->path));
+            ++g_failed_writes;
+        }
         break;
     case JOB_APPEND: {
         json_error_t error;
@@ -50,8 +55,10 @@ static void run(Job *job)
         }
         json_array_append(list, job->data);
         while (job->keep && json_array_size(list) > job->keep) json_array_remove(list, 0);
-        if (json_dump_file(list, job->path, job->flags) != 0)
+        if (json_dump_file(list, job->path, job->flags) != 0) {
             diagnostic_log("FILE", "could not write %s", base_name(job->path));
+            ++g_failed_writes;
+        }
         json_decref(list);
         break;
     }

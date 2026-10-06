@@ -327,6 +327,27 @@ static int peer_connection_dtls_srtp_send(void* ctx, const uint8_t* buf, size_t 
   return agent_send(&pc->agent, buf, len);
 }
 
+/* Kasumi: report blocks the server sends about our own audio SSRC (the
+ * voice chat mic) prove it receives that stream. Logged for the first few
+ * and then every 50th, so a report shows whether the mic arrives. */
+static void peer_connection_log_mic_reports(PeerConnection* pc, const RtcpPacketView* view, size_t first_block) {
+  static unsigned seen;
+  for (unsigned i = 0; i < view->count; ++i) {
+    const size_t at = first_block + (size_t)i * 24;
+    if (at + 24 > view->size) return;
+    const uint8_t* b = view->data + at;
+    const uint32_t ssrc = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
+    if (ssrc != pc->artp_encoder.ssrc) continue;
+    ++seen;
+    if (seen > 5 && seen % 50) continue;
+    const uint32_t lost = ((uint32_t)b[5] << 16) | ((uint32_t)b[6] << 8) | b[7];
+    const uint32_t highest = ((uint32_t)b[8] << 24) | ((uint32_t)b[9] << 16) | ((uint32_t)b[10] << 8) | b[11];
+    const uint32_t jitter = ((uint32_t)b[12] << 24) | ((uint32_t)b[13] << 16) | ((uint32_t)b[14] << 8) | b[15];
+    peer_connection_diag_log("mic_report n=%u ssrc=%u fractionLost=%u cumLost=%u highestSeq=%u jitter=%u",
+        seen, ssrc, (unsigned)b[4], (unsigned)lost, (unsigned)highest, (unsigned)jitter);
+  }
+}
+
 static void peer_connection_incoming_rtcp(PeerConnection* pc, uint8_t* buf, size_t len) {
   if (!rtcp_validate_compound(buf, len))
     return;
@@ -355,10 +376,13 @@ static void peer_connection_incoming_rtcp(PeerConnection* pc, uint8_t* buf, size
             rtcp_receiver_record_sr(&pc->video_receiver_stats, &view, ports_get_monotonic_time());
           if (pc->config.onrtpsenderreport)
             pc->config.onrtpsenderreport(sender_ssrc, ntp_us, rtp_timestamp, pc->config.user_data);
+          /* Header, sender SSRC and sender info: blocks start at 28. */
+          peer_connection_log_mic_reports(pc, &view, 28);
         }
         break;
       case RTCP_RR:
         LOGD("RTCP_PR");
+        peer_connection_log_mic_reports(pc, &view, 8);
         if (view.count > 0) {
 // TODO: REMB, GCC ...etc
 #if 0

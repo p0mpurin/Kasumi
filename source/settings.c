@@ -217,7 +217,8 @@ void settings_save_async(const AppSettings *settings)
     file_worker_save_json(SETTINGS_PATH, settings_json(settings), JSON_INDENT(2));
 }
 
-/* The background writer logs a failed write; nothing to report here. */
+/* The background writer counts failed writes; the main loop tells the
+ * player (sd_write_watch), since the write happens after this returns. */
 bool settings_save_failed(void) { return false; }
 
 void settings_flush(void) { file_worker_flush(); }
