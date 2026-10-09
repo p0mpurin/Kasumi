@@ -124,10 +124,15 @@ void diagnostic_close(void)
     g_file = NULL;
 }
 
-/* Used before risky startup steps: the lines so far must reach the card. */
+/* Before risky steps: get the lines so far to the card soon. The writer
+ * thread does it; the caller used to, and on a slow card each checkpoint
+ * took seconds. The decoder's start-up has nine of them, and they held the
+ * stream (and the menus waiting on it) 2-3 s on such cards (beta.36
+ * export). Before the writer starts, write directly as before. */
 void diagnostic_checkpoint(void)
 {
-    write_pending();
+    if (g_writer) LightEvent_Signal(&g_writer_wake);
+    else write_pending();
 }
 
 void diagnostic_vlog(const char *component, const char *format, va_list args)

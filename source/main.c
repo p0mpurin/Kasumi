@@ -45,6 +45,8 @@
 #include "stream_profile.h"
 #include "ui.h"
 #include "webrtc_transport.h"
+#include "xcloud.h"
+#include "steam_link.h"
 
 #define SOC_BUFFER_SIZE (0x100000)
 #define SOC_BUFFER_ALIGNMENT (0x1000)
@@ -451,8 +453,13 @@ static void run_deferred_job(void)
         g_busy_message = g_deferred.busy;
 }
 
+/* When the open question appeared: a press in its first 300 ms is not an
+ * answer to it (a test run exited 151 ms after "EXIT KASUMI?" opened). */
+static u64 g_modal_opened_at;
+
 static void open_modal(AppModal modal, const char *jp, const char *title, const char *text)
 {
+    g_modal_opened_at = osGetTime();
     if (text && text[0]) diagnostic_log("UI", "modal %d %s: %.200s", (int)modal, title, text);
     else diagnostic_log("UI", "modal %d %s", (int)modal, title);
     g_app.modal = modal;
@@ -472,8 +479,10 @@ static AppView derive_view(void)
         return VIEW_SESSION;
     if (g_client.auth_state == GFN_AUTH_WAITING) return VIEW_LOGIN;
     if (g_app.settings_open) return VIEW_SETTINGS;
-    if (!gfn_has_session(&g_client)) return VIEW_WELCOME;
-    if (g_app.details_open && g_app.selected < g_app.list_count) return VIEW_DETAILS;
+    if (g_app.hub_open) return VIEW_HUB;
+    /* A service not signed in shows its sign-in card in the library. */
+    if (g_app.details_open && gfn_has_session(&g_client) && g_app.selected < g_app.list_count)
+        return VIEW_DETAILS;
     return VIEW_LIBRARY;
 }
 
@@ -518,16 +527,25 @@ static void keep_selection_visible(void)
 
 /* ---- Actions ------------------------------------------------------------- */
 
+static unsigned current_service(void) { return (unsigned)app_service(&g_app); }
+
 static void begin_login(void)
 {
-    submit_job(NET_JOB_BEGIN_LOGIN, "Requesting a sign-in code from NVIDIA...", g_app.settings.provider, NULL);
+    static const char *const busy[SERVICE_COUNT] = {
+        "Requesting a sign-in code from NVIDIA...", "Requesting a sign-in code from Microsoft...",
+        "Looking for your PC on this Wi-Fi..."
+    };
+    submit_job(NET_JOB_BEGIN_LOGIN, busy[current_service()], g_app.settings.provider, NULL);
 }
 
 static void load_library(void)
 {
+    static const char *const busy[SERVICE_COUNT] = {
+        "Loading your GeForce NOW library...", "Loading your Xbox cloud games...", "Loading what your PC can stream..."
+    };
     g_app.search_text[0] = '\0';
-    submit_job(NET_JOB_LOAD_LIBRARY, g_client.library_saved_at
-               ? "Refreshing your library..." : "Loading your GeForce NOW library...", NULL, NULL);
+    submit_job(NET_JOB_LOAD_LIBRARY, g_client.library_saved_at ? "Refreshing your library..."
+               : busy[current_service()], NULL, NULL);
 }
 
 /* Back from a search to the saved library: read from the SD card. */
@@ -542,7 +560,10 @@ static void search_catalog(void)
     char text[sizeof(g_app.search_text)];
     snprintf(text, sizeof(text), "%s", g_app.search_text);
     swkbdInit(&g_search_keyboard, SWKBD_TYPE_QWERTY, 2, 64);
-    swkbdSetHintText(&g_search_keyboard, "Search GeForce NOW games");
+    static const char *const hint[SERVICE_COUNT] = {
+        "Search GeForce NOW games", "Search your Xbox cloud games", "Search the games played on your PC"
+    };
+    swkbdSetHintText(&g_search_keyboard, hint[current_service()]);
     swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, "Cancel", false);
     swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, "Search", true);
     swkbdSetValidation(&g_search_keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
@@ -550,7 +571,8 @@ static void search_catalog(void)
     if (text[0]) swkbdSetInitialText(&g_search_keyboard, text);
     if (swkbdInputText(&g_search_keyboard, text, sizeof(text)) != SWKBD_BUTTON_RIGHT) return;
     snprintf(g_app.search_text, sizeof(g_app.search_text), "%s", text);
-    submit_job(NET_JOB_SEARCH, "Searching the GeForce NOW catalog...", g_app.search_text, NULL);
+    submit_job(NET_JOB_SEARCH, current_service() == SERVICE_GFN ? "Searching the GeForce NOW catalog..."
+               : "Searching...", g_app.search_text, NULL);
 }
 
 /* Everything a new session of this game needs, before any request. */
@@ -558,9 +580,11 @@ static void prepare_game_session(const GfnGame *game)
 {
     if (game != &g_current_game) g_current_game = *game;
     snprintf(g_app.game_title, sizeof(g_app.game_title), "%s", g_current_game.title);
+    g_app.session_game = &g_current_game;
     snprintf(g_app.game_store, sizeof(g_app.game_store), "%s", g_current_game.store);
     g_app.genshin_session = strstr(g_current_game.title, "Genshin") != NULL;
     g_app.stream_started_at = 0;
+    g_app.end_note[0] = '\0';
     g_app.zone_index = -1;
     g_app.sound_muted = false;
     zoom_zones_select(g_current_game.app_id);
@@ -597,7 +621,8 @@ static void launch_game(const GfnGame *game)
 {
     static u64 last_launch;
     const u64 now = osGetTime();
-    if (last_launch && now - last_launch < 8000) {
+    /* Only NVIDIA refuses launches that come too fast. */
+    if (current_service() == SERVICE_GFN && last_launch && now - last_launch < 8000) {
         show_notice("One moment - launching again too fast makes NVIDIA refuse for a minute");
         return;
     }
@@ -606,7 +631,14 @@ static void launch_game(const GfnGame *game)
     g_app.limit_wait_until = g_app.limit_retry_at = 0;
     g_app.limit_unclosable = g_app.limit_rate = g_app.limit_busy = false;
     launch_begin(false, stream_profile_weak(), g_app.auto_weak);
-    submit_job(NET_JOB_START_SESSION, "Creating your cloud session...", NULL, &g_current_game);
+    static char busy[128];
+    if (current_service() == SERVICE_STEAM)
+        snprintf(busy, sizeof(busy), "Starting %.60s on %.40s...", game->title, steam_link_host_name());
+    else if (current_service() == SERVICE_XBOX)
+        snprintf(busy, sizeof(busy), "Asking Xbox Cloud Gaming for a console...");
+    else
+        snprintf(busy, sizeof(busy), "Creating your cloud session...");
+    submit_job(NET_JOB_START_SESSION, busy, NULL, &g_current_game);
     if (g_app.settings.voice_cues) menu_audio_cue(MENU_CUE_ITTERASSHAI);
 }
 
@@ -811,10 +843,38 @@ static void auto_update_check(void)
     static u64 started_at;
     if (!started_at) started_at = osGetTime();
     if (!g_app.settings.auto_update || osGetTime() - started_at < 4000) return;
-    if (g_app.view != VIEW_LIBRARY && g_app.view != VIEW_WELCOME) return;
+    if (g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) return;
     if (net_worker_busy() || gfn_session_active(&g_client) || !updater_check_due()) return;
     if (updater_info().state != UPDATE_IDLE) return;
     start_update_check(true);
+}
+
+static const char *const SERVICE_NAMES[SERVICE_COUNT] = { "GeForce NOW", "Xbox Cloud Gaming", "Steam Link" };
+
+/* Entering a service from the hub. Each service keeps its login and library on
+ * the SD card, so switching only changes which one is shown. */
+static bool switch_service(unsigned service)
+{
+    if (service >= SERVICE_COUNT) return false;
+    if (service == current_service()) return true;
+    if (gfn_session_active(&g_client) || g_transport.peer ||
+        (net_worker_busy() && !background_job(net_worker_current_job()))) {
+        show_notice("Finish what's running first, then switch");
+        return false;
+    }
+    g_app.settings.xbox_service = service == SERVICE_XBOX;
+    g_app.settings.steam_service = service == SERVICE_STEAM;
+    save_settings();
+    steam_link_select(g_app.settings.steam_service);
+    xcloud_select(g_app.settings.xbox_service);
+    g_app.search_text[0] = '\0';
+    g_app.selected = g_app.list_top = 0;
+    g_app.details_open = false;
+    g_app.continue_index = -1;
+    /* Quick (the SD card): no busy card, the tab changes at once. */
+    submit_job(NET_JOB_SWITCH_SERVICE, NULL, NULL, NULL);
+    diagnostic_log("APP", "cloud service %s", SERVICE_NAMES[service]);
+    return true;
 }
 
 static void change_setting(int direction)
@@ -822,8 +882,12 @@ static void change_setting(int direction)
     const int index = screens_setting_at(g_app.setting_index);
     if (index == SETTING_ACCOUNT) {
         if (gfn_has_session(&g_client))
-            open_modal(MODAL_SIGN_OUT, "サインアウト", "SIGN OUT?",
-                       "The saved NVIDIA login will be deleted from the SD card.");
+            open_modal(MODAL_SIGN_OUT, "サインアウト", "SIGN OUT?", steam_link_selected()
+                       ? "This 3DS will forget your PC. Pair it again to stream from it."
+                       : xcloud_selected()
+                       ? "The saved Microsoft (Xbox) login will be deleted from the SD card. "
+                         "Your NVIDIA login stays."
+                       : "The saved NVIDIA login will be deleted from the SD card.");
         return;
     }
     if (index == SETTING_CONNECTION) {
@@ -845,6 +909,7 @@ static void change_setting(int direction)
         if (!g_app.settings.share_stats) {
             file_worker_remove(REPORT_STATS_PENDING_PATH);
             file_worker_remove(LAUNCH_PENDING_PATH);
+            report_stats_mark_pending(false);
         }
         diagnostic_log("REPORT", "share stats %s", g_app.settings.share_stats ? "on" : "off");
         return;
@@ -1206,6 +1271,20 @@ static void update_pointer_click(u32 down, u32 held)
 
 static void handle_modal(u32 down, AppAction action)
 {
+    if (osGetTime() - g_modal_opened_at < 300) return;
+    if (g_app.modal == MODAL_STEAM_LEAVE) {
+        /* A: disconnect (the game keeps running), X: quit it on the PC, B: back. */
+        const bool disconnect = (down & KEY_A) || action == ACTION_CONFIRM;
+        const bool quit = (down & KEY_X) || action == ACTION_DISMISS;
+        if (disconnect || quit || (down & KEY_B)) g_app.modal = MODAL_NONE;
+        if (quit) {
+            const int sent = webrtc_transport_steam_quit_game(&g_transport);
+            if (sent == 0) show_notice("No game was open on the PC; only the stream was closed");
+            else if (sent < 0) show_notice("Couldn't reach the PC to close the game");
+        }
+        if (disconnect || quit) leave_session();
+        return;
+    }
     if (g_app.modal == MODAL_PROVIDER_PICK) {
         /* A: the partner, X: NVIDIA, B: back. The answer is kept. */
         GfnProvider partner;
@@ -1237,6 +1316,7 @@ static void handle_modal(u32 down, AppAction action)
         if (!confirm) {
             file_worker_remove(REPORT_STATS_PENDING_PATH);
             file_worker_remove(LAUNCH_PENDING_PATH);
+            report_stats_mark_pending(false);
         }
         save_settings();
         show_notice(confirm ? "Thank you! Change it anytime in Settings > System"
@@ -1310,6 +1390,8 @@ static void handle_modal(u32 down, AppAction action)
         g_quit = true;
     } else if (modal == MODAL_SIGN_OUT) {
         submit_job(NET_JOB_SIGN_OUT, NULL, NULL, NULL);
+        g_app.pc_sheet_open = false;
+        g_app.continue_index = -1;
         g_app.settings_open = false;
         g_app.search_text[0] = '\0';
         g_app.selected = g_app.list_top = 0;
@@ -1326,7 +1408,8 @@ static void sign_in(void)
 {
     GfnProvider partner;
     bool only = false;
-    if (!g_app.settings.provider[0] && providers_partner_here(&partner, &only)) {
+    if (current_service() == SERVICE_GFN && !g_app.settings.provider[0] &&
+        providers_partner_here(&partner, &only)) {
         char country[4], text[192];
         providers_country(country, sizeof(country));
         snprintf(text, sizeof(text), only
@@ -1339,15 +1422,126 @@ static void sign_in(void)
     begin_login();
 }
 
-static void handle_welcome(u32 down, AppAction action)
+/* A service picked on the hub: show its library, and sign in when it has
+ * no login yet (first run asks only for the service chosen). */
+static void pick_service(unsigned service)
 {
-    if ((down & KEY_A) || action == ACTION_SIGN_IN) sign_in();
-    else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
+    if (!g_app.settings.hub_done) {
+        g_app.settings.hub_done = true;
+        save_settings();
+    }
+    if (service == current_service()) {
+        g_app.hub_open = false;
+        return;
+    }
+    if (!switch_service(service)) return;
+    g_app.hub_open = false;
+}
+
+/* What each hub card says: the selected service from the client, the
+ * others from their saved logins. */
+static void refresh_service_status(void)
+{
+    char pc[64] = "";
+    const bool paired = steam_link_saved_pc(pc, sizeof(pc));
+    const bool ready[SERVICE_COUNT] = {
+        current_service() == SERVICE_GFN ? gfn_has_session(&g_client) : gfn_login_saved(),
+        current_service() == SERVICE_XBOX ? gfn_has_session(&g_client) : xcloud_login_saved(),
+        paired
+    };
+    for (int i = 0; i < SERVICE_COUNT; ++i) g_app.service_ready[i] = ready[i];
+    snprintf(g_app.service_status[SERVICE_GFN], sizeof(g_app.service_status[0]), "%s",
+             ready[SERVICE_GFN] ? "Signed in" : "Not signed in");
+    snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), "%s",
+             ready[SERVICE_XBOX] ? "Signed in" : "Not signed in");
+    if (paired) snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "PC: %.40s", pc);
+    else snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "No PC paired");
+}
+
+/* The current service's card follows its login as it loads or ends (the
+ * others were read from the SD card when the hub opened). No SD reads. */
+static void refresh_current_status(void)
+{
+    const unsigned s = current_service();
+    const bool ready = gfn_has_session(&g_client);
+    g_app.service_ready[s] = ready;
+    if (s == SERVICE_STEAM && ready)
+        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "PC: %.40s", steam_link_host_name());
+    else if (s == SERVICE_STEAM)
+        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "No PC paired");
+    else
+        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "%s",
+                 ready ? "Signed in" : "Not signed in");
+}
+
+static void open_hub(void)
+{
+    refresh_service_status();
+    g_app.hub_open = true;
+    g_app.pc_sheet_open = false;
+    g_app.hub_index = (int)current_service();
+}
+
+/* A on the hub: the card grows to fill the screen, then its service
+ * opens (enter_tick). */
+static int g_entering = -1;
+
+static void enter_service(int service)
+{
+    if (service < 0 || service >= SERVICE_COUNT) return;
+    g_app.hub_index = service;
+    g_entering = service;
+    screens_hub_zoom(service, true);
+    sfx_play(SFX_NOTICE);
+}
+
+static void enter_tick(void)
+{
+    if (g_entering < 0 || screens_zoom_busy()) return;
+    const int service = g_entering;
+    g_entering = -1;
+    pick_service((unsigned)service);
+}
+
+/* B in a service: back out to the hub, the card shrinking into place. */
+static void go_home(void)
+{
+    open_hub();
+    screens_hub_zoom((int)current_service(), false);
+}
+
+/* The focused card's last game, when it is the service in use and has one. */
+static const GfnGame *hub_continue_game(void)
+{
+    if (g_app.hub_index != (int)current_service() || !gfn_has_session(&g_client)) return NULL;
+    if (g_app.continue_index < 0 || (size_t)g_app.continue_index >= g_client.game_count) return NULL;
+    return &g_client.games[g_app.continue_index];
+}
+
+static void handle_hub(u32 down, u32 repeat, AppAction action)
+{
+    if (g_entering >= 0) return;
+    /* START (or the Continue row): straight back into the last game. */
+    const GfnGame *last = hub_continue_game();
+    if (last && ((down & KEY_START) || action == ACTION_CONTINUE)) {
+        launch_with_options(last, last->variant_selected);
+        return;
+    }
+    if ((repeat & (KEY_LEFT | KEY_UP | KEY_ZL | KEY_L)) || action == ACTION_PREV) {
+        if (g_app.hub_index > 0) --g_app.hub_index;
+    } else if ((repeat & (KEY_RIGHT | KEY_DOWN | KEY_ZR | KEY_R)) || action == ACTION_NEXT) {
+        if (g_app.hub_index + 1 < SERVICE_COUNT) ++g_app.hub_index;
+    }
+    if (action == ACTION_SERVICE) {
+        enter_service(screens_touched_service());
+    } else if (down & KEY_A) {
+        enter_service(g_app.hub_index);
+    } else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
         g_app.settings_open = true;
         g_app.settings_section = -1;
-    }
-    else if ((down & KEY_START) || action == ACTION_EXIT)
+    } else if ((down & KEY_START) || action == ACTION_EXIT) {
         open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
+    }
 }
 
 static void handle_login(u32 down, AppAction action)
@@ -1426,23 +1620,94 @@ static void change_tab(int direction)
     rebuild_list();
 }
 
+/* Steam Link's PCs sheet: stream from another paired PC, pair one more,
+ * or forget the one in use. */
+static void handle_pc_sheet(u32 down, u32 repeat, AppAction action)
+{
+    char names[4][64];
+    const int count = (int)steam_link_pcs(names, 4);
+    const int rows = count + 3; /* the PCs, PAIR, FORGET, CLOSE */
+    if (repeat & KEY_UP) g_app.pc_index = (g_app.pc_index + rows - 1) % rows;
+    if (repeat & KEY_DOWN) g_app.pc_index = (g_app.pc_index + 1) % rows;
+    if ((repeat & KEY_LEFT) && g_app.pc_index == count + 1) g_app.pc_index = count;
+    if ((repeat & KEY_RIGHT) && g_app.pc_index == count) g_app.pc_index = count + 1;
+    if (g_app.pc_index >= rows) g_app.pc_index = 0;
+    if ((down & KEY_B) || action == ACTION_PC_CLOSE) {
+        g_app.pc_sheet_open = false;
+        return;
+    }
+    int pick = -1;
+    if (action == ACTION_PC_ROW) pick = g_app.pc_index = screens_touched_pc();
+    else if (down & KEY_A) pick = g_app.pc_index;
+    if (pick < 0) return;
+    if (pick == count + 2) {
+        g_app.pc_sheet_open = false;
+    } else if (pick == 0 && count) {
+        g_app.pc_sheet_open = false;
+        load_library();
+    } else if (pick < count) {
+        /* The busy card keeps the pointer: a static text. */
+        static char busy_text[96];
+        char index[12];
+        snprintf(index, sizeof(index), "%d", pick);
+        snprintf(busy_text, sizeof(busy_text), "Switching to %.60s...", names[pick]);
+        if (submit_job(NET_JOB_USE_PC, busy_text, index, NULL)) {
+            g_app.pc_sheet_open = false;
+            g_app.selected = g_app.list_top = 0;
+            g_app.details_open = false;
+            g_app.continue_index = -1;
+            diagnostic_log("APP", "Steam PC %d of %d", pick + 1, count);
+        }
+    } else if (pick == count) {
+        g_app.pc_sheet_open = false;
+        begin_login();
+    } else if (count) {
+        char text[256];
+        if (count > 1)
+            snprintf(text, sizeof(text), "This 3DS forgets %.60s and streams from %.60s instead. Pair it again "
+                     "to stream from it.", names[0], names[1]);
+        else
+            snprintf(text, sizeof(text), "This 3DS forgets %.60s. Pair it again to stream from it.", names[0]);
+        open_modal(MODAL_SIGN_OUT, "削除", "FORGET THIS PC?", text);
+    }
+}
+
 static void handle_library(u32 down, u32 repeat, AppAction action)
 {
     const size_t count = g_app.list_count;
+    if (action == ACTION_HUB) {
+        go_home();
+        return;
+    }
+    if (g_app.pc_sheet_open) {
+        handle_pc_sheet(down, repeat, action);
+        return;
+    }
+    if (!gfn_has_session(&g_client)) {
+        /* This service's sign-in card. */
+        if ((down & KEY_A) || action == ACTION_SIGN_IN) sign_in();
+        else if (down & KEY_B) go_home();
+        else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
+            g_app.settings_open = true;
+            g_app.settings_section = -1;
+        } else if ((down & KEY_START) || action == ACTION_EXIT) {
+            open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
+        }
+        return;
+    }
     if (down & KEY_L) change_tab(-1);
     if (down & KEY_R) change_tab(1);
     if (count) {
-        if ((repeat & KEY_UP) || action == ACTION_PREV) {
+        if ((repeat & KEY_LEFT) || action == ACTION_PREV) {
             if (g_app.selected > 0) --g_app.selected;
         }
-        if ((repeat & KEY_DOWN) || action == ACTION_NEXT) {
+        if ((repeat & KEY_RIGHT) || action == ACTION_NEXT) {
             if (g_app.selected + 1 < count) ++g_app.selected;
         }
-        if (repeat & KEY_LEFT)
-            g_app.selected = g_app.selected > LIBRARY_ROWS ? g_app.selected - LIBRARY_ROWS : 0;
-        if (repeat & KEY_RIGHT)
-            g_app.selected = g_app.selected + LIBRARY_ROWS < count ? g_app.selected + LIBRARY_ROWS
-                                                                  : count - 1;
+        if (repeat & KEY_UP)
+            g_app.selected = g_app.selected > 5 ? g_app.selected - 5 : 0;
+        if (repeat & KEY_DOWN)
+            g_app.selected = g_app.selected + 5 < count ? g_app.selected + 5 : count - 1;
         keep_selection_visible();
     }
     if (((down & KEY_START) || action == ACTION_CONTINUE) && g_app.continue_index >= 0 &&
@@ -1465,11 +1730,17 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
     } else if ((down & KEY_X) || action == ACTION_SEARCH) {
         search_catalog();
     } else if ((down & KEY_Y) || action == ACTION_LIBRARY) {
-        /* From a search, Y returns to the library; otherwise it refreshes. */
+        /* From a search, Y returns to the library; otherwise it refreshes
+         * (Steam Link: it opens the PCs). */
         if (g_app.search_text[0]) show_saved_library();
-        else load_library();
+        else if (current_service() == SERVICE_STEAM) {
+            g_app.pc_sheet_open = true;
+            g_app.pc_index = 0;
+        } else load_library();
     } else if ((down & KEY_B) && g_app.search_text[0]) {
         show_saved_library();
+    } else if (down & KEY_B) {
+        go_home();
     } else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
         g_app.settings_open = true;
         g_app.settings_section = -1;
@@ -1678,6 +1949,12 @@ static void shortcut_action(const GfnGame *game)
 {
     if (shortcut_state() != SHORTCUT_IDLE) {
         show_notice("Still making the last shortcut");
+        return;
+    }
+    /* A shortcut names a game of the service it was made in; Steam Link's
+     * entries only mean something on the paired PC. */
+    if (steam_link_selected()) {
+        show_notice("Shortcuts aren't available for Steam Link yet");
         return;
     }
     /* The shortcut jumps to the installed Kasumi title. */
@@ -1932,7 +2209,16 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
             }
 
         } else if (action == ACTION_MENU_DISCONNECT) {
-            leave_session();
+            if (g_transport.steam) {
+                /* The PC keeps the game unless asked: let the player choose. */
+                char text[160];
+                snprintf(text, sizeof(text), "Disconnect leaves the game running on %.40s. Quit closes it there.",
+                         steam_link_host_name()[0] ? steam_link_host_name() : "your PC");
+                g_app.stream_menu = false;
+                open_modal(MODAL_STEAM_LEAVE, "切断", "LEAVE THE GAME?", text);
+            } else {
+                leave_session();
+            }
         }
         return;
     }
@@ -2006,7 +2292,9 @@ static aptHookCookie g_apt_cookie;
 
 /* Where the last main-loop pass spent its time, so a ui-stall says which
  * part froze (beta.31: one console stopped for 12.8 s in menus, no job). */
-enum { PHASE_SYNC, PHASE_TICKS, PHASE_HANDLE, PHASE_NETWORK, PHASE_RENDER, PHASE_COUNT };
+/* PHASE_TRACK (build 122): end-of-game bookkeeping, timed apart from
+ * drawing; beta.36's "render" stalls after games were mostly that. */
+enum { PHASE_SYNC, PHASE_TICKS, PHASE_HANDLE, PHASE_NETWORK, PHASE_TRACK, PHASE_RENDER, PHASE_COUNT };
 static unsigned g_phase_ms[PHASE_COUNT];
 static u64 g_phase_at;
 
@@ -2016,6 +2304,12 @@ static void phase_end(int phase)
     g_phase_ms[phase] = now > g_phase_at ? (unsigned)(now - g_phase_at) : 0;
     g_phase_at = now;
 }
+
+/* Until when a long main-loop gap (the Rosalina menu, a stall) excuses the
+ * video-freeze check: the whole app was paused, decoder included, so the gap
+ * looked like a frozen picture. Beta.36 export: 20 s in Rosalina, then a
+ * needless reconnect. */
+static u64 g_loop_gap_grace_until;
 
 /* Any HOME, sleep or applet event: a long main-loop gap around one is not
  * a stall (see watch_for_bugs). */
@@ -2336,7 +2630,7 @@ static void track_session(void)
     const u64 last_frame = g_transport.last_decoded_frame_at;
     const bool frozen = g_app.view == VIEW_STREAM && g_transport.state == WEBRTC_CONNECTED &&
                         last_frame && now > last_frame && now - last_frame > 12000 &&
-                        !g_app.lid_paused && !g_resumed_at && wifi_connected();
+                        !g_app.lid_paused && !g_resumed_at && now >= g_loop_gap_grace_until && wifi_connected();
     if (frozen && !net_worker_busy() && g_client.session_state == GFN_SESSION_READY && g_app.reconnect_attempt < 3) {
         diagnostic_flag("video-freeze", "no picture for %llu ms with the connection up (rtp=%u kbps=%u pli=%u); reconnecting",
                         (unsigned long long)(now - g_transport.last_decoded_frame_at),
@@ -2370,6 +2664,14 @@ static void track_session(void)
     }
     if (!dropped || !g_app.stream_started_at || g_leave_pending || net_worker_busy()) return;
     if (g_client.session_state != GFN_SESSION_READY || g_app.reconnect_attempt > 3) return;
+    /* The PC ended the stream itself (stopped from Steam there), or the
+     * decoder broke: reconnecting would fight the player or fail again. */
+    if (g_transport.no_reconnect) {
+        diagnostic_log("APP", "not reconnecting: %.100s", g_transport.status);
+        log_session_end(g_transport.decoder_init_failures >= 3 ? "decoder" : "pc-ended");
+        g_app.reconnect_attempt = 4;
+        return;
+    }
     /* 404/410 on the signalling upgrade: NVIDIA has closed the session, so
      * reconnecting cannot work. Say so; Retry starts the game again. */
     if (session_gone()) {
@@ -2669,7 +2971,7 @@ static const char *current_status(void)
     static char line[160];
     if (g_notice[0] && osGetTime() < g_notice_until) return g_notice;
     if (g_transport.peer) {
-        snprintf(line, sizeof(line), "WebRTC: %.145s", g_transport.status);
+        snprintf(line, sizeof(line), "%s%.145s", g_transport.steam ? "" : "WebRTC: ", g_transport.status);
         return line;
     }
     if (nvst_signal_active(&g_signal) || g_signal.state == NVST_SIGNAL_ERROR) return g_signal.status;
@@ -2703,7 +3005,7 @@ static void auto_report_tick(void)
     if (!g_auto_trigger[0] || g_auto_sent >= AUTO_REPORTS_PER_RUN || g_auto_inflight ||
         g_app.settings.share_reports != SHARE_YES)
         return;
-    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_WELCOME) || gfn_session_active(&g_client) ||
+    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) || gfn_session_active(&g_client) ||
         net_worker_busy() || g_app.modal != MODAL_NONE || osGetTime() - g_auto_queued_at < 60000)
         return;
     if (submit_job(NET_JOB_SEND_REPORT, NULL, g_auto_trigger, NULL)) {
@@ -2729,7 +3031,8 @@ static void log_session_end(const char *by)
                    g_perf.reconnects, mvd_video_decoded_frames() - g_app.stream_frame_base,
                    last && now > last ? (long long)(now - last) : -1LL, mvd_video_picture_dark() ? 1 : 0,
                    g_transport.video_kbps, g_transport.keyframe_requests, mvd_video_errors(),
-                   g_client.session_state, g_client.session_status, g_current_game.title, g_client.status);
+                   g_client.session_state, g_client.session_status, g_current_game.title,
+                   g_app.end_note[0] ? g_app.end_note : g_client.status);
 }
 
 /* Watchdogs for states that should never last: each raises a flag (see
@@ -2850,7 +3153,7 @@ static void stats_tick(void)
 {
     static u64 tried_at;
     if (!g_app.settings.share_stats || !report_available() || g_stats_inflight) return;
-    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_WELCOME) || gfn_session_active(&g_client) ||
+    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) || gfn_session_active(&g_client) ||
         net_worker_busy() || g_app.modal != MODAL_NONE)
         return;
     const u64 now = osGetTime();
@@ -2963,6 +3266,11 @@ static void setup_retry_tick(void)
     const bool signal_failed = g_signal.state == NVST_SIGNAL_ERROR;
     const bool media_failed = g_transport.state == WEBRTC_FAILED;
     if ((!signal_failed && !media_failed) || g_app.setup_retries >= SETUP_RETRIES) return;
+    if (media_failed && g_transport.no_reconnect) {
+        /* Stays on the error screen with the transport's reason. */
+        g_app.setup_retries = SETUP_RETRIES;
+        return;
+    }
     ++g_app.setup_retries;
     diagnostic_log("APP", "connection failed before the stream (%.80s); automatic retry %u",
                    signal_failed ? g_signal.status : g_transport.status, g_app.setup_retries);
@@ -2983,9 +3291,9 @@ static void watch_session_errors(void)
     if (error && !was_error && g_app.free_tier_guess && g_app.stream_started_at &&
         osGetTime() - g_app.stream_started_at >= 58ull * 60 * 1000) {
         diagnostic_log("APP", "free session ended after its hour (%.80s)", g_client.status);
-        log_session_end("free-hour");
-        snprintf(g_client.status, sizeof(g_client.status),
+        snprintf(g_app.end_note, sizeof(g_app.end_note),
                  "Your free hour is over. Press A to start the game again (you may queue again).");
+        log_session_end("free-hour");
         perf_note_error("free-hour");
         was_error = error;
         return;
@@ -3023,7 +3331,7 @@ static void share_prompt_tick(void)
 {
     static bool asked;
     if (asked || g_app.settings.share_consent >= SHARE_CONSENT_VERSION || !report_available()) return;
-    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_WELCOME) || g_app.whats_new_open ||
+    if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) || g_app.whats_new_open ||
         g_app.guide_page >= 0 || g_app.update_open || g_app.modal != MODAL_NONE || g_app.busy)
         return;
     asked = true;
@@ -3277,8 +3585,21 @@ static void finish_jobs(void)
         diagnostic_log("APP", "session ended on NVIDIA's side (%s); not reconnecting", g_client.fail_code);
         g_app.reconnect_attempt = 4;
     }
-    if (result.kind == NET_JOB_LOAD_LIBRARY || result.kind == NET_JOB_SEARCH)
+    if (result.kind == NET_JOB_LOAD_LIBRARY || result.kind == NET_JOB_SEARCH || result.kind == NET_JOB_USE_PC ||
+        result.kind == NET_JOB_SIGN_OUT)
         g_app.selected = g_app.list_top = 0;
+    /* Steam Link: pairing another PC found none, or the PC switched. */
+    if (result.kind == NET_JOB_BEGIN_LOGIN && !result.ok && gfn_has_session(&g_client))
+        show_notice(g_client.status);
+    if ((result.kind == NET_JOB_USE_PC || result.kind == NET_JOB_SIGN_OUT) && gfn_has_session(&g_client) &&
+        current_service() == SERVICE_STEAM) {
+        char text[96];
+        snprintf(text, sizeof(text), "Streaming from %.60s", steam_link_host_name());
+        show_notice(text);
+    }
+    /* A service signed in before but with no saved library yet. */
+    if (result.kind == NET_JOB_SWITCH_SERVICE && gfn_has_session(&g_client) && !g_client.game_count)
+        load_library();
     if (result.kind == NET_JOB_RESUME_CHECK && result.ok && g_client.resume_found) {
         char text[192];
         snprintf(text, sizeof(text), "%.90s is still running on your rig. Jump back in, or end it?",
@@ -3329,7 +3650,7 @@ static void finish_jobs(void)
         if (info.state == UPDATE_AVAILABLE && !updater_dismissed() && !g_app.update_open) {
             /* Show the update itself (notes, Install / Later) when nothing
              * else is on screen; a toast was easy to miss (beta.18). */
-            const bool quiet = (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_WELCOME) &&
+            const bool quiet = (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_HUB) &&
                                g_app.modal == MODAL_NONE && !g_app.whats_new_open && g_app.guide_page < 0 &&
                                !gfn_session_active(&g_client) && !g_app.settings_open;
             if (quiet) {
@@ -3490,7 +3811,7 @@ static void fatal_screen(const char *title, const char *message)
 {
     g_app.status = message;
     open_modal(MODAL_EXIT, "エラー", title, message);
-    g_app.view = VIEW_WELCOME;
+    g_app.view = VIEW_HUB;
     while (aptMainLoop() && !g_quit) {
         hidScanInput();
         if (hidKeysDown() & (KEY_A | KEY_B | KEY_START)) break;
@@ -3517,6 +3838,10 @@ int main(int argc, char **argv)
     providers_load();
     regions_load();
     settings_load(&g_app.settings);
+    /* Files the menus consult, read once before the background writer
+     * starts: on a slow card a read waits behind any write. */
+    report_stats_pending();
+    net_memory_load();
     file_worker_init();
     if (!g_app.settings.install_id[0]) {
         /* Anonymous: random, made here, not linked to any account. */
@@ -3526,6 +3851,9 @@ int main(int argc, char **argv)
         settings_save(&g_app.settings);
     }
     g_app.guide_page = g_app.settings.guide_done ? -1 : 0;
+    /* Kasumi opens on the hub: the services as cards (the guide first for a
+     * new player). */
+    open_hub();
     settings_apply_input(&g_app.settings);
     settings_apply_picture(&g_app.settings);
     hidSetRepeatParameters(18, 5);
@@ -3562,6 +3890,8 @@ int main(int argc, char **argv)
     }
     nvst_signal_init(&g_signal);
     webrtc_transport_init(&g_transport);
+    steam_link_select(g_app.settings.steam_service);
+    xcloud_select(g_app.settings.xbox_service && !g_app.settings.steam_service);
     gfn_client_init(&g_client);
     /* The saved library appears instantly; covers keep filling in behind. */
     if (gfn_has_session(&g_client) && gfn_library_load(&g_client)) {
@@ -3597,6 +3927,7 @@ int main(int argc, char **argv)
     if (shortcut_take_launch(&g_shortcut_game, &g_shortcut_variant)) {
         g_shortcut_launch_at = osGetTime();
         g_app.whats_new_open = false;
+        g_app.hub_open = false;
         char text[128];
         snprintf(text, sizeof(text), "Starting %.90s...", g_shortcut_game.title);
         show_notice(text);
@@ -3629,15 +3960,17 @@ int main(int argc, char **argv)
             /* An hour or more is the clock being changed, not a stall (a beta.31
              * report showed 38 days). */
             const bool interrupted = apt_seen != g_apt_events || rosalina_combo(g_last_held);
+            if (loop_ms > 2000) g_loop_gap_grace_until = loop_now + 12000;
             if (loop_ms > 2500 && loop_ms < 3600000 && apt_seen == g_apt_events && rosalina_combo(g_last_held)) {
                 diagnostic_log("APP", "paused %u ms by the system menu (L+Down+Select)", loop_ms);
             } else if (loop_ms > 2500 && loop_ms < 3600000 && !interrupted) {
                 unsigned measured = 0;
                 for (int i = 0; i < PHASE_COUNT; ++i) measured += g_phase_ms[i];
                 diagnostic_flag("ui-stall", "main loop blocked %u ms (view %d, job %d) sync=%u ticks=%u input=%u "
-                                "net=%u render=%u other=%u", loop_ms, (int)g_app.view, (int)net_worker_current_job(),
+                                "net=%u track=%u render=%u other=%u", loop_ms, (int)g_app.view,
+                                (int)net_worker_current_job(),
                                 g_phase_ms[PHASE_SYNC], g_phase_ms[PHASE_TICKS], g_phase_ms[PHASE_HANDLE],
-                                g_phase_ms[PHASE_NETWORK], g_phase_ms[PHASE_RENDER],
+                                g_phase_ms[PHASE_NETWORK], g_phase_ms[PHASE_TRACK], g_phase_ms[PHASE_RENDER],
                                 loop_ms > measured ? loop_ms - measured : 0);
             }
             apt_seen = g_apt_events;
@@ -3669,11 +4002,21 @@ int main(int argc, char **argv)
         g_app.touch_y = touch.py;
 
         const AppView previous_view = g_app.view;
+        enter_tick();
+        g_app.service_loading = net_worker_current_job() == NET_JOB_SWITCH_SERVICE;
+        /* Covers stop downloading while a game starts or runs. */
+        game_art_pause(gfn_session_active(&g_client) || g_transport.peer != NULL);
         g_app.view = derive_view();
+        if (g_app.view == VIEW_HUB) refresh_current_status();
+        /* Steam Link pairing ended with a PC still paired ("Paired with
+         * zen", or another PC that didn't pair): say how it went. */
+        if (previous_view == VIEW_LOGIN && g_app.view != VIEW_LOGIN && gfn_has_session(&g_client) &&
+            current_service() == SERVICE_STEAM)
+            show_notice(g_client.status);
         if (previous_view == VIEW_STREAM && g_app.view != VIEW_STREAM) release_stream_input();
         g_app.keyboard_open = g_transport.keyboard_mode;
 
-        if (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_DETAILS) rebuild_list();
+        if (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_DETAILS || g_app.view == VIEW_HUB) rebuild_list();
         const AppAction action = touch_down ? screens_touch(&g_app, touch.px, touch.py) : ACTION_NONE;
         if (g_app.view != VIEW_STREAM) {
             auto_update_check();
@@ -3706,7 +4049,7 @@ int main(int argc, char **argv)
             handle_modal(down, action);
         } else {
             switch (g_app.view) {
-            case VIEW_WELCOME: handle_welcome(down, action); break;
+            case VIEW_HUB: handle_hub(down, repeat, action); break;
             case VIEW_LOGIN: handle_login(down, action); break;
             case VIEW_LIBRARY: handle_library(down, repeat, action); break;
             case VIEW_SETTINGS: handle_settings(down, repeat, action); break;
@@ -3771,6 +4114,7 @@ int main(int argc, char **argv)
         launch_track(&g_client);
         limit_wait_tick();
         sd_write_watch();
+        phase_end(PHASE_TRACK);
         {
             const u64 last_frame = g_transport.last_decoded_frame_at, at = osGetTime();
             g_app.video_stalled = g_app.view == VIEW_STREAM && last_frame && at > last_frame &&

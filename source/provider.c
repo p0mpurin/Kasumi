@@ -46,6 +46,15 @@ void provider_nvidia(GfnProvider *out)
     snprintf(out->url, sizeof(out->url), "%s", PROVIDER_NVIDIA_URL);
 }
 
+void provider_xbox(GfnProvider *out)
+{
+    memset(out, 0, sizeof(*out));
+    snprintf(out->code, sizeof(out->code), "%s", PROVIDER_XBOX);
+    snprintf(out->name, sizeof(out->name), "Xbox Cloud Gaming (beta)");
+    snprintf(out->idp, sizeof(out->idp), "xbox");
+    snprintf(out->url, sizeof(out->url), "%s", PROVIDER_XBOX_URL);
+}
+
 /* Only NVIDIA-hosted https session services, an idp of plain characters:
  * the values come from the network and go into URLs and forms. */
 static bool valid(const GfnProvider *p)
@@ -245,6 +254,7 @@ bool providers_find(const char *code, GfnProvider *out)
         provider_nvidia(out);
         return true;
     }
+
     LightLock_Lock(&g_lock);
     bool found = false;
     for (unsigned i = 0; i < g_count && !found; ++i)

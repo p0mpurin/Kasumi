@@ -4,6 +4,8 @@
 #include "diagnostic.h"
 #include "stream_profile.h"
 #include "regions.h"
+#include "xcloud.h"
+#include "steam_link.h"
 
 #include <3ds.h>
 #include <jansson.h>
@@ -458,7 +460,37 @@ void gfn_client_init(GfnClient *client)
 {
     memset(client, 0, sizeof(*client));
     srand((unsigned)(svcGetSystemTick() ^ osGetTime()));
-    if (load_session(client)) {
+    /* The NVIDIA login sets its provider (partners) even while Xbox is the
+     * service shown; then its tokens make way for Xbox's. */
+    const bool nvidia_saved = load_session(client);
+    if (xcloud_selected() || steam_link_selected()) {
+        memset(client->access_token, 0, sizeof(client->access_token));
+        memset(client->refresh_token, 0, sizeof(client->refresh_token));
+        memset(client->id_token, 0, sizeof(client->id_token));
+        memset(client->client_token, 0, sizeof(client->client_token));
+        client->user_id[0] = '\0';
+        client->token_expires_at = client->client_token_expires_at = 0;
+        if (steam_link_selected()) {
+            if (steam_link_load_login(client)) {
+                client->auth_state = GFN_AUTH_LOGGED_IN;
+                snprintf(client->status, sizeof(client->status), "Paired with %.60s", steam_link_host_name());
+            } else {
+                client->auth_state = GFN_AUTH_LOGGED_OUT;
+                snprintf(client->status, sizeof(client->status), "Press X to pair with your PC");
+            }
+            return;
+        }
+        if (xcloud_load_login(client)) {
+            diagnostic_log("AUTH", "saved Xbox login%s", nvidia_saved ? " (NVIDIA login saved too)" : "");
+            client->auth_state = GFN_AUTH_LOGGED_IN;
+            snprintf(client->status, sizeof(client->status), "Saved Xbox login loaded");
+        } else {
+            client->auth_state = GFN_AUTH_LOGGED_OUT;
+            snprintf(client->status, sizeof(client->status), "Press X to sign in with Microsoft");
+        }
+        return;
+    }
+    if (nvidia_saved) {
         GfnProvider provider;
         provider_active(&provider);
         diagnostic_log("AUTH", "saved login, provider %s", provider.code);
@@ -473,6 +505,14 @@ void gfn_client_init(GfnClient *client)
 bool gfn_begin_login(GfnClient *client, const char *provider_choice)
 {
     client->catalog_vpc[0] = '\0';
+    if (steam_link_selected()) {
+        diagnostic_log("AUTH", "pairing with a PC (Steam Link)");
+        return steam_link_begin_login(client);
+    }
+    if (xcloud_selected()) {
+        diagnostic_log("AUTH", "sign-in through Xbox Cloud Gaming");
+        return xcloud_begin_login(client);
+    }
     /* Refresh the provider list (quick, no login needed); the cached one
      * serves when it can't be reached. */
     providers_fetch();
@@ -563,7 +603,16 @@ bool gfn_begin_login(GfnClient *client, const char *provider_choice)
 
 void gfn_tick(GfnClient *client)
 {
+    /* Also when not waiting: a cancelled pairing is closed there. */
+    if (steam_link_selected()) {
+        steam_link_login_tick(client);
+        return;
+    }
     if (client->auth_state != GFN_AUTH_WAITING) return;
+    if (xcloud_selected()) {
+        xcloud_login_tick(client);
+        return;
+    }
     const int64_t now = (int64_t)time(NULL);
     if (now >= client->challenge_expires_at) {
         client->auth_state = GFN_AUTH_ERROR;
@@ -823,6 +872,11 @@ static bool fetch_catalog(GfnClient *client, const char *search_query, bool owne
 }
 
 #define LIBRARY_CACHE_PATH APP_DATA_DIR "/library.json"
+/* Xbox's library is kept apart (xcloud.c deletes it on sign-out). */
+#define XBOX_LIBRARY_PATH APP_DATA_DIR "/xcloud-library.json"
+#define STEAM_LIBRARY_PATH APP_DATA_DIR "/steam-library.json"
+#define LIBRARY_PATH (steam_link_selected() ? STEAM_LIBRARY_PATH : xcloud_selected() ? XBOX_LIBRARY_PATH \
+                      : LIBRARY_CACHE_PATH)
 
 /* Which games the account has in its library, kept apart from the list on
  * screen (a search replaces that): hashes of every store ID. */
@@ -900,14 +954,14 @@ static void library_save(const GfnClient *client)
     }
     json_t *root = json_pack("{s:I,s:o}", "saved_at", (json_int_t)client->library_saved_at,
                              "games", games);
-    if (root) json_dump_file(root, LIBRARY_CACHE_PATH, JSON_COMPACT);
+    if (root) json_dump_file(root, LIBRARY_PATH, JSON_COMPACT);
     json_decref(root);
 }
 
 bool gfn_library_load(GfnClient *client)
 {
     json_error_t error;
-    json_t *root = json_load_file(LIBRARY_CACHE_PATH, 0, &error);
+    json_t *root = json_load_file(LIBRARY_PATH, 0, &error);
     json_t *games = json_is_object(root) ? json_object_get(root, "games") : NULL;
     if (!json_is_array(games)) {
         json_decref(root);
@@ -945,8 +999,9 @@ bool gfn_library_load(GfnClient *client)
     client->catalog_total = client->game_count;
     json_decref(root);
     library_remember(client);
-    snprintf(client->status, sizeof(client->status), "Library: %lu games (Y refreshes)",
-             (unsigned long)client->game_count);
+    /* Steam Link's Y opens the PCs instead of refreshing. */
+    snprintf(client->status, sizeof(client->status), steam_link_selected() ? "Library: %lu games"
+             : "Library: %lu games (Y refreshes)", (unsigned long)client->game_count);
     return true;
 }
 
@@ -1003,7 +1058,8 @@ bool gfn_connection_test(GfnClient *client)
 
 bool gfn_fetch_library(GfnClient *client)
 {
-    if (!fetch_catalog(client, NULL, true)) return false;
+    if (steam_link_selected() ? !steam_link_fetch_library(client)
+        : xcloud_selected() ? !xcloud_fetch_library(client) : !fetch_catalog(client, NULL, true)) return false;
     client->library_saved_at = (int64_t)time(NULL);
     library_save(client);
     return true;
@@ -1015,6 +1071,8 @@ bool gfn_search_catalog(GfnClient *client, const char *query)
         snprintf(client->status, sizeof(client->status), "Search text is empty");
         return false;
     }
+    if (steam_link_selected()) return steam_link_search(client, query);
+    if (xcloud_selected()) return xcloud_search(client, query);
     return fetch_catalog(client, query, false);
 }
 
@@ -2103,6 +2161,8 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
     client->limit_quiet = false;
     /* This attempt's answer only: launch_failed reads these. */
     client->conflict_found = client->limit_wait = client->limit_rate = false;
+    if (steam_link_selected()) return game && steam_link_start_session(client, game);
+    if (xcloud_selected()) return game && xcloud_start_session(client, game);
     if (!game) {
         snprintf(client->status, sizeof(client->status), "No game selected; X searches, Y loads library");
         return false;
@@ -2267,6 +2327,7 @@ bool gfn_end_conflict(GfnClient *client, const GfnGame *game)
 
 bool gfn_claim_conflict(GfnClient *client)
 {
+    if (xcloud_selected() || steam_link_selected()) return false;
     if (!client->conflict.id[0] || !refresh_session(client)) return false;
     const GfnConflict conflict = client->conflict;
     reset_launch_state(client);
@@ -2321,6 +2382,8 @@ bool gfn_claim_conflict(GfnClient *client)
 
 bool gfn_recover_session(GfnClient *client, const GfnGame *game)
 {
+    if (steam_link_selected()) return steam_link_recover_session(client, game);
+    if (xcloud_selected()) return xcloud_recover_session(client);
     const char *app_id = game ? game->app_id : "";
     if (!client->session_id[0]) return false;
     if (!refresh_session(client)) return false;
@@ -2420,6 +2483,12 @@ static void answer_queue_ads(GfnClient *client, const char **headers, size_t cou
 
 void gfn_session_tick(GfnClient *client)
 {
+    /* A Steam stream is granted at once: nothing to poll. */
+    if (steam_link_selected()) return;
+    if (xcloud_selected()) {
+        xcloud_session_tick(client);
+        return;
+    }
     if (!gfn_session_active(client) || client->session_state == GFN_SESSION_READY ||
         client->session_state == GFN_SESSION_ERROR) return;
     const int64_t now = (int64_t)time(NULL);
@@ -2514,7 +2583,8 @@ bool gfn_keep_login(GfnClient *client)
     if (!gfn_has_session(client)) return false;
     char status[sizeof(client->status)];
     memcpy(status, client->status, sizeof(status));
-    const bool ok = refresh_session(client);
+    const bool ok = steam_link_selected() ? true : xcloud_selected() ? xcloud_keep_login(client)
+                    : refresh_session(client);
     if (client->auth_state == GFN_AUTH_LOGGED_IN) memcpy(client->status, status, sizeof(status));
     diagnostic_log("AUTH", "background renewal %s; login lasts %llds more", ok ? "done" : "failed",
                    (long long)(client->token_expires_at - (int64_t)time(NULL)));
@@ -2527,6 +2597,8 @@ bool gfn_stop_session(GfnClient *client)
         client->session_state = GFN_SESSION_IDLE;
         return true;
     }
+    if (steam_link_selected()) return steam_link_stop_session(client);
+    if (xcloud_selected()) return xcloud_stop_session(client);
     /* After a long game the login may have run out; the stop needs it. */
     if (gfn_has_session(client)) refresh_session(client);
     char url[512];
@@ -2574,7 +2646,8 @@ bool gfn_stop_session(GfnClient *client)
 
 void gfn_active_save(const GfnClient *client, const GfnGame *game)
 {
-    if (!client->session_id[0] || !game) return;
+    /* Xbox sessions are not resumed after a crash (yet). */
+    if (!client->session_id[0] || !game || xcloud_selected() || steam_link_selected()) return;
     json_t *root = json_pack("{s:s,s:s,s:s,s:s,s:I,s:{s:s,s:s,s:s,s:s}}",
                              "session_id", client->session_id,
                              "client_id", client->session_client_id,
@@ -2589,6 +2662,12 @@ void gfn_active_save(const GfnClient *client, const GfnGame *game)
 
 static void active_clear(void) { remove(ACTIVE_SESSION_PATH); }
 
+bool gfn_login_saved(void)
+{
+    struct stat st;
+    return stat(SESSION_PATH, &st) == 0;
+}
+
 bool gfn_active_exists(void)
 {
     struct stat st;
@@ -2598,6 +2677,10 @@ bool gfn_active_exists(void)
 bool gfn_resume_check(GfnClient *client)
 {
     client->resume_found = false;
+    if (xcloud_selected() || steam_link_selected()) {
+        active_clear();
+        return false;
+    }
     json_error_t error;
     json_t *root = json_load_file(ACTIVE_SESSION_PATH, 0, &error);
     if (!json_is_object(root)) {
@@ -2672,12 +2755,52 @@ bool gfn_session_active(const GfnClient *client)
     return client->session_id[0] != '\0' && client->session_state != GFN_SESSION_IDLE;
 }
 
+void gfn_client_switch_service(GfnClient *client)
+{
+    memset(client->access_token, 0, sizeof(client->access_token));
+    memset(client->refresh_token, 0, sizeof(client->refresh_token));
+    memset(client->id_token, 0, sizeof(client->id_token));
+    memset(client->client_token, 0, sizeof(client->client_token));
+    memset(client->device_code, 0, sizeof(client->device_code));
+    client->user_id[0] = client->catalog_vpc[0] = '\0';
+    client->token_expires_at = client->client_token_expires_at = 0;
+    client->game_count = client->catalog_total = 0;
+    client->library_saved_at = 0;
+    if (steam_link_selected() ? steam_link_load_login(client)
+        : xcloud_selected() ? xcloud_load_login(client) : load_session(client)) {
+        client->auth_state = GFN_AUTH_LOGGED_IN;
+        gfn_library_load(client);
+    } else {
+        client->auth_state = GFN_AUTH_LOGGED_OUT;
+        snprintf(client->status, sizeof(client->status), steam_link_selected() ? "Press X to pair with your PC"
+                 : xcloud_selected() ? "Press X to sign in with Microsoft" : "Press X to sign in with NVIDIA");
+    }
+    diagnostic_log("AUTH", "service now %s, %s",
+                   steam_link_selected() ? "Steam Link" : xcloud_selected() ? "Xbox" : "GeForce NOW",
+                   client->auth_state == GFN_AUTH_LOGGED_IN ? "signed in" : "signed out");
+}
+
 void gfn_sign_out(GfnClient *client)
 {
-    remove(SESSION_PATH);
-    provider_set_active(NULL);
     client->catalog_vpc[0] = '\0';
-    remove(LIBRARY_CACHE_PATH);
+    if (steam_link_selected()) {
+        remove(STEAM_LIBRARY_PATH);
+        client->library_saved_at = 0;
+        client->game_count = client->catalog_total = 0;
+        if (steam_link_sign_out(client)) {
+            /* Another paired PC took its place. */
+            client->auth_state = GFN_AUTH_LOGGED_IN;
+            gfn_fetch_library(client);
+            snprintf(client->status, sizeof(client->status), "PC forgotten; now using %.60s", steam_link_host_name());
+            return;
+        }
+    } else if (xcloud_selected()) {
+        xcloud_sign_out();
+    } else {
+        remove(SESSION_PATH);
+        provider_set_active(NULL);
+        remove(LIBRARY_CACHE_PATH);
+    }
     client->library_saved_at = 0;
     memset(client->access_token, 0, sizeof(client->access_token));
     memset(client->refresh_token, 0, sizeof(client->refresh_token));

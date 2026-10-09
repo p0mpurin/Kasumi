@@ -13,14 +13,29 @@
 static char g_app_id[48];
 static ZoomZone g_zones[ZOOM_ZONES_MAX];
 static unsigned g_count;
+/* Every game's zones, read once and written in the background: beta.36
+ * re-read the file on each save after waiting for the writer, a freeze on
+ * a slow card. */
+static json_t *g_root;
+
+static json_t *zones_root(void)
+{
+    if (!g_root) {
+        json_error_t error;
+        g_root = json_load_file(ZONES_PATH, 0, &error);
+        if (!json_is_object(g_root)) {
+            json_decref(g_root);
+            g_root = json_object();
+        }
+    }
+    return g_root;
+}
 
 void zoom_zones_select(const char *app_id)
 {
     snprintf(g_app_id, sizeof(g_app_id), "%s", app_id ? app_id : "");
     g_count = 0;
-    json_error_t error;
-    json_t *root = json_load_file(ZONES_PATH, 0, &error);
-    json_t *list = json_is_object(root) ? json_object_get(root, g_app_id) : NULL;
+    json_t *list = json_object_get(zones_root(), g_app_id);
     size_t index; json_t *item;
     json_array_foreach(list, index, item) {
         if (g_count >= ZOOM_ZONES_MAX || !json_is_array(item) || json_array_size(item) != 3) continue;
@@ -30,27 +45,19 @@ void zoom_zones_select(const char *app_id)
         z->y = (unsigned)json_integer_value(json_array_get(item, 2));
         if (z->level >= 1 && z->level <= 3 && z->x <= 100 && z->y <= 100) ++g_count;
     }
-    json_decref(root);
 }
 
 static void save(void)
 {
     if (!g_app_id[0]) return;
-    /* Read back what the last save wrote, then write in the background. */
-    file_worker_flush();
-    json_error_t error;
-    json_t *root = json_load_file(ZONES_PATH, 0, &error);
-    if (!json_is_object(root)) {
-        json_decref(root);
-        root = json_object();
-    }
+    json_t *root = zones_root();
     json_t *list = json_array();
     for (unsigned i = 0; i < g_count; ++i)
         json_array_append_new(list, json_pack("[i,i,i]", (int)g_zones[i].level,
                                               (int)g_zones[i].x, (int)g_zones[i].y));
     if (g_count) json_object_set_new(root, g_app_id, list);
     else { json_decref(list); json_object_del(root, g_app_id); }
-    file_worker_save_json(ZONES_PATH, root, JSON_COMPACT);
+    file_worker_save_json(ZONES_PATH, json_deep_copy(root), JSON_COMPACT);
 }
 
 unsigned zoom_zones_count(void) { return g_count; }

@@ -4,6 +4,7 @@
 
 #include <3ds.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "diagnostic.h"
@@ -12,6 +13,9 @@
 #include "regions.h"
 #include "report.h"
 #include "updater.h"
+#include "provider.h"
+#include "xcloud.h"
+#include "steam_link.h"
 
 #define WORKER_STACK_SIZE (128 * 1024)
 #define WORKER_IDLE_NS 50000000LL
@@ -47,7 +51,9 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
     switch (kind) {
     case NET_JOB_BEGIN_LOGIN: return gfn_begin_login(&g_work, text); /* text: provider choice */
     case NET_JOB_CANCEL_LOGIN:
-        g_work.auth_state = GFN_AUTH_LOGGED_OUT;
+        /* Pairing another PC: the one paired before stays signed in. */
+        g_work.auth_state = steam_link_selected() && steam_link_load_login(&g_work) ? GFN_AUTH_LOGGED_IN
+                            : GFN_AUTH_LOGGED_OUT;
         snprintf(g_work.status, sizeof(g_work.status), "Sign-in cancelled");
         return true;
     case NET_JOB_LOAD_LIBRARY:
@@ -101,7 +107,9 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
         return true;
     case NET_JOB_START_SIGNAL: {
         g_signal_starting = true;
-        const bool ok = nvst_signal_start(g_signal, g_work.signaling_url, g_work.session_id);
+        const bool ok = steam_link_selected() ? steam_link_signal_start(g_signal, &g_work)
+                      : xcloud_selected() ? xcloud_signal_start(g_signal, &g_work)
+                                           : nvst_signal_start(g_signal, g_work.signaling_url, g_work.session_id);
         snprintf(g_work.status, sizeof(g_work.status), "%s", g_signal->status);
         g_signal_starting = false;
         return ok;
@@ -117,9 +125,18 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
     case NET_JOB_RECOVER: return gfn_recover_session(&g_work, game);
     case NET_JOB_KEEP_LOGIN: return gfn_keep_login(&g_work);
     case NET_JOB_SHORTCUT: return shortcut_work();
+    case NET_JOB_SWITCH_SERVICE:
+        gfn_client_switch_service(&g_work);
+        if (g_work.game_count) game_art_prefetch(g_work.games, (unsigned)g_work.game_count);
+        return true;
     case NET_JOB_SIGN_OUT:
         gfn_sign_out(&g_work);
         return true;
+    case NET_JOB_USE_PC: {
+        const bool ok = steam_link_use_pc(&g_work, (unsigned)atoi(text));
+        if (g_work.game_count) game_art_prefetch(g_work.games, (unsigned)g_work.game_count);
+        return ok;
+    }
     case NET_JOB_NONE: break;
     }
     return false;
@@ -176,9 +193,7 @@ static void worker_main(void *arg)
             providers_fetch();
             queue_eta_fetch();
         }
-        /* Box art only downloads while no game is queued or running, so it
-         * never competes with the stream for Wi-Fi. */
-        if (!gfn_session_active(&g_work) && game_art_work()) continue;
+        /* Box art loads on its own thread now (game_art.c). */
         svcSleepThread(WORKER_IDLE_NS);
     }
 }
@@ -231,6 +246,7 @@ void net_worker_cancel(void)
 {
     g_cancelled = true;
     http_cancel();
+    steam_link_cancel();
 }
 
 bool net_worker_sync(GfnClient *out)

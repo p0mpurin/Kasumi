@@ -11,9 +11,13 @@
 
 extern const unsigned char _binary_romfs_cacert_pem_start[];
 extern const unsigned char _binary_romfs_cacert_pem_end[];
-/* Main-thread requests only. Keep a bounded connection/TLS cache between calls. */
+/* The network worker's requests. Keep a bounded connection/TLS cache between calls. */
 static CURL *g_http;
 static volatile bool g_cancel;
+/* Box art has its own thread and its own connection (http_request_art):
+ * covers no longer wait behind sign-ins and library loads. */
+static CURL *g_art_http;
+static volatile bool g_art_cancel;
 static long g_next_timeout;
 static HttpProgress g_next_progress;
 static void *g_next_context;
@@ -27,8 +31,12 @@ void http_next_request(long timeout_seconds, HttpProgress progress, void *contex
     g_next_context = context;
 }
 
-static HttpProgress g_progress;
-static void *g_progress_context;
+/* Per request: whose cancel flag, and the progress callback if any. */
+typedef struct {
+    volatile bool *cancel;
+    HttpProgress progress;
+    void *context;
+} TransferHook;
 
 static bool body_contains(const char *data, size_t size, const char *needle)
 {
@@ -42,11 +50,12 @@ static bool body_contains(const char *data, size_t size, const char *needle)
 static int transfer_progress(void *userdata, curl_off_t dl_total, curl_off_t dl_now,
                              curl_off_t ul_total, curl_off_t ul_now)
 {
-    (void)userdata; (void)ul_total; (void)ul_now;
-    if (g_progress && dl_now > 0)
-        g_progress((unsigned long long)dl_now, dl_total > 0 ? (unsigned long long)dl_total : 0,
-                   g_progress_context);
-    return g_cancel ? 1 : 0;
+    (void)ul_total; (void)ul_now;
+    const TransferHook *hook = userdata;
+    if (hook->progress && dl_now > 0)
+        hook->progress((unsigned long long)dl_now, dl_total > 0 ? (unsigned long long)dl_total : 0,
+                       hook->context);
+    return *hook->cancel ? 1 : 0;
 }
 
 typedef struct {
@@ -83,10 +92,14 @@ bool http_global_init(void)
     return curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
 }
 
+void http_art_cancel(void) { g_art_cancel = true; }
+
 void http_global_exit(void)
 {
     if (g_http) curl_easy_cleanup(g_http);
     g_http = NULL;
+    if (g_art_http) curl_easy_cleanup(g_art_http);
+    g_art_http = NULL;
     curl_global_cleanup();
 }
 
@@ -97,13 +110,40 @@ void http_response_free(HttpResponse *response)
     memset(response, 0, sizeof(*response));
 }
 
+static bool perform(CURL **handle, volatile bool *cancel, long timeout, HttpProgress progress, void *context,
+                    const char *method, const char *url, const char *user_agent,
+                    const char *const *headers, size_t header_count,
+                    const char *body, size_t max_response, HttpResponse *response);
+
 bool http_request(const char *method, const char *url, const char *user_agent,
                   const char *const *headers, size_t header_count,
                   const char *body, size_t max_response, HttpResponse *response)
 {
+    const long timeout = g_next_timeout;
+    const HttpProgress progress = g_next_progress;
+    void *const context = g_next_context;
+    g_next_timeout = 0;
+    g_next_progress = NULL;
+    g_next_context = NULL;
+    return perform(&g_http, &g_cancel, timeout, progress, context, method, url, user_agent, headers, header_count,
+                   body, max_response, response);
+}
+
+bool http_request_art(const char *url, const char *user_agent, const char *const *headers, size_t header_count,
+                      size_t max_response, HttpResponse *response)
+{
+    return perform(&g_art_http, &g_art_cancel, 20, NULL, NULL, "GET", url, user_agent, headers, header_count,
+                   NULL, max_response, response);
+}
+
+static bool perform(CURL **handle, volatile bool *cancel, long timeout, HttpProgress progress, void *context,
+                    const char *method, const char *url, const char *user_agent,
+                    const char *const *headers, size_t header_count,
+                    const char *body, size_t max_response, HttpResponse *response)
+{
     memset(response, 0, sizeof(*response));
-    if (!g_http) g_http = curl_easy_init();
-    CURL *curl = g_http;
+    if (!*handle) *handle = curl_easy_init();
+    CURL *curl = *handle;
     if (!curl) {
         snprintf(response->error, sizeof(response->error), "curl init failed");
         return false;
@@ -122,19 +162,16 @@ bool http_request(const char *method, const char *url, const char *user_agent,
     }
 
     BodyBuffer buffer = {.limit = max_response};
-    g_cancel = false;
+    *cancel = false;
+    TransferHook hook = { cancel, progress, context };
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, transfer_progress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &hook);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, g_next_timeout > 0 ? g_next_timeout : 25L);
-    g_progress = g_next_progress;
-    g_progress_context = g_next_context;
-    g_next_timeout = 0;
-    g_next_progress = NULL;
-    g_next_context = NULL;
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout > 0 ? timeout : 25L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 2L);
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
@@ -207,9 +244,6 @@ bool http_request(const char *method, const char *url, const char *user_agent,
         response->size = buffer.size;
         free(buffer.data);
     }
-    /* Drop borrowed request pointers before their owners release them. */
-    g_progress = NULL;
-    g_progress_context = NULL;
     curl_easy_reset(curl);
     curl_slist_free_all(header_list);
     return result == CURLE_OK;

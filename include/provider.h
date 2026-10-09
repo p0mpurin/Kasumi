@@ -18,6 +18,12 @@
 #define PROVIDER_NVIDIA "NVIDIA"
 #define PROVIDER_NVIDIA_IDP "PDiAhv2kJTFeQ7WOPqiQ2tRZ7lGhR2X11dXvM4TZSxg"
 #define PROVIDER_NVIDIA_URL "https://prod.cloudmatchbeta.nvidiagrid.net"
+/* Xbox Cloud Gaming (xcloud.h) is a separate service, not in the list; this
+ * names its sign-in on the login screen. */
+#define PROVIDER_XBOX "XBOX"
+#define PROVIDER_XBOX_URL "https://xgpuweb.gssv-play-prod.xboxlive.com"
+/* Steam Link (steam_link.h): the player's own PC, paired on the local network. */
+#define PROVIDER_STEAM "STEAM"
 
 typedef struct {
     char code[12];
@@ -27,6 +33,7 @@ typedef struct {
 } GfnProvider;
 
 void provider_nvidia(GfnProvider *out);
+void provider_xbox(GfnProvider *out);
 
 /* The cached list from the SD card (startup). */
 void providers_load(void);

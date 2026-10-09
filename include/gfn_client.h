@@ -61,7 +61,9 @@ typedef struct {
     char status[160];
     char user_code[32];
     char verification_uri[256];
-    char device_code[1024];
+    /* Microsoft's are ~1050 characters (build 123 cut them at 1023, so
+     * every approval check failed and the sign-in fell back). */
+    char device_code[2048];
     int poll_interval;
     int64_t next_poll_at;
     int64_t challenge_expires_at;
@@ -171,6 +173,8 @@ bool gfn_connection_test(GfnClient *client);
  * crash or power loss can resume it on the next start. */
 void gfn_active_save(const GfnClient *client, const GfnGame *game);
 bool gfn_active_exists(void);
+/* An NVIDIA login is saved on the SD card (any service selected). */
+bool gfn_login_saved(void);
 /* Ask NVIDIA whether the remembered session still runs; if so the client
  * takes it over (queued, setting up or ready) and resume_found is set. */
 bool gfn_resume_check(GfnClient *client);
@@ -188,6 +192,10 @@ bool gfn_end_conflict(GfnClient *client, const GfnGame *game);
 bool gfn_recover_session(GfnClient *client, const GfnGame *game);
 bool gfn_has_session(const GfnClient *client);
 const char *gfn_bearer_token(const GfnClient *client);
+/* The cloud service changed (xcloud_select): forget the other service's
+ * login and library in memory and load this one's from the SD card. Both
+ * logins stay saved. */
+void gfn_client_switch_service(GfnClient *client);
 /* Forget tokens in memory and delete the saved login from the SD card. */
 void gfn_sign_out(GfnClient *client);
 /* Renews the NVIDIA login if it runs out within ten minutes. */

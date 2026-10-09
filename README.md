@@ -3,16 +3,17 @@
 </p>
 
 <p align="center">
-  <b>Play your GeForce NOW games on the New Nintendo 3DS.</b><br>
-  A native, unofficial GeForce NOW client with a calm, OLED-black design.
+  <b>Play GeForce NOW, Xbox Cloud Gaming and your own PC's Steam games on the New Nintendo 3DS.</b><br>
+  A native, unofficial game hub with a calm, Japanese-inspired design.
 </p>
 
 <p align="center">
-  <a href="https://github.com/p0mpurin/Kasumi/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/p0mpurin/Kasumi?include_prereleases&label=release&color=7EBEA5&style=flat-square"></a>
+  <a href="https://github.com/p0mpurin/Kasumi/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/p0mpurin/Kasumi?label=release&color=7EBEA5&style=flat-square"></a>
   <a href="https://github.com/p0mpurin/Kasumi/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/p0mpurin/Kasumi/total?color=7EBEA5&style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-New%203DS%20%7C%20New%202DS%20XL-7EBEA5?style=flat-square">
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-7EBEA5?style=flat-square"></a>
   <a href="https://discord.gg/K9Jy3t7YHE"><img alt="Discord" src="https://img.shields.io/badge/discord-join%20the%20chat-7EBEA5?style=flat-square&logo=discord&logoColor=white"></a>
+  <a href="https://ko-fi.com/p0mpurin"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/ko--fi-support%20Kasumi-7EBEA5?style=flat-square&logo=ko-fi&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -20,26 +21,48 @@
   <a href="#getting-started">Getting started</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="https://discord.gg/K9Jy3t7YHE">Discord</a> ·
+  <a href="#support-kasumi">Support</a> ·
   <a href="https://github.com/p0mpurin/Kasumi/issues/new/choose">Report a problem</a>
 </p>
 
 ---
 
-**Kasumi** (霞, "mist") streams your GeForce NOW library to the New 3DS, New
-3DS XL and New 2DS XL: **cloud gaming on the 3DS, no PC needed**. Play your
-Steam, Epic and other PC games on a 3DS; they run on NVIDIA's servers, while
-the 3DS decodes the video in hardware, plays the audio and sends your buttons
-back. It is not affiliated with NVIDIA or with the OpenNOW project.
+**Kasumi** (霞, "mist") turns the New 3DS, New 3DS XL and New 2DS XL into a
+little game hub with three ways to play:
+
+- **GeForce NOW**: your Steam, Epic and other PC games, running on NVIDIA's
+  servers. **Cloud gaming on the 3DS, no PC needed.**
+- **Xbox Cloud Gaming** *(beta)*: Game Pass games, and free ones like
+  Fortnite, from Microsoft's servers.
+- **Steam Link**: the games on *your own* PC, streamed over your home Wi-Fi.
+
+The games run elsewhere; the 3DS decodes the video in hardware, plays the
+audio and sends your buttons back. Kasumi is not affiliated with NVIDIA,
+Microsoft, Valve or the OpenNOW project.
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=mM7W9iZ7E_Q"><img src="https://img.youtube.com/vi/mM7W9iZ7E_Q/hqdefault.jpg" width="480" alt="Kasumi showcase video: GeForce NOW on the New 3DS"></a><br>
   <sub>▶ Watch the showcase on YouTube</sub>
 </p>
 
-> **Public beta.** Kasumi works well for everyday play, but it is still in
-> active development: expect rough edges, and please report what you find.
-
 ## Features
+
+**A game hub.** Kasumi opens on a hub where each service is a hand-painted
+card: misty mountains for GeForce NOW, a bamboo grove for Xbox, a moonlit hot
+spring for Steam Link. Press A and the card grows into that service; B brings
+you back. Your games sit on a shelf of covers that load around the one you're
+looking at, and *Continue* puts your last game one press away.
+
+**Steam Link.** Pair once by typing a code into Steam on your PC; no NVIDIA
+or Microsoft account needed. Play Steam Big Picture, your desktop, your
+recently played games and non-Steam games you added to Steam. The right stick
+can drive the PC's mouse, the on-screen or phone keyboard types on the PC, up
+to four PCs can be paired (press Y in the Steam library), and *Quit game*
+closes the game on the PC when you leave.
+
+**Xbox Cloud Gaming** *(beta)*. Sign in with your Microsoft account from your
+phone and play Game Pass and free-to-play games at 60 fps, with your place in
+the queue and an estimated wait.
 
 <table>
   <tr>
@@ -61,20 +84,21 @@ back. It is not affiliated with NVIDIA or with the OpenNOW project.
   </tr>
 </table>
 
-- **Works in your country**: *Server* on Auto pings every GeForce NOW server
-  and uses the fastest, measured again on each new Wi-Fi network. Where
-  GeForce NOW is sold by a local partner (the GeForce NOW Alliance), pick it
-  in Settings and sign in with that account.
-- **Gets you into the game**: Kasumi follows your place in the queue as
-  NVIDIA moves it between servers, offers to resume or end a game still
-  running on your account, and when NVIDIA is still releasing your last
+- **Works in your country** (GeForce NOW): *Server* on Auto pings every
+  GeForce NOW server and uses the fastest, measured again on each new Wi-Fi
+  network. Where GeForce NOW is sold by a local partner (the GeForce NOW
+  Alliance), pick it in Settings and sign in with that account.
+- **Gets you into the game** (GeForce NOW): Kasumi follows your place in the
+  queue as NVIDIA moves it between servers, offers to resume or end a game
+  still running on your account, and when NVIDIA is still releasing your last
   session it counts down and tries again by itself.
 - **Steadier Wi-Fi while you play**: StreetPass, SpotPass and other
   background Wi-Fi work pause during a game (like Moonlight does), so the
   radio stays on the stream. If a network was choppy last time, the next
   session there starts in *Weak / hotspot* mode by itself.
-- **Your library with box art**, saved on the SD card so it opens instantly,
-  with All / Favourites / Recent tabs and a page for every game.
+- **Your library as a shelf of covers**, saved on the SD card so it opens
+  instantly, with All / Favourites / Recent tabs and a page for every game.
+  Covers download in the background, the focused game first.
 - **Per-game options**: bitrate, gyro, button layout and a fully **custom
   button mapping** just for that game.
 - **Queue with an estimate and an alert**: the free-tier queue shows a wait
@@ -97,14 +121,19 @@ back. It is not affiliated with NVIDIA or with the OpenNOW project.
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/in-game.png" width="260" alt="Genshin Impact streaming with stats"><br>Playing, with live stats</td>
+    <td align="center"><img src="docs/screenshots/hub.png" width="260" alt="The game hub with the Steam Link card"><br>The game hub</td>
+    <td align="center"><img src="docs/screenshots/shelf.png" width="260" alt="Steam games on the cover shelf"><br>Your games on a shelf</td>
     <td align="center"><img src="docs/screenshots/game-page.png" width="260" alt="A game's page"><br>A game's page</td>
-    <td align="center"><img src="docs/screenshots/stream-menu.png" width="260" alt="Stream menu"><br>Stream menu</td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/screenshots/in-game.png" width="260" alt="Genshin Impact streaming with stats"><br>Playing, with live stats</td>
+    <td align="center"><img src="docs/screenshots/stream-menu.png" width="260" alt="Stream menu"><br>Stream menu</td>
     <td align="center"><img src="docs/screenshots/zoom-zone.png" width="260" alt="Zoom zone"><br>Zoom zones for small text</td>
+  </tr>
+  <tr>
     <td align="center"><img src="docs/screenshots/settings.png" width="260" alt="Settings"><br>Settings</td>
     <td align="center"><img src="docs/screenshots/keyboard.png" width="260" alt="Remote keyboard"><br>Remote keyboard</td>
+    <td align="center"><img src="docs/screenshots/queue.png" width="260" alt="Waiting in the queue"><br>Waiting in the queue</td>
   </tr>
 </table>
 
@@ -113,8 +142,13 @@ back. It is not affiliated with NVIDIA or with the OpenNOW project.
 - A **New** Nintendo 3DS, New 3DS XL or New 2DS XL (the original 3DS lacks the
   video decoder).
 - Custom firmware ([Luma3DS](https://3ds.hacks.guide/)) to install homebrew.
-- A GeForce NOW account, from NVIDIA or from a GeForce NOW Alliance partner
-  (the free tier works, with a queue and one-hour sessions).
+- At least one of:
+  - a **GeForce NOW** account, from NVIDIA or a GeForce NOW Alliance partner
+    (the free tier works, with a queue and one-hour sessions);
+  - a **Microsoft account** for Xbox Cloud Gaming (most games need Game Pass
+    Ultimate; free-to-play games like Fortnite don't);
+  - a **Windows, Mac or Linux PC running Steam** on the same Wi-Fi, for Steam
+    Link (Remote Play on, in Steam's settings).
 - 2.4 GHz Wi-Fi with a good signal (3 bars is best).
 
 ## Install
@@ -137,25 +171,36 @@ checked against the release's SHA256SUMS before anything is installed.
 
 ## Getting started
 
-1. Open Kasumi and follow the short guide.
-2. Press **A** to sign in. Open the web address shown on your phone or
-   computer and enter the code. No password is ever typed on the 3DS.
-   Most accounts are NVIDIA's (the default). If you bought GeForce NOW from a
-   local partner, first pick it in **Settings > Account > GeForce NOW
-   provider**, then sign in.
-3. Your library loads with box art. Press **A** on a game to open it, then
-   **A** again to play.
+1. Open Kasumi and follow the short guide, then pick a service on the hub.
+   Only the service you pick asks you to sign in.
+2. Press **A** on its card to set it up. No password is ever typed on the 3DS:
+   - **GeForce NOW** and **Xbox**: open the web address shown on your phone
+     or computer and enter the code. Most GeForce NOW accounts are NVIDIA's
+     (the default); if you bought it from a local partner, first pick it in
+     **Settings > Account > GeForce NOW provider**.
+   - **Steam Link**: start Steam on your PC. Kasumi finds it on your Wi-Fi and
+     shows a code; type it into the window Steam opens on the PC.
+3. Your games appear on the shelf. Press **A** on one to open it, then **A**
+   again to play. **B** goes back to the hub, where the other services wait.
 4. During play, hold **START + SELECT** for the stream menu.
 
 ## Controls
 
-| In menus | |
+| On the hub | |
 |---|---|
-| D-Pad / Circle Pad | Move |
-| A / B | Select / Back |
-| L / R | Library tabs |
-| X / Y | Search / Refresh library |
+| ◀ ▶ | Choose a service |
+| A | Enter it |
+| START | Continue your last game (when there is one) |
 | SELECT | Settings |
+
+| In a service | |
+|---|---|
+| ◀ ▶ / ▲ ▼ | Browse the shelf / jump five games |
+| A / B | Open a game / back to the hub |
+| L / R | All / Favourites / Recent |
+| X | Search |
+| Y | Refresh the library (Steam Link: your PCs) |
+| START | Continue your last game |
 
 | In game | |
 |---|---|
@@ -199,15 +244,22 @@ servers. You don't need a gaming PC, only the 3DS, Wi-Fi and a GeForce NOW
 account.
 
 **How do I play Steam or other PC games on a 3DS?**
-Link your Steam, Epic, Ubisoft or other store account in GeForce NOW (on
-[play.geforcenow.com](https://play.geforcenow.com) or its app), then launch the
-game from Kasumi's library. The game runs on NVIDIA's servers using the copy
-you own, and the 3DS is your screen and controller.
+Two ways. With **GeForce NOW**, link your Steam, Epic, Ubisoft or other store
+account in GeForce NOW (on [play.geforcenow.com](https://play.geforcenow.com)
+or its app), then launch the game from Kasumi; it runs on NVIDIA's servers
+using the copy you own. With **Steam Link**, Kasumi streams the games from
+your own PC instead: pair it once and play anything Steam on that PC can run.
 
 **How is Kasumi different from Moonlight?**
-[Moonlight](https://github.com/zoeyjodon/moonlight-N3DS) streams games from
-*your own* PC at home. Kasumi streams from GeForce NOW's servers, so no PC is
-needed. If you have a gaming PC, Moonlight is a great option too.
+[Moonlight](https://github.com/zoeyjodon/moonlight-N3DS) streams from your
+own PC through Sunshine or NVIDIA GameStream. Kasumi's Steam Link streams from
+your own PC through Steam itself, with nothing else to install, and its other
+two services need no PC at all.
+
+**A game on my PC ignores the controller (Steam Link).**
+Some PC games only take keyboard and mouse, like Minecraft Java Edition. In
+Steam on the PC, turn on Steam Input for that game and pick a keyboard and
+mouse layout, or add a controller mod (Controlify, for Minecraft).
 
 **Do I need a paid GeForce NOW membership?**
 No. The free tier works, with a queue before each session and a one-hour
@@ -218,12 +270,12 @@ hour ends.
 No. Kasumi decodes video with the hardware decoder that only the "New"
 models have.
 
-**Why 30 FPS, and which bitrate?**
-The 3DS screen and decoder are built for 30 FPS video. Kasumi streams about
-1.3 Mbps by default (*Adaptive*), about 1.8-2 Mbps with *Sharp* on strong
-Wi-Fi, and about 1 Mbps with *Steady 1 Mbps* for weak Wi-Fi or a phone
-hotspot. (Before 0.9.0-beta.25, a too-small network buffer lost packets above
-about 1 Mbps, so higher rates stuttered; that is fixed.)
+**30 or 60 FPS, and which bitrate?**
+GeForce NOW and Steam Link stream at 30 FPS by default; *Settings > Picture >
+Frame rate* offers 60 FPS (beta), which wants strong Wi-Fi. Xbox Cloud Gaming
+streams at 60. For GeForce NOW, Kasumi uses about 1.3 Mbps by default
+(*Adaptive*), about 1.8-2 Mbps with *Sharp* on strong Wi-Fi, and about 1 Mbps
+with *Steady 1 Mbps* for weak Wi-Fi or a phone hotspot.
 
 **How is the latency?**
 It depends mostly on your distance to NVIDIA's servers and on your Wi-Fi. In
@@ -233,11 +285,13 @@ adventure, RPG and most action games, less so for competitive shooters. The
 stream stats show your live ping.
 
 **Is my account safe? Should I link Steam?**
-Kasumi signs in through NVIDIA's own device-code page on your phone or PC and
-never sees your NVIDIA password. It never sees your Steam password either:
-store accounts are linked inside GeForce NOW itself, not in Kasumi. The code
-is open source, so anyone can check what it does. It is an unofficial client,
-so, as with any third-party client, use it at your own discretion.
+Kasumi signs in through NVIDIA's and Microsoft's own device-code pages on your
+phone or PC and never sees those passwords. It never sees your Steam password
+either: store accounts are linked inside GeForce NOW itself, and Steam Link
+pairs with your PC through the code you approve in Steam, the same way Valve's
+own Steam Link app does. The code is open source, so anyone can check what it
+does. It is an unofficial client, so, as with any third-party client, use it
+at your own discretion.
 
 **My game save is gone. Did Kasumi delete it?**
 No. Kasumi never touches saves: they are kept by the game's store (Steam
@@ -289,7 +343,8 @@ The 3DS turns Wi-Fi off when the lid closes, so the stream stops. Kasumi keeps
 your game on the rig and reconnects on its own when you open the lid again.
 
 **Which games work?**
-Any game in your GeForce NOW library. Kasumi shows up as a standard
+Any game in your GeForce NOW or Xbox Cloud Gaming library, and anything Steam
+on your PC can run. Kasumi shows up as a standard
 controller, so games with controller support work out of the box, and Steam
 games work too even without native controller support, because Steam Input
 translates the controller for them. The touchpad and keyboard are for
@@ -297,18 +352,22 @@ navigating launchers, sign-in screens and chat, not for playing.
 
 ## Privacy
 
-**Who Kasumi talks to.** NVIDIA (sign-in, your library, servers and game
-sessions), or your GeForce NOW partner if you picked one; GitHub, to check
-for and download updates; and Kasumi's report service, only if you allow it
-(below). When a game starts, the stream also asks NVIDIA's and Google's
-public STUN servers for your public address, as browsers do for video calls
-and GeForce NOW in a browser; nothing else is sent to them.
+**Who Kasumi talks to.** Only the services you set up: NVIDIA (sign-in, your
+library, servers and game sessions), or your GeForce NOW partner if you picked
+one; Microsoft (sign-in, Xbox Cloud Gaming sessions and the Game Pass catalog);
+and, for Steam Link, your own PC on your home network, plus Steam's store for
+the names and covers of games you played. Also GitHub, to check for and
+download updates; and Kasumi's report service, only if you allow it (below).
+When a cloud game starts, the stream also asks NVIDIA's and Google's public
+STUN servers for your public address, as browsers do for video calls; nothing
+else is sent to them.
 
 **What stays on your SD card** (`sdmc:/3ds/kasumi/`):
 
-- `gfn-session.json`: your login. **Never share that file.** No password is
-  in it (you never type one on the 3DS), but it lets anyone use your
-  GeForce NOW account until it expires.
+- `gfn-session.json`, `xcloud-login.json` and `steam-link.json`: your
+  GeForce NOW login, your Microsoft login and your PC pairings. **Never share
+  these files.** No password is in them (you never type one on the 3DS), but
+  they let anyone use those accounts or stream from your PC.
 - Your settings, library cache, chosen provider, a random console ID made by
   Kasumi, and the diagnostic logs.
 - The names of Wi-Fi networks you played on, with their fastest server and
@@ -361,6 +420,16 @@ You can also attach the files yourself: `sdmc:/3ds/kasumi/kasumi-diagnostic.txt`
 crash, the newest Luma dump from `sdmc:/luma/dumps/arm11/`. Ideas are welcome
 as [feature requests](https://github.com/p0mpurin/Kasumi/issues/new?template=feature_request.yml).
 
+## Support Kasumi
+
+Kasumi is free and always will be. If it made your 3DS feel new again, you
+can support its development on **[Ko-fi](https://ko-fi.com/p0mpurin)**.
+20% of every donation goes to charity.
+
+<p align="center">
+  <a href="https://ko-fi.com/p0mpurin"><img alt="Support Kasumi on Ko-fi" src="https://img.shields.io/badge/ko--fi-support%20Kasumi-7EBEA5?style=for-the-badge&logo=ko-fi&logoColor=white"></a>
+</p>
+
 ## Community
 
 <p align="center">
@@ -410,6 +479,12 @@ informed by [Moonlight-N3DS](https://github.com/zoeyjodon/moonlight-N3DS), and i
 3DS socket code showed how to get the largest receive buffer the 3DS allows.
 Voice chat's echo cancellation and microphone setup follow
 [TriCord](https://github.com/2b-zipper/TriCord), the 3DS Discord client.
+Steam Link was written from [ihslib](https://github.com/mariotaku/ihslib)
+(with Simone Caronni's pairing key exchange),
+[NSteamLink](https://github.com/kxn/nsteamlink) and
+[SteamDatabase/Protobufs](https://github.com/SteamDatabase/Protobufs); Xbox
+Cloud Gaming from UnknownSKL's [Greenlight](https://github.com/unknownskl/greenlight),
+xbox-xcloud-player and xal-node. Details in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 Kasumi's voice is VOICEVOX:春日部つむぎ ([VOICEVOX](https://voicevox.hiroshiba.jp)).
 The Home Menu jingle and sound effects are original, made with
@@ -418,9 +493,11 @@ under the Pixabay Content License: "Bossa Nova Cafe Morning Breeze" by Alex Morg
 (573876), "Bossa Nova Morning Music" by Andriih (599227) and "Bossa Nova or Lofi"
 by TheBoysBeats (296432).
 
-GeForce NOW and NVIDIA are trademarks of NVIDIA Corporation. Nintendo 3DS is
-a trademark of Nintendo. Kasumi is an unofficial fan project and is not
-affiliated with or endorsed by either company.
+GeForce NOW and NVIDIA are trademarks of NVIDIA Corporation. Xbox and Xbox
+Cloud Gaming are trademarks of Microsoft Corporation. Steam and Steam Link are
+trademarks of Valve Corporation. Nintendo 3DS is a trademark of Nintendo.
+Kasumi is an unofficial fan project and is not affiliated with or endorsed by
+any of these companies.
 
 ## License
 

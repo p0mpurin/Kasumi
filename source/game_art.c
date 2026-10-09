@@ -53,10 +53,19 @@ typedef struct {
     Tex3DS_SubTexture subtex;
     u64 used_at;
     u64 failed_at;
+    /* How much the screen wants it: the order it was asked for in the
+     * latest frame (the shelf asks for the focused cover first, then its
+     * neighbours outward). The worker fetches the lowest rank first. */
+    unsigned rank, rank_frame;
+    /* When it became ready: covers fade in one by one as they arrive. */
+    u64 ready_at;
 } ArtSlot;
 
 static ArtSlot g_slots[ART_SLOTS];
 static LightLock g_lock = 1;
+/* Frames counted by game_art_pump; ranks restart every frame. */
+static unsigned g_frame, g_rank_next;
+#define ART_FADE_MS 250.0f
 
 /* Background download list: covers go to the SD cache only. */
 #define PREFETCH_MAX 256
@@ -94,18 +103,52 @@ static void check_cache_version(void)
     diagnostic_log("ART", "cache v%d -> v%d: removed %u covers", version, ART_CACHE_VERSION, removed);
 }
 
+/* Covers load on their own thread, one at a time, the most wanted first,
+ * so they never wait behind sign-ins and library loads on the network
+ * worker. Paused while a game is starting or running: the stream gets the
+ * Wi-Fi to itself. */
+static Thread g_thread;
+static volatile bool g_quit, g_paused;
+
+static void art_main(void *arg)
+{
+    (void)arg;
+    while (!g_quit) {
+        if (g_paused || !game_art_work()) svcSleepThread(30 * 1000000LL);
+    }
+}
+
 void game_art_init(void)
 {
     LightLock_Init(&g_lock);
     memset(g_slots, 0, sizeof(g_slots));
     mkdir(ART_DIR, 0777);
     check_cache_version();
+    s32 priority = 0x30;
+    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    g_quit = false;
+    /* Below the network worker (priority + 1) on the same core. */
+    g_thread = threadCreate(art_main, NULL, 128 * 1024, priority + 2, -2, false);
+    if (!g_thread) diagnostic_log("ART", "no art thread: covers will not load");
+}
+
+void game_art_pause(bool paused)
+{
+    if (paused && !g_paused) http_art_cancel();
+    g_paused = paused;
 }
 
 static void free_retired(void);
 
 void game_art_exit(void)
 {
+    if (g_thread) {
+        g_quit = true;
+        http_art_cancel();
+        threadJoin(g_thread, U64_MAX);
+        threadFree(g_thread);
+        g_thread = NULL;
+    }
     free_retired();
     free_retired();
     LightLock_Lock(&g_lock);
@@ -172,6 +215,10 @@ void game_art_want(const GfnGame *game)
     }
     if (slot) {
         slot->used_at = osGetTime();
+        if (slot->rank_frame != g_frame) {
+            slot->rank_frame = g_frame;
+            slot->rank = g_rank_next++;
+        }
         /* A failed cover (network hiccup) gets another go after a while. */
         if (slot->state == ART_FAILED && slot->used_at - slot->failed_at >= ART_RETRY_MS)
             slot->state = ART_WANTED;
@@ -182,6 +229,10 @@ void game_art_want(const GfnGame *game)
 void game_art_pump(void)
 {
     free_retired();
+    LightLock_Lock(&g_lock);
+    ++g_frame;
+    g_rank_next = 0;
+    LightLock_Unlock(&g_lock);
     for (int i = 0; i < ART_SLOTS; ++i) {
         ArtSlot *slot = &g_slots[i];
         LightLock_Lock(&g_lock);
@@ -226,6 +277,7 @@ void game_art_pump(void)
         free(slot->pixels);
         slot->pixels = NULL;
         slot->state = ok ? ART_READY : ART_FAILED;
+        slot->ready_at = osGetTime();
         if (!ok) slot->failed_at = osGetTime();
         LightLock_Unlock(&g_lock);
     }
@@ -237,11 +289,40 @@ bool game_art_draw(const GfnGame *game, float x, float y, float scale, float alp
     ArtSlot *slot = find(game->app_id);
     if (!slot || slot->state != ART_READY) return false;
     slot->used_at = osGetTime();
+    const float fade = (float)(slot->used_at - slot->ready_at) / ART_FADE_MS;
+    if (fade < 1.0f) alpha *= fade < 0.0f ? 0.0f : fade;
     const C2D_Image image = { &slot->tex, &slot->subtex };
     C2D_ImageTint tint;
     C2D_AlphaImageTint(&tint, alpha);
     return C2D_DrawImageAt(image, floorf(x + 0.5f), floorf(y + 0.5f), 0.0f,
                            alpha < 1.0f ? &tint : NULL, scale, scale);
+}
+
+bool game_art_draw_fade(const GfnGame *game, float x, float y, float scale, float alpha_top,
+                        float alpha_bottom, bool flip)
+{
+    if (!game || !game->app_id[0]) return false;
+    ArtSlot *slot = find(game->app_id);
+    if (!slot || slot->state != ART_READY) return false;
+    slot->used_at = osGetTime();
+    const float fade = (float)(slot->used_at - slot->ready_at) / ART_FADE_MS;
+    if (fade < 1.0f) {
+        alpha_top *= fade < 0.0f ? 0.0f : fade;
+        alpha_bottom *= fade < 0.0f ? 0.0f : fade;
+    }
+    Tex3DS_SubTexture sub = slot->subtex;
+    if (flip) {
+        sub.top = slot->subtex.bottom;
+        sub.bottom = slot->subtex.top;
+    }
+    const C2D_Image image = { &slot->tex, &sub };
+    C2D_ImageTint tint;
+    const u32 top = C2D_Color32f(1, 1, 1, alpha_top), bottom = C2D_Color32f(1, 1, 1, alpha_bottom);
+    C2D_SetImageTint(&tint, C2D_TopLeft, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_TopRight, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotLeft, bottom, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotRight, bottom, 0.0f);
+    return C2D_DrawImageAt(image, x, y, 0.0f, &tint, scale, scale);
 }
 
 /* ---- Worker side --------------------------------------------------------- */
@@ -354,11 +435,15 @@ static unsigned char *download(const char *url)
     char sized[256];
     if (strstr(url, "img.nvidiagrid.net"))
         snprintf(sized, sizeof(sized), "%s;f=jpg;w=%d", url, GAME_ART_WIDTH * 3);
+    /* Xbox posters are up to 1440x2160 (~0.5 MB); Microsoft's image
+     * service scales them too (~20 KB). */
+    else if (strstr(url, "store-images.s-microsoft.com") && !strchr(url, '?'))
+        snprintf(sized, sizeof(sized), "%s?q=70&w=%d&h=%d", url, GAME_ART_WIDTH * 3, GAME_ART_HEIGHT * 3);
     else
         snprintf(sized, sizeof(sized), "%s", url);
     static const char *const headers[] = { "Accept: image/jpeg,image/png,*/*" };
     HttpResponse response;
-    if (!http_request("GET", sized, "Kasumi-3DS", headers, 1, NULL, 1024 * 1024, &response)) {
+    if (!http_request_art(sized, "Kasumi-3DS", headers, 1, 1024 * 1024, &response)) {
         diagnostic_log("ART", "download failed: %s", response.error);
         return NULL;
     }
@@ -426,8 +511,17 @@ bool game_art_work(void)
     char key[48], url[192];
     ArtSlot *slot = NULL;
     LightLock_Lock(&g_lock);
-    for (int i = 0; i < ART_SLOTS && !slot; ++i)
-        if (g_slots[i].state == ART_WANTED) slot = &g_slots[i];
+    /* Wanted in the last two frames: by rank. Older wants come after. */
+    unsigned best = ~0u;
+    for (int i = 0; i < ART_SLOTS; ++i) {
+        ArtSlot *s = &g_slots[i];
+        if (s->state != ART_WANTED) continue;
+        const unsigned order = g_frame - s->rank_frame <= 2 ? s->rank : 1000u + (g_frame - s->rank_frame);
+        if (order < best) {
+            best = order;
+            slot = s;
+        }
+    }
     if (slot) {
         slot->state = ART_LOADING;
         memcpy(key, slot->key, sizeof(key));

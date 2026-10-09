@@ -156,6 +156,9 @@ int peer_connection_datachannel_send_binary_sid(PeerConnection* pc, char* messag
 /* A message the next one replaces (a controller state, a heartbeat): skipped
  * rather than resent if lost, when the peer allows that. */
 int peer_connection_datachannel_send_binary_lossy_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid);
+/* A text message (PPID 51) whatever the configured channel type: xCloud's
+ * message and control channels carry JSON text. */
+int peer_connection_datachannel_send_string_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid);
 
 int peer_connection_send_audio(PeerConnection* pc, const uint8_t* packet, size_t bytes);
 
@@ -168,6 +171,11 @@ void peer_connection_set_remote_description(PeerConnection* pc, const char* sdp,
 void peer_connection_set_local_description(PeerConnection* pc, const char* sdp, SdpType sdp_type);
 
 const char* peer_connection_create_offer(PeerConnection* pc);
+
+/* An offer whose DTLS side is ours to start (a=setup:actpass, then the
+ * client role): for answerers that always take the passive role, as
+ * Xbox Cloud Gaming does. Kasumi addition. */
+const char* peer_connection_create_offer_dtls_client(PeerConnection* pc);
 
 const char* peer_connection_create_answer(PeerConnection* pc);
 

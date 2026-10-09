@@ -87,6 +87,12 @@ typedef struct {
     /* GeForce NOW provider for the next sign-in: "" = NVIDIA's pick for this
      * country, or a provider code (provider.h). */
     char provider[12];
+    /* Cloud service the library and launches use: false GeForce NOW, true
+     * Xbox Cloud Gaming (xcloud.h). Each keeps its own login. */
+    bool xbox_service;
+    /* Steam Link (steam_link.h): stream from the player's own PC instead.
+     * Wins over xbox_service, which older versions read alone. */
+    bool steam_service;
     /* Send a report automatically when something goes wrong (SHARE_*). */
     unsigned share_reports;
     /* Anonymous performance summary after each session. */
@@ -98,6 +104,9 @@ typedef struct {
     char install_id[20];
     /* The first-run guide was finished or skipped. */
     bool guide_done;
+    /* A service was picked on the hub at least once; until then Kasumi opens
+     * on it instead of asking for an NVIDIA sign-in. */
+    bool hub_done;
     /* Look for updates once or twice a day; include pre-releases (beta). */
     bool auto_update;
     bool update_beta;

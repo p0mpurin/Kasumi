@@ -127,11 +127,15 @@ bool settings_load(AppSettings *settings)
     const int lid_fallback = read_bool(root, "lid_keeps_playing", false) ? LID_KEEP_PLAYING : LID_PAUSE;
     settings->lid_mode = (unsigned)read_int(root, "lid_mode", lid_fallback, LID_MODE_COUNT);
     settings->guide_done = read_bool(root, "guide_done", settings->guide_done);
+    /* Players from before the hub already chose (they finished the guide). */
+    settings->hub_done = read_bool(root, "hub_done", settings->guide_done);
     settings->auto_update = read_bool(root, "auto_update", settings->auto_update);
     settings->update_beta = read_bool(root, "update_beta", settings->update_beta);
     settings->net_weak = read_bool(root, "net_weak", settings->net_weak);
     settings->share_reports = (unsigned)read_int(root, "share_reports", (int)settings->share_reports, 3);
     settings->share_stats = read_bool(root, "share_stats", settings->share_stats);
+    settings->xbox_service = read_bool(root, "xbox_service", settings->xbox_service);
+    settings->steam_service = read_bool(root, "steam_service", settings->steam_service);
     settings->share_consent = (unsigned)read_int(root, "share_consent", 0, 1000);
     json_t *install = json_object_get(root, "install_id");
     if (json_is_string(install)) snprintf(settings->install_id, sizeof(settings->install_id), "%s", json_string_value(install));
@@ -176,6 +180,9 @@ static json_t *settings_json(const AppSettings *settings)
                              "voice_cues", settings->voice_cues,
                              "sound_effects", settings->sound_effects);
     if (!root) return NULL;
+    json_object_set_new(root, "xbox_service", json_boolean(settings->xbox_service));
+    json_object_set_new(root, "steam_service", json_boolean(settings->steam_service));
+    json_object_set_new(root, "hub_done", json_boolean(settings->hub_done));
     json_object_set_new(root, "camera_speed", json_integer((json_int_t)settings->camera_speed));
     json_object_set_new(root, "camera_invert", json_integer((json_int_t)settings->camera_invert));
     json_object_set_new(root, "touch_camera", json_integer((json_int_t)settings->touch_camera));

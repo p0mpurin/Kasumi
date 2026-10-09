@@ -11,7 +11,8 @@
 #include "webrtc_transport.h"
 
 typedef enum {
-    VIEW_WELCOME,
+    /* "What do you want to play?": the services (first run, B in the library). */
+    VIEW_HUB,
     VIEW_LOGIN,
     VIEW_LIBRARY,
     VIEW_SETTINGS,
@@ -42,7 +43,9 @@ typedef enum {
     /* Signing in where a partner runs GeForce NOW: which account? */
     MODAL_PROVIDER_PICK,
     /* Delete the screenshot on screen? */
-    MODAL_DELETE_SHOT
+    MODAL_DELETE_SHOT,
+    /* Leaving a Steam Link stream: just disconnect, or quit the game on the PC. */
+    MODAL_STEAM_LEAVE
 } AppModal;
 
 typedef enum {
@@ -113,7 +116,14 @@ typedef enum {
     ACTION_MAP_FIELD,
     /* The MIC button in a game: mute or unmute voice chat. */
     ACTION_MIC_TOGGLE,
-    ACTION_CONTINUE
+    ACTION_CONTINUE,
+    /* A service's tab (library) or card (hub): screens_touched_service. */
+    ACTION_SERVICE,
+    /* The hub: every service at a glance. */
+    ACTION_HUB,
+    /* A row of the Steam PCs sheet (screens_touched_pc), or its CLOSE. */
+    ACTION_PC_ROW,
+    ACTION_PC_CLOSE
 } AppAction;
 
 enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
@@ -125,10 +135,14 @@ enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SET
        SETTING_PROVIDER, SETTING_ACCOUNT, SETTING_COMMUNITY, SETTING_MUSIC, SETTING_VOICE, SETTING_SFX,
        SETTING_CAMERA_SPEED, SETTING_CAMERA_INVERT, SETTING_SCREENSHOTS,
        SETTING_VIDEO_SHARPEN, SETTING_VIDEO_COLOR, SETTING_TOUCH_CAMERA, SETTING_TOUCH_STICK_SIZE,
-       SETTING_FRAME_RATE, SETTING_MIC, SETTING_COUNT };
+       SETTING_FRAME_RATE, SETTING_MIC, SETTING_SERVICE, SETTING_COUNT };
 
 /* Library tabs (L / R). */
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
+
+/* The services, shown as tabs above the library (ZL / ZR) and as cards on
+ * the hub. Each keeps its own login and library. */
+enum { SERVICE_GFN, SERVICE_XBOX, SERVICE_STEAM, SERVICE_COUNT };
 
 /* Per-game options sheet rows. */
 enum { OPTION_BITRATE, OPTION_CAMERA_SPEED, OPTION_CAMERA_INVERT, OPTION_TOUCH_CAMERA, OPTION_GYRO,
@@ -150,6 +164,20 @@ typedef struct {
     AppSettings settings;
 
     AppView view;
+    /* "What do you want to play?": the services as cards (first run, and B
+     * from the library). hub_index is the highlighted card. */
+    bool hub_open;
+    int hub_index;
+    /* A service's login and library are being read (after entering it). */
+    bool service_loading;
+    /* Steam Link's PCs sheet (Y in the library): the paired PCs, then
+     * PAIR ANOTHER PC and FORGET; pc_index is the highlighted row. */
+    bool pc_sheet_open;
+    int pc_index;
+    /* Each service's state for the hub ("Signed in", "Paired with zen"),
+     * read from the SD card when the hub opens. */
+    char service_status[SERVICE_COUNT][48];
+    bool service_ready[SERVICE_COUNT];
     bool settings_open;
     /* The details page of the selected library game, and its store. */
     bool details_open;
@@ -201,6 +229,8 @@ typedef struct {
     char search_text[80];
 
     char game_title[96];
+    /* The game being started or played (its cover on the session screen). */
+    const GfnGame *session_game;
     /* The game being launched or played (for its art). */
     const GfnGame *current_game;
     char game_store[24];
@@ -226,6 +256,9 @@ typedef struct {
     bool recover_tried;
     /* This session's [END] line is written (see log_session_end). */
     bool end_logged;
+    /* Why the session ended, when the app knows better than the service's
+     * own text (the free hour): the worker's next status can't replace it. */
+    char end_note[160];
     /* Automatic retries of a connection that failed before the first frame. */
     unsigned setup_retries;
     /* Launch waiting for NVIDIA to free the slot: give up at `until`, next
@@ -313,6 +346,11 @@ enum {
     SHORTCUT_SHEET_FAILED
 };
 
+static inline int app_service(const App *app)
+{
+    return app->settings.steam_service ? SERVICE_STEAM : app->settings.xbox_service ? SERVICE_XBOX : SERVICE_GFN;
+}
+
 /* The game at a position of the visible library list, or NULL. */
 static inline const GfnGame *app_game(const App *app, size_t position)
 {
@@ -346,6 +384,12 @@ int screens_section_first(int section);
 int screens_section_size(int section);
 /* The settings tile a tap landed on (with ACTION_SETTINGS_SECTION). */
 int screens_touched_section(void);
+int screens_touched_service(void);
+int screens_touched_pc(void);
+/* The hub's card growing into its service (into) or back out of it. */
+void screens_hub_zoom(int service, bool into);
+/* Still growing: the service opens when it is done. */
+bool screens_zoom_busy(void);
 void screens_setting_change(App *app, int setting, int direction);
 /* The options row a tap landed on (with ACTION_OPTION_PREV/NEXT). */
 int screens_touched_option_row(void);

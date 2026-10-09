@@ -10,6 +10,7 @@
 #include "file_worker.h"
 #include "provider.h"
 #include "regions.h"
+#include "report.h"
 
 /* Oldest records drop first when the service can't be reached for a while. */
 #define LAUNCH_KEEP 30
@@ -75,4 +76,5 @@ void launch_end(const char *outcome, const char *install_id)
     if (!record) return;
     /* Written in the background: this runs as the picture appears. */
     file_worker_append_json(LAUNCH_PENDING_PATH, record, LAUNCH_KEEP, JSON_COMPACT);
+    report_stats_mark_pending(true);
 }

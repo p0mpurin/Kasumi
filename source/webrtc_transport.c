@@ -6,6 +6,9 @@
 #include "diagnostic.h"
 #include "audio_output.h"
 #include "h264_sps.h"
+#include "xcloud_stream.h"
+#include "steam_link.h"
+#include "steam_session.h"
 
 #include "peer.h"
 #include "peer_connection.h"
@@ -382,7 +385,9 @@ static void inspect_h264_access_unit(const unsigned char *data, size_t size,
 static void request_video_keyframe(WebRtcTransport *t, const char *reason)
 {
     if (!t || !t->peer || t->state != WEBRTC_CONNECTED) return;
-    const int result = peer_connection_request_video_keyframe(t->peer);
+    int result = 0;
+    if (t->steam) steam_session_request_keyframe(t->peer);
+    else result = peer_connection_request_video_keyframe(t->peer);
     t->last_keyframe_request_at = osGetTime();
     t->keyframe_requests++;
     diagnostic_log("VIDEO", "PLI reason=%s attempt=%u result=%d",
@@ -427,6 +432,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     }
     t->last_video_timestamp = packet->timestamp;
     t->last_video_arrival_at = rate_now;
+    if (t->xcloud) xcloud_stream_note_frame(packet->timestamp);
     if (!t->video_rate_started_at) {
         t->video_rate_started_at = rate_now;
         t->video_rate_bytes = t->video_bytes;
@@ -481,6 +487,10 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     const unsigned source_height = t->video_source_height ? t->video_source_height :
                                    stream_profile_height();
     const unsigned decode_height = (source_height + 15u) & ~15u;
+    /* Xbox starts at its default 1280x720 until our screen size reaches it
+     * (~3 s); MVD refused that stream (build 124: decoder-fatal), and the
+     * 800x480 one follows with its own keyframe. */
+    if (t->xcloud && (decode_width > 960 || decode_height > 544)) return;
     if (decode_width > 960 || decode_height > 544) {
         if (!t->video_sps_signature || t->video_source_refs > 6) {
             snprintf(t->status, sizeof(t->status),
@@ -488,12 +498,35 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
             return;
         }
     }
+    /* Back to the size the decoder has: whatever was waiting is forgotten. */
+    if (t->decoder_width == decode_width && t->decoder_height == decode_height)
+        t->pending_width = t->pending_height = 0;
     if (mvd_video_active() &&
         (t->decoder_width != decode_width || t->decoder_height != decode_height)) {
+        if (t->steam) {
+            /* Steam streams a window at its own size: a launcher's splash
+             * growing sent ten sizes in three seconds, each an MVD rebuild,
+             * and ~20 rebuilds in a run break MVD until Kasumi restarts
+             * (report KA5BCU). A new size must hold 700 ms; meanwhile the
+             * last picture stays, then a keyframe brings the new one. */
+            const uint64_t now = osGetTime();
+            if (t->pending_width != decode_width || t->pending_height != decode_height) {
+                t->pending_width = decode_width;
+                t->pending_height = decode_height;
+                t->pending_since = now;
+                return;
+            }
+            if (now - t->pending_since < 700) return;
+            if (!has_idr) {
+                if (now - t->last_keyframe_request_at >= 1000) request_video_keyframe(t, "size_settled");
+                return;
+            }
+        }
         if (!has_idr) return;
-        diagnostic_log("VIDEO", "decoder reconfigure %ux%u -> %ux%u at IDR",
+        ++t->decoder_rebuilds;
+        diagnostic_log("VIDEO", "decoder reconfigure %ux%u -> %ux%u at IDR (rebuild %u this stream)",
                        t->decoder_width, t->decoder_height,
-                       decode_width, decode_height);
+                       decode_width, decode_height, t->decoder_rebuilds);
         mvd_video_close();
     }
     if (!mvd_video_active()) {
@@ -506,14 +539,27 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
             t->decoder_failed_height = decode_height;
             t->decoder_failed_at = now;
             snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
+            /* MVD stopped accepting any setup after ~20 rebuilds in one run
+             * (report E9BPVX): only restarting Kasumi brought it back. */
+            if (++t->decoder_init_failures == 3) {
+                diagnostic_flag("mvd-broken", "decoder setup failed 3 times in a row (%s)", mvd_video_status());
+                snprintf(t->status, sizeof(t->status),
+                         "The 3DS video decoder stopped responding. Close Kasumi and open it again.");
+                /* Reconnecting can't help: say so on the error screen. */
+                t->no_reconnect = true;
+                t->state = WEBRTC_FAILED;
+            }
             /* A fresh keyframe may bring a size MVD takes. */
             if (now - t->last_keyframe_request_at >= 2000) request_video_keyframe(t, "decoder_config_failed");
             return;
         }
         t->decoder_failed_width = t->decoder_failed_height = 0;
+        t->decoder_init_failures = 0;
     }
     t->decoder_width = decode_width;
     t->decoder_height = decode_height;
+    /* Steam's pictures are rarely whole macroblocks (800x450). */
+    if (t->steam) mvd_video_set_visible(source_width, source_height);
     if (!mvd_video_submit(packet->data, packet->size))
         snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
 }
@@ -539,6 +585,10 @@ static void on_audio(const PeerAudioPacket *packet, void *userdata)
 static void on_data(char *message, size_t length, void *userdata, uint16_t sid)
 {
     WebRtcTransport *t = userdata;
+    if (t->xcloud) {
+        xcloud_stream_on_data(t, message, length, sid);
+        return;
+    }
     t->data_messages++;
     const uint8_t *preview = (const uint8_t *)message;
     diagnostic_log("INPUT", "rx message=%u sid=%u bytes=%lu head=%02x %02x %02x %02x %02x %02x %02x %02x",
@@ -655,7 +705,7 @@ static void media_main(void *arg)
                    ? -udp_socket_rcvbuf_granted - 1 : udp_socket_rcvbuf_granted,
                    udp_socket_rcvbuf_granted < 0 ? " (system default: every larger size was refused)" : "");
     while (g_media_run) {
-        const int fd = peer_connection_get_udp_fd(t->peer);
+        const int fd = t->steam ? steam_session_socket(t->peer) : peer_connection_get_udp_fd(t->peer);
         bool readable = false;
         if (fd >= 0) {
             struct pollfd media = { .fd = fd, .events = POLLIN, .revents = 0 };
@@ -691,7 +741,14 @@ static void media_main(void *arg)
             const uint64_t lock_start = svcGetSystemTick();
             RecursiveLock_Lock(&g_peer_lock);
             const uint64_t read_start = svcGetSystemTick();
-            const int handled = peer_connection_loop(t->peer);
+            int handled;
+            if (t->steam) {
+                handled = steam_session_receive(t->peer);
+                /* Resends and keepalives, once per wake. */
+                if (handled <= 0) steam_session_tick(t->peer);
+            } else {
+                handled = peer_connection_loop(t->peer);
+            }
             const uint64_t read_end = svcGetSystemTick();
             RecursiveLock_Unlock(&g_peer_lock);
             const uint64_t lock_us = (read_start - lock_start) / TICKS_PER_US;
@@ -748,8 +805,12 @@ void webrtc_transport_wait(WebRtcTransport *t, int timeout_ms)
         t->media_readable = true;
 }
 
+/* The one transport (main.c's), for peers the network worker prepares. */
+static WebRtcTransport *g_owner;
+
 void webrtc_transport_init(WebRtcTransport *t)
 {
+    g_owner = t;
     static bool once;
     if (!once) {
         RecursiveLock_Init(&g_peer_lock);
@@ -775,12 +836,250 @@ static void add_manual_media_candidate(WebRtcTransport *t)
     diagnostic_log("ICE", "manual fallback=%s", candidate);
 }
 
+static bool start_xcloud(WebRtcTransport *t, NvstSignal *signal)
+{
+    PeerConnection *pc = signal->xcloud_peer;
+    signal->xcloud_peer = NULL;
+    t->xcloud = true;
+    xcloud_stream_reset();
+    RecursiveLock_Lock(&g_peer_lock);
+    t->peer = pc;
+    /* The service's answer: its ICE credentials, fingerprint and media; its
+     * candidates follow from the signal (apply_candidates). */
+    peer_connection_set_remote_description(pc, signal->offer_sdp, SDP_TYPE_ANSWER);
+    RecursiveLock_Unlock(&g_peer_lock);
+    t->state = WEBRTC_ANSWER_SENT;
+    t->answer_sent_at = osGetTime();
+    diagnostic_log("WEBRTC", "xcloud answer applied (%lu bytes), %u remote candidates",
+                   (unsigned long)signal->offer_size, signal->remote_ice_count);
+    snprintf(t->status, sizeof(t->status), "Connecting to the Xbox");
+    media_thread_start(t);
+    return true;
+}
+
+/* ---- Steam Link (steam_session.h): its own protocol on its own socket ------- */
+
+static void steam_video_start(void *user, unsigned width, unsigned height)
+{
+    WebRtcTransport *t = user;
+    snprintf(t->status, sizeof(t->status), "Video %ux%u from the PC", width, height);
+}
+
+static void steam_video(void *user, const uint8_t *data, size_t size, bool keyframe)
+{
+    (void)keyframe;
+    WebRtcTransport *t = user;
+    /* RTP-style 90 kHz timestamps, one frame apart, for the rate summary. */
+    static uint32_t timestamp;
+    timestamp += 90000u / stream_profile_fps();
+    const PeerVideoPacket packet = { (uint8_t *)data, size, timestamp, 0 };
+    on_video(&packet, t);
+}
+
+static void steam_audio(void *user, const uint8_t *data, size_t size, uint16_t sequence)
+{
+    const PeerAudioPacket packet = { (uint8_t *)data, size, 0, 0, sequence, 111, 0 };
+    on_audio(&packet, user);
+}
+
+static void steam_activity(void *user, int activity, uint64_t gameid, const char *name)
+{
+    (void)user;
+    steam_link_note_activity(activity, gameid, name);
+}
+
+static bool start_steam(WebRtcTransport *t, NvstSignal *signal)
+{
+    SteamSessionConfig config;
+    memset(&config, 0, sizeof(config));
+    config.host_ip = signal->steam_ip;
+    config.port = signal->steam_port;
+    memcpy(config.key, signal->steam_key, sizeof(config.key));
+    config.key_size = signal->steam_key_size;
+    config.steamid = signal->steam_id;
+    /* The wide top screen; Steam keeps the PC's shape inside it (800x450
+     * for a 16:9 desktop). */
+    config.width = 800;
+    config.height = 480;
+    config.fps = signal->steam_fps ? signal->steam_fps : 30;
+    config.kbps = signal->steam_kbps ? signal->steam_kbps : 3000;
+    const SteamSessionCallbacks callbacks = { steam_video_start, steam_video, steam_audio, steam_activity, t };
+    t->steam = true;
+    t->input_protocol_version = 2;
+    RecursiveLock_Lock(&g_peer_lock);
+    t->peer = steam_session_open(&config, &callbacks);
+    RecursiveLock_Unlock(&g_peer_lock);
+    if (!t->peer) {
+        t->steam = false;
+        t->state = WEBRTC_FAILED;
+        snprintf(t->status, sizeof(t->status), "Couldn't open the stream to the PC");
+        return false;
+    }
+    t->state = WEBRTC_ANSWER_SENT;
+    t->answer_sent_at = osGetTime();
+    snprintf(t->status, sizeof(t->status), "Connecting to your PC");
+    media_thread_start(t);
+    return true;
+}
+
+/* The 3DS pad in SDL's terms (y down, triggers 0..32767). */
+static void steam_pad_from(const GfnGamepadState *state, SteamPad *pad)
+{
+    static const struct { uint16_t gfn, steam; } buttons[] = {
+        { GFN_PAD_A, STEAM_PAD_A }, { GFN_PAD_B, STEAM_PAD_B }, { GFN_PAD_X, STEAM_PAD_X },
+        { GFN_PAD_Y, STEAM_PAD_Y }, { GFN_PAD_BACK, STEAM_PAD_BACK }, { GFN_PAD_GUIDE, STEAM_PAD_GUIDE },
+        { GFN_PAD_START, STEAM_PAD_START }, { GFN_PAD_LEFT_THUMB, STEAM_PAD_LEFT_STICK },
+        { GFN_PAD_RIGHT_THUMB, STEAM_PAD_RIGHT_STICK }, { GFN_PAD_LEFT_SHOULDER, STEAM_PAD_LEFT_SHOULDER },
+        { GFN_PAD_RIGHT_SHOULDER, STEAM_PAD_RIGHT_SHOULDER }, { GFN_PAD_DPAD_UP, STEAM_PAD_UP },
+        { GFN_PAD_DPAD_DOWN, STEAM_PAD_DOWN }, { GFN_PAD_DPAD_LEFT, STEAM_PAD_LEFT },
+        { GFN_PAD_DPAD_RIGHT, STEAM_PAD_RIGHT }
+    };
+    memset(pad, 0, sizeof(*pad));
+    for (unsigned i = 0; i < sizeof(buttons) / sizeof(buttons[0]); ++i)
+        if (state->buttons & buttons[i].gfn) pad->buttons |= buttons[i].steam;
+    const int flip_left = -(int)state->left_y, flip_right = -(int)state->right_y;
+    pad->axes[0] = state->left_x;
+    pad->axes[1] = (int16_t)(flip_left > 32767 ? 32767 : flip_left);
+    pad->axes[2] = state->right_x;
+    pad->axes[3] = (int16_t)(flip_right > 32767 ? 32767 : flip_right);
+    pad->axes[4] = (int16_t)(state->left_trigger * 32767 / 255);
+    pad->axes[5] = (int16_t)(state->right_trigger * 32767 / 255);
+}
+
+static void steam_tick(WebRtcTransport *t)
+{
+    SteamSession *s = t->peer;
+    const uint64_t now = osGetTime();
+    if (!t->media_threaded) {
+        for (unsigned i = 0; i < 64 && steam_session_receive(s) > 0; ++i) {}
+        steam_session_tick(s);
+    }
+    t->media_readable = false;
+    const SteamSessionState state = steam_session_state(s);
+    if (state == STEAM_SESSION_STREAMING && t->state != WEBRTC_CONNECTED && !t->no_reconnect) {
+        t->state = WEBRTC_CONNECTED;
+        t->connected_at = now;
+        t->input_ready = true;
+        diagnostic_log("WEBRTC", "steam stream up after %llu ms", (unsigned long long)(now - t->answer_sent_at));
+    } else if ((state == STEAM_SESSION_FAILED || state == STEAM_SESSION_CLOSED) && t->state != WEBRTC_FAILED) {
+        t->state = WEBRTC_FAILED;
+        if (state == STEAM_SESSION_CLOSED) t->no_reconnect = true;
+    }
+    if (!t->no_reconnect || state == STEAM_SESSION_CLOSED)
+        snprintf(t->status, sizeof(t->status), "%s", steam_session_status(s));
+    SteamSessionStats stats;
+    steam_session_stats(s, &stats);
+    t->rtt_ms = stats.rtt_ms;
+    t->keyframe_requests = stats.keyframe_requests;
+    const unsigned decoded = mvd_video_decoded_frames();
+    if (decoded != t->observed_decoded_frames) {
+        t->observed_decoded_frames = decoded;
+        t->last_decoded_frame_at = now;
+    }
+    if (t->state != WEBRTC_CONNECTED) return;
+    /* The decoder fell behind or lost its place: start again at a keyframe. */
+    if (mvd_video_take_resync_request()) request_video_keyframe(t, "decoder_queue_full");
+    if (t->video_saw_idr && t->last_decoded_frame_at && now - t->last_decoded_frame_at >= 3000 &&
+        now - t->last_keyframe_request_at >= 3000)
+        request_video_keyframe(t, "decoder_stalled");
+
+    GfnGamepadState pad_state;
+    gfn_input_read_3ds(&pad_state);
+    if (t->pointer_mode && !t->keyboard_mode) {
+        /* The right stick moves the PC's mouse, at the same speed as on
+         * GeForce NOW (per 16 ms step); A clicks (main.c). */
+        if (now - t->last_mouse_move_at >= 16) {
+            const int dx = pad_state.right_x / 2600, dy = -pad_state.right_y / 2600;
+            if (dx || dy) steam_session_mouse_move(s, dx, dy);
+            t->last_mouse_move_at = now;
+        }
+        pad_state.right_x = pad_state.right_y = 0;
+        pad_state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(KEY_A | KEY_B | KEY_X);
+    }
+    if (t->keyboard_mode) memset(&pad_state, 0, sizeof(pad_state));
+    SteamPad pad;
+    steam_pad_from(&pad_state, &pad);
+    steam_session_set_pad(s, &pad);
+    t->input_reports = stats.hid_reports;
+}
+
+void *webrtc_transport_xcloud_offer(char **offer_out)
+{
+    *offer_out = NULL;
+    if (!g_owner) return NULL;
+    if (!g_peer_runtime && peer_init() != 0) return NULL;
+    g_peer_runtime = true;
+    peer_connection_set_diagnostics_enabled(1);
+    PeerConfiguration config = {0};
+    config.video_codec = CODEC_H264; config.audio_codec = CODEC_OPUS;
+    config.datachannel = DATA_CHANNEL_BINARY; config.onvideopacket = on_video;
+    config.onaudiopacket = on_audio; config.user_data = g_owner;
+    config.ice_servers[0].urls = "stun:s1.stun.gamestream.nvidia.com:19308";
+    PeerConnection *pc = peer_connection_create(&config);
+    if (!pc) return NULL;
+    peer_connection_set_max_video_hold_ms(pc, stream_profile_weak() ? 900 : 700);
+    peer_connection_oniceconnectionstatechange(pc, on_state);
+    peer_connection_ondatachannel(pc, on_data, on_data_open, on_data_close);
+    const char *local = peer_connection_create_offer_dtls_client(pc);
+    char ufrag[64] = "", pwd[128] = "", fingerprint[192] = "";
+    if (!local || !sdp_value(local, "a=ice-ufrag:", ufrag, sizeof(ufrag)) ||
+        !sdp_value(local, "a=ice-pwd:", pwd, sizeof(pwd)) ||
+        !sdp_value(local, "a=fingerprint:sha-256 ", fingerprint, sizeof(fingerprint))) {
+        peer_connection_destroy(pc);
+        return NULL;
+    }
+    /* Our own SDP in the browser's shape (mids 0/1/2, one BUNDLE): Opus
+     * 111, H.264 Constrained Baseline 102 with RTX, and the data channels.
+     * libpeer's own offer lists video first and no RTX. */
+    char ice[512];
+    snprintf(ice, sizeof(ice), "c=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:%s\r\na=ice-pwd:%s\r\n"
+             "a=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n", ufrag, pwd, fingerprint);
+    char *out = malloc(SDP_LIMIT);
+    if (!out) {
+        peer_connection_destroy(pc);
+        return NULL;
+    }
+    int n = snprintf(out, SDP_LIMIT,
+        "v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\n"
+        "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\n"
+        "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n"
+        "m=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\n"
+        "a=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\n"
+        "a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f\r\n"
+        "a=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\n"
+        "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\n"
+        "a=max-message-size:262144\r\n",
+        (unsigned long)(svcGetSystemTick() & 0x7fffffff), ice, ice, ice);
+    /* The candidates libpeer gathered, for the ICE exchange. */
+    for (const char *p = local; n > 0 && n < SDP_LIMIT && (p = strstr(p, "a=candidate:")) != NULL;) {
+        const char *end = strstr(p, "\r\n");
+        const int length = end ? (int)(end - p) : (int)strlen(p);
+        n += snprintf(out + n, SDP_LIMIT - n, "%.*s\r\n", length, p);
+        p += length;
+    }
+    if (n <= 0 || n >= SDP_LIMIT) {
+        free(out);
+        peer_connection_destroy(pc);
+        return NULL;
+    }
+    diagnostic_log("WEBRTC", "xcloud offer %d bytes", n);
+    *offer_out = out;
+    return pc;
+}
+
+void webrtc_transport_discard_peer(void *peer)
+{
+    if (peer) peer_connection_destroy(peer);
+}
+
 bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
                             const char *media_ip, int media_port)
 {
     char *offer = NULL;
     char failure[160] = "Could not create/send WebRTC answer";
     webrtc_transport_close(t);
+    if (signal && signal->steam) return start_steam(t, signal);
+    if (signal && signal->xcloud && signal->xcloud_peer && signal->offer_sdp) return start_xcloud(t, signal);
     if (!signal || !signal->offer_sdp) return false;
     normalize_media_ip(t->media_ip, media_ip);
     t->media_port = media_port;
@@ -801,8 +1100,9 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
     config.video_codec = CODEC_H264; config.audio_codec = CODEC_OPUS;
     config.datachannel = DATA_CHANNEL_BINARY; config.onvideopacket = on_video;
     config.onaudiopacket = on_audio; config.user_data = t;
+    /* NVIDIA's STUN only: Google's gave the same address again, and each
+     * server is a wait (and a DNS lookup) on the UI thread. */
     config.ice_servers[0].urls = "stun:s1.stun.gamestream.nvidia.com:19308";
-    config.ice_servers[1].urls = "stun:stun.l.google.com:19302";
     t->input_protocol_version = 2;
     PeerConnection *pc = peer_connection_create(&config);
     if (!pc) { snprintf(t->status, sizeof(t->status), "WebRTC peer allocation failed"); t->state = WEBRTC_FAILED; return false; }
@@ -911,7 +1211,8 @@ void webrtc_transport_tick(WebRtcTransport *t, NvstSignal *signal)
 {
     if (!t->peer) return;
     RecursiveLock_Lock(&g_peer_lock);
-    transport_tick(t, signal);
+    if (t->steam) steam_tick(t);
+    else transport_tick(t, signal);
     RecursiveLock_Unlock(&g_peer_lock);
 }
 
@@ -992,6 +1293,10 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
     }
     if (t->state != WEBRTC_CONNECTED) return;
     PeerConnection *pc = t->peer;
+    if (t->xcloud) {
+        xcloud_stream_tick(t, pc);
+        return;
+    }
     if (!t->input_channel_requested) {
         char label[] = "input_channel_v1", protocol[] = "";
         if (peer_connection_create_datachannel_sid(pc, DATA_CHANNEL_RELIABLE, 0, 0,
@@ -1106,6 +1411,16 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
     t->last_input_at = now_input;
 }
 
+int webrtc_transport_steam_quit_game(WebRtcTransport *t)
+{
+    if (!t || !t->peer || !t->steam) return -1;
+    RecursiveLock_Lock(&g_peer_lock);
+    const bool running = steam_session_game_running(t->peer);
+    const bool sent = running && steam_session_stop_game(t->peer);
+    RecursiveLock_Unlock(&g_peer_lock);
+    return sent ? 1 : running ? -1 : 0;
+}
+
 void webrtc_transport_set_pointer_mode(WebRtcTransport *t, bool enabled)
 {
     if (!t || t->pointer_mode == enabled) return;
@@ -1116,9 +1431,35 @@ void webrtc_transport_set_pointer_mode(WebRtcTransport *t, bool enabled)
     diagnostic_log("INPUT", "pointer mode %s", enabled ? "enabled" : "disabled");
 }
 
+/* Windows virtual-key codes (what the keyboards send) as USB HID usages,
+ * which Steam reads as SDL scancodes; 0 when there is none. */
+static unsigned hid_usage_for_vk(uint16_t vk)
+{
+    static const struct { uint8_t vk, usage; } SPECIAL[] = {
+        { 0x0d, 40 }, { 0x1b, 41 }, { 0x08, 42 }, { 0x09, 43 }, { 0x20, 44 }, { 0xbd, 45 }, { 0xbb, 46 },
+        { 0xdb, 47 }, { 0xdd, 48 }, { 0xdc, 49 }, { 0xba, 51 }, { 0xde, 52 }, { 0xc0, 53 }, { 0xbc, 54 },
+        { 0xbe, 55 }, { 0xbf, 56 }, { 0x2d, 73 }, { 0x24, 74 }, { 0x21, 75 }, { 0x2e, 76 }, { 0x23, 77 },
+        { 0x22, 78 }, { 0x27, 79 }, { 0x25, 80 }, { 0x28, 81 }, { 0x26, 82 },
+    };
+    if (vk >= 'A' && vk <= 'Z') return 4u + (vk - 'A');
+    if (vk >= '1' && vk <= '9') return 30u + (vk - '1');
+    if (vk == '0') return 39;
+    if (vk >= 0x70 && vk <= 0x7b) return 58u + (vk - 0x70);   /* F1-F12 */
+    for (unsigned i = 0; i < sizeof(SPECIAL) / sizeof(SPECIAL[0]); ++i)
+        if (SPECIAL[i].vk == vk) return SPECIAL[i].usage;
+    return 0;
+}
+
 bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
 {
-    if (!t || !t->peer || !t->input_ready || (!dx && !dy)) return false;
+    if (t && t->peer && t->steam && t->input_ready) {
+        RecursiveLock_Lock(&g_peer_lock);
+        steam_session_mouse_move(t->peer, dx, dy);
+        RecursiveLock_Unlock(&g_peer_lock);
+        t->mouse_moves++;
+        return true;
+    }
+    if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam || (!dx && !dy)) return false;
     uint8_t packet[34];
     const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
     const size_t size = gfn_input_encode_mouse_move(packet, dx, dy,
@@ -1134,7 +1475,14 @@ bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
 
 bool webrtc_transport_mouse_button(WebRtcTransport *t, bool pressed)
 {
-    if (!t || !t->peer || !t->input_ready) return false;
+    if (t && t->peer && t->steam && t->input_ready) {
+        RecursiveLock_Lock(&g_peer_lock);
+        const bool ok = steam_session_mouse_button(t->peer, pressed);
+        RecursiveLock_Unlock(&g_peer_lock);
+        if (ok && !pressed) t->mouse_clicks++;
+        return ok;
+    }
+    if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam) return false;
     uint8_t packet[28];
     const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
     const size_t size = gfn_input_encode_mouse_button(packet, pressed,
@@ -1152,7 +1500,22 @@ bool webrtc_transport_mouse_button(WebRtcTransport *t, bool pressed)
 bool webrtc_transport_send_key(WebRtcTransport *t, uint16_t keycode,
                                uint16_t scancode, uint16_t modifiers)
 {
-    if (!t || !t->peer || !t->input_ready) return false;
+    if (t && t->peer && t->steam && t->input_ready) {
+        const unsigned usage = hid_usage_for_vk(keycode);
+        if (!usage) return false;
+        /* Shift is a key of its own on the PC (left shift, usage 225). */
+        const bool shift = (modifiers & 1) != 0;
+        RecursiveLock_Lock(&g_peer_lock);
+        SteamSession *s = t->peer;
+        bool ok = !shift || steam_session_key(s, 225, true, 1);
+        ok = ok && steam_session_key(s, usage, true, shift ? 1 : 0);
+        ok = steam_session_key(s, usage, false, shift ? 1 : 0) && ok;
+        if (shift) steam_session_key(s, 225, false, 0);
+        RecursiveLock_Unlock(&g_peer_lock);
+        if (ok) t->keyboard_keys++;
+        return ok;
+    }
+    if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam) return false;
     uint8_t packet[28];
     const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
     size_t size = gfn_input_encode_key(packet, keycode, scancode, modifiers,
@@ -1172,11 +1535,12 @@ bool webrtc_transport_send_key(WebRtcTransport *t, uint16_t keycode,
 
 unsigned webrtc_transport_resent_packets(const WebRtcTransport *t)
 {
-    return t && t->peer ? peer_connection_get_video_rtx_recovered(t->peer) : 0;
+    return t && t->peer && !t->steam ? peer_connection_get_video_rtx_recovered(t->peer) : 0;
 }
 
 int webrtc_transport_socket(const WebRtcTransport *t)
 {
+    if (t && t->peer && t->steam) return steam_session_socket(t->peer);
     return t && t->peer ? peer_connection_get_udp_fd(t->peer) : -1;
 }
 
@@ -1192,7 +1556,8 @@ void webrtc_transport_close(WebRtcTransport *t)
     /* Under the lock: the mic thread may be sending on this peer. */
     RecursiveLock_Lock(&g_peer_lock);
     if (g_mic_transport == t) g_mic_transport = NULL;
-    if (t->peer) peer_connection_destroy(t->peer);
+    if (t->peer && t->steam) steam_session_close(t->peer);
+    else if (t->peer) peer_connection_destroy(t->peer);
     t->peer = NULL;
     RecursiveLock_Unlock(&g_peer_lock);
     audio_output_close();

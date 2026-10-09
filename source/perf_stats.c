@@ -114,5 +114,6 @@ bool perf_end(const char *install_id)
                    g_perf.lost, g_perf.repeated);
     /* In the background: this runs as the game closes (file_worker.h). */
     file_worker_save_json(REPORT_STATS_PENDING_PATH, s, JSON_COMPACT);
+    report_stats_mark_pending(true);
     return true;
 }

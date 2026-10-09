@@ -40,7 +40,11 @@ typedef enum {
     /* Renew the login before it runs out (in a game too). */
     NET_JOB_KEEP_LOGIN,
     /* Install or remove a HOME Menu shortcut (shortcut.h). */
-    NET_JOB_SHORTCUT
+    NET_JOB_SHORTCUT,
+    /* GeForce NOW <-> Xbox: load the other service's login and library. */
+    NET_JOB_SWITCH_SERVICE,
+    /* Steam Link: stream from another paired PC (text: its index). */
+    NET_JOB_USE_PC
 } NetJobKind;
 
 typedef struct {

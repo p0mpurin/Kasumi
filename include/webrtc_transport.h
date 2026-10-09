@@ -45,6 +45,13 @@ typedef struct {
     /* A size MVD refused and when: not retried on every packet. */
     unsigned decoder_failed_width, decoder_failed_height;
     uint64_t decoder_failed_at;
+    /* Setups refused in a row: MVD itself has stopped working. */
+    unsigned decoder_init_failures;
+    /* Steam: a new picture size waiting to hold steady before MVD is rebuilt
+     * for it (a window being resized streams a size every few frames). */
+    unsigned pending_width, pending_height;
+    uint64_t pending_since;
+    unsigned decoder_rebuilds;
     unsigned keyframe_requests;
     unsigned audio_packets;
     unsigned audio_decoded;
@@ -111,6 +118,15 @@ typedef struct {
     char status[160];
     /* Media is received on the New 3DS's second app core (core 2). */
     bool media_threaded;
+    /* Xbox Cloud Gaming stream (xcloud.h): we made the offer, and input
+     * goes through xcloud_stream.c. */
+    bool xcloud;
+    /* Steam Link (steam_session.h): `peer` is the SteamSession, and the
+     * stream runs on its own protocol instead of WebRTC. */
+    bool steam;
+    /* Reconnecting can't help: the PC ended the Steam stream itself, or the
+     * video decoder stopped working. The status says why. */
+    bool no_reconnect;
 } WebRtcTransport;
 
 /* While media runs on its own core, the peer connection and the video
@@ -134,6 +150,9 @@ int webrtc_transport_socket(const WebRtcTransport *transport);
 /* Video packets recovered by retransmission since the stream started. */
 unsigned webrtc_transport_resent_packets(const WebRtcTransport *transport);
 void webrtc_transport_set_pointer_mode(WebRtcTransport *transport, bool enabled);
+/* Steam Link: close the game on the PC (Alt+F4) before the stream closes.
+ * 1 sent, 0 no game in front (Big Picture or the desktop), -1 not sent. */
+int webrtc_transport_steam_quit_game(WebRtcTransport *transport);
 bool webrtc_transport_mouse_move(WebRtcTransport *transport, int16_t dx, int16_t dy);
 bool webrtc_transport_mouse_button(WebRtcTransport *transport, bool pressed);
 /* Voice chat: answer the offer's mic track at the next connect, and send
@@ -142,3 +161,9 @@ void webrtc_transport_set_mic(bool wanted);
 bool webrtc_transport_send_mic(const uint8_t *opus, size_t size);
 bool webrtc_transport_send_key(WebRtcTransport *transport, uint16_t keycode,
                                uint16_t scancode, uint16_t modifiers);
+/* Xbox Cloud Gaming, on the network worker: a peer for the transport
+ * passed to webrtc_transport_init and its offer (malloc'd, CRLF lines, our
+ * ICE candidates included). webrtc_transport_start adopts the peer once the
+ * signal holds the answer; until then discard it on failure. */
+void *webrtc_transport_xcloud_offer(char **offer);
+void webrtc_transport_discard_peer(void *peer);

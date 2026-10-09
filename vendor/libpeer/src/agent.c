@@ -18,7 +18,11 @@
 #define AGENT_CONNCHECK_MAX 1000
 #define AGENT_CONNCHECK_SWITCH 300
 #define AGENT_CONNCHECK_PERIOD 100
-#define AGENT_STUN_RECV_MAXTIMES 1000
+/* Kasumi: about a quarter of libpeer's wait per STUN server. Gathering runs
+ * on the UI thread and NVIDIA's servers are ICE-lite (the host pair always
+ * wins), so a slow server-reflexive answer only froze the screen: up to
+ * 10 s on bad networks (beta.36 export). */
+#define AGENT_STUN_RECV_MAXTIMES 250
 
 void agent_clear_candidates(Agent* agent) {
   agent->local_candidates_count = 0;

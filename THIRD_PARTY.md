@@ -40,5 +40,26 @@ and its MVD video decoding was informed by Moonlight-N3DS:
 - [Moonlight-N3DS](https://github.com/zoeyjodon/moonlight-N3DS), GPL-3.0
 - [TriCord](https://github.com/2b-zipper/TriCord), GPL-3.0: voice chat's echo cancellation and microphone setup
 
+Steam Link (`source/steam_*.c`) is Kasumi's own implementation of the Steam
+Remote Play protocol, written from these references. Valve's public key for
+pairing requests comes from ihslib's `client/pubkeys.h`.
+
+- [ihslib](https://github.com/mariotaku/ihslib), LGPL-3.0, Copyright (c) 2022 Mariotaku, including Simone
+  Caronni's PIN-masked key exchange for pairing (ihslib pull request #4)
+- [NSteamLink](https://github.com/kxn/nsteamlink): its notes on the official Steam Link client
+- [SteamDatabase/Protobufs](https://github.com/SteamDatabase/Protobufs): message definitions
+
+Steam and Steam Link are trademarks of Valve Corporation.
+
+Xbox Cloud Gaming (`source/xcloud*.c`) is Kasumi's own client for Microsoft's
+streaming service, written from what these projects document about its sign-in,
+sessions and data channels:
+
+- [Greenlight](https://github.com/unknownskl/greenlight), [xbox-xcloud-player](https://github.com/unknownskl/xbox-xcloud-player)
+  and [xal-node](https://github.com/unknownskl/xal-node), MIT, Copyright (c) UnknownSKL
+
+Xbox and Xbox Cloud Gaming are trademarks of Microsoft Corporation.
+
 GeForce NOW and NVIDIA are trademarks of NVIDIA Corporation. Nintendo 3DS is a
-trademark of Nintendo. Kasumi is not affiliated with or endorsed by either.
+trademark of Nintendo. Kasumi is not affiliated with or endorsed by NVIDIA,
+Microsoft, Valve or Nintendo.

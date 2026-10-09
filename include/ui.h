@@ -68,6 +68,18 @@ typedef enum {
     /* Touch camera: the ensō under the finger and its ink trail (white). */
     UI_IMAGE_LOOK_RING,
     UI_IMAGE_LOOK_DOT,
+    /* The game hub: each service's banner art (512x256), its emblem (white,
+     * 64x64), and covers for Steam Link's own entries (96x128). */
+    UI_IMAGE_SVC_GFN,
+    UI_IMAGE_SVC_XBOX,
+    UI_IMAGE_SVC_STEAM,
+    UI_IMAGE_ICON_GFN,
+    UI_IMAGE_ICON_XBOX,
+    UI_IMAGE_ICON_STEAM,
+    UI_IMAGE_COVER_BIGPICTURE,
+    UI_IMAGE_COVER_DESKTOP,
+    /* The hub's own painting, behind the cards (400x240). */
+    UI_IMAGE_HUB_BACKDROP,
     UI_IMAGE_COUNT
 } UiImage;
 
@@ -79,6 +91,10 @@ typedef enum { UI_THEME_SEIJI, UI_THEME_SAKURA, UI_THEME_KIN, UI_THEME_AI, UI_TH
                UI_THEME_BENI, UI_THEME_MATCHA, UI_THEME_KAKI, UI_THEME_SUMI, UI_THEME_SHIRO,
                UI_THEME_COUNT } UiTheme;
 void ui_set_theme(UiTheme theme);
+/* Inside a service the accent is the service's colour; pop restores the
+ * theme's. */
+void ui_push_accent(u32 color);
+void ui_pop_accent(void);
 const char *ui_theme_name(UiTheme theme);
 /* Accent colour of a theme, for swatches. */
 u32 ui_theme_color(UiTheme theme);
@@ -126,6 +142,23 @@ float ui_ease_out(float t);
 void ui_offset(float dx, float dy);
 
 bool ui_image(UiImage image, float x, float y, float scale, float alpha);
+/* Stretched to w x h; alpha fades from top to bottom, and flip draws it
+ * upside down (a reflection). */
+bool ui_image_fit(UiImage image, float x, float y, float w, float h, float alpha);
+bool ui_image_fade(UiImage image, float x, float y, float w, float h, float alpha_top, float alpha_bottom,
+                   bool flip);
+/* Part of an image (u0, v0 to u1, v1, fractions of it) stretched to w x h:
+ * a slow pan across art inside a frame. */
+bool ui_image_part(UiImage image, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                   float alpha);
+/* Part of an image (u0, v0 to u1, v1, fractions of it) stretched to w x h:
+ * a slow pan across art inside a frame. */
+bool ui_image_part(UiImage image, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                   float alpha);
+/* The emblem art tinted, centred on (cx, cy) at a size in pixels. */
+bool ui_icon(UiImage image, float cx, float cy, float size, u32 color);
+/* A filled rect with a vertical gradient (top colour to bottom colour). */
+void ui_gradient(float x, float y, float w, float h, u32 top, u32 bottom);
 /* A tiling texture (UI_IMAGE_GRID) over a rect in one colour, anchored to
  * the screen so it lines up wherever it is drawn. */
 void ui_texture(UiImage image, float x, float y, float w, float h, u32 color);

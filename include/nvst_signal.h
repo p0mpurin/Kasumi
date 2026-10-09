@@ -39,6 +39,22 @@ typedef struct NvstSignal {
     char remote_ice[32][1024];
     char status[160];
     char curl_error[256];
+    /* Xbox Cloud Gaming (xcloud.h): no websocket. offer_sdp holds the
+     * service's answer to our offer, remote_ice its candidates, and
+     * xcloud_peer the peer that made the offer, until the transport takes
+     * it over. */
+    bool xcloud;
+    void *xcloud_peer;
+    /* Steam Link (steam_link.h): no signalling at all. The PC granted a
+     * stream at this address with this session key; offer_sdp is only a
+     * marker that it is ready. */
+    bool steam;
+    uint32_t steam_ip;
+    uint16_t steam_port;
+    uint8_t steam_key[32];
+    uint8_t steam_key_size;
+    uint64_t steam_id;
+    unsigned steam_fps, steam_kbps;
 } NvstSignal;
 
 void nvst_signal_init(NvstSignal *signal);

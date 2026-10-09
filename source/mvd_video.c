@@ -19,6 +19,9 @@ static MVDSTD_Config g_config;
 static unsigned g_frames, g_errors;
 static bool g_picture_dark;
 static unsigned g_input_width, g_input_height;
+/* The picture inside the coded size (the SPS crop), when told: Steam's
+ * 800x450 is coded as 800x464, and the 14 padding rows must not show. */
+static unsigned g_visible_width, g_visible_height;
 static unsigned g_output_width, g_output_height, g_output_alloc_height;
 static unsigned g_zoom_level;
 static unsigned g_zoom_center_x, g_zoom_center_y;
@@ -72,6 +75,24 @@ static volatile bool g_resync_requested;
 /* After a dropped access unit, later P-frames would decode against missing
  * references and flash garbage; skip them until the next IDR instead. */
 static bool g_await_idr;
+/* Recovery without a keyframe (build 122). After a lost frame the picture
+ * holds until NVIDIA's next keyframe; on good Wi-Fi that is ~60 ms. On the
+ * worst links in the beta.36 export the keyframe itself kept getting lost,
+ * the picture stood still 12 s and Kasumi reconnected (~20 s more). Now,
+ * 2.5 s into the wait, decoding goes on with the frames that do arrive: the
+ * picture may smear until a keyframe, but the game stays playable. If the
+ * decoder refuses such a frame it is not fatal: back to waiting, and after
+ * three refusals in a stream, waiting only. */
+#define SOFT_RESYNC_MS 2500
+static u64 g_await_since;
+static bool g_soft_resync;
+static unsigned g_soft_errors;
+
+static void await_idr(void)
+{
+    if (!g_await_idr) g_await_since = osGetTime();
+    g_await_idr = true;
+}
 /* Wide output buffers flow FREE -> DECODING -> READY (FIFO) -> PRESENTING
  * -> FREE. The UI's frame pacer takes READY frames in order, one per two
  * vblanks; if the pacer falls behind, the decoder recycles the oldest. */
@@ -308,6 +329,8 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
         g_recycled_frames = 0;
         g_resync_requested = false;
         g_await_idr = false;
+        g_soft_resync = false;
+        g_soft_errors = 0;
         g_decoder_quit = false;
         s32 priority = 0x30;
         svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
@@ -504,6 +527,17 @@ void mvd_video_wide_size(unsigned *width, unsigned *height)
     const bool known = g_wide && g_output_width && g_output_height;
     *width = known ? g_output_width : WIDE_OUTPUT_WIDTH;
     *height = known ? g_output_height : WIDE_OUTPUT_HEIGHT;
+    if (known && g_visible_width && g_visible_height && g_visible_width <= g_input_width &&
+        g_visible_height <= g_input_height) {
+        *width = g_output_width * g_visible_width / g_input_width;
+        *height = g_output_height * g_visible_height / g_input_height;
+    }
+}
+
+void mvd_video_set_visible(unsigned width, unsigned height)
+{
+    g_visible_width = width;
+    g_visible_height = height;
 }
 
 unsigned mvd_video_ready_frames(void)
@@ -586,11 +620,17 @@ void mvd_video_skip_ready_frame(unsigned index)
 
 void mvd_video_resync(void)
 {
+    /* Already decoding on without a keyframe: the picture is smeared
+     * anyway; stopping again for every further loss would freeze it. */
+    if (g_soft_resync) {
+        ++g_frames_lost;
+        return;
+    }
     if (!g_await_idr) {
         diagnostic_log("MVD", "frame lost upstream; holding picture until IDR");
         ++g_frames_lost;
     }
-    g_await_idr = true;
+    await_idr();
 }
 
 unsigned mvd_video_drop_backlog(void)
@@ -602,7 +642,7 @@ unsigned mvd_video_drop_backlog(void)
     if (dropped) g_queue_count = 1;
     LightLock_Unlock(&g_queue_lock);
     if (!dropped) return 0;
-    g_await_idr = true;
+    await_idr();
     g_resync_requested = true;
     return dropped;
 }
@@ -716,6 +756,16 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
     Result rc = hd ? process_720p_nals(annex_b, size, &hd_has_vcl) :
                      mvdstdProcessVideoFrame(input, size, 1, NULL);
     const u64 process_ticks = svcGetSystemTick() - process_start;
+    if (!MVD_CHECKNALUPROC_SUCCESS(rc) && g_soft_resync) {
+        ++g_errors;
+        ++g_soft_errors;
+        g_soft_resync = false;
+        await_idr();
+        g_resync_requested = true;
+        diagnostic_log("MVD", "decoder refused a frame while recovering without a keyframe (%08lX, %u); waiting for one",
+                       (unsigned long)rc, g_soft_errors);
+        return false;
+    }
     if (!MVD_CHECKNALUPROC_SUCCESS(rc)) {
         ++g_errors;
         g_process_failed = true;
@@ -893,9 +943,21 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         return false;
     }
     if (g_await_idr) {
-        if (!contains_idr(annex_b, size)) return true; /* hold the last clean picture */
-        g_await_idr = false;
-        diagnostic_log("MVD", "resynchronised on IDR after dropped frames");
+        if (contains_idr(annex_b, size)) {
+            g_await_idr = false;
+            g_soft_resync = false;
+            diagnostic_log("MVD", "resynchronised on IDR after dropped frames");
+        } else if (g_soft_errors < 3 && osGetTime() - g_await_since >= SOFT_RESYNC_MS) {
+            g_await_idr = false;
+            g_soft_resync = true;
+            diagnostic_log("MVD", "no keyframe %llu ms after a lost frame: decoding on without one",
+                           (unsigned long long)(osGetTime() - g_await_since));
+        } else {
+            return true; /* hold the last clean picture */
+        }
+    } else if (g_soft_resync && contains_idr(annex_b, size)) {
+        g_soft_resync = false;
+        diagnostic_log("MVD", "keyframe after recovering without one: picture clean again");
     }
     if (!g_wide) {
         const bool hd = g_input_width > 960 || g_input_height > 544;
@@ -928,7 +990,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         /* Dropping breaks the reference chain: freeze until a keyframe. */
         ++g_errors;
         g_resync_requested = true;
-        g_await_idr = true;
+        await_idr();
         /* The first keyframe waits ~0.5 s for the decoder to set itself up,
          * so the queue fills once at every stream start: normal, not a bug
          * (beta.28 report HPSV3B, a clean session). It can spill just after
@@ -956,6 +1018,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
 
 void mvd_video_close(void)
 {
+    g_visible_width = g_visible_height = 0;
     /* Not while a frame is on its way to the GPU. */
     LightLock_Lock(&g_present_lock);
     if (g_decoder) {

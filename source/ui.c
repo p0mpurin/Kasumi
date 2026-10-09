@@ -79,6 +79,32 @@ void ui_set_theme(UiTheme theme)
     load_backdrop(theme);
 }
 
+static u32 g_saved_accent[3];
+static bool g_accent_pushed;
+
+void ui_push_accent(u32 color)
+{
+    if (!g_accent_pushed) {
+        g_saved_accent[0] = g_ui_accent;
+        g_saved_accent[1] = g_ui_accent_deep;
+        g_saved_accent[2] = g_ui_accent_ink;
+        g_accent_pushed = true;
+    }
+    const unsigned r = color & 0xFF, g = (color >> 8) & 0xFF, b = (color >> 16) & 0xFF;
+    g_ui_accent = C2D_Color32(r, g, b, 0xFF);
+    g_ui_accent_deep = C2D_Color32(r * 18 / 100, g * 18 / 100, b * 18 / 100, 0xFF);
+    g_ui_accent_ink = C2D_Color32(r * 12 / 100, g * 12 / 100, b * 12 / 100, 0xFF);
+}
+
+void ui_pop_accent(void)
+{
+    if (!g_accent_pushed) return;
+    g_ui_accent = g_saved_accent[0];
+    g_ui_accent_deep = g_saved_accent[1];
+    g_ui_accent_ink = g_saved_accent[2];
+    g_accent_pushed = false;
+}
+
 bool ui_backdrop(void)
 {
     if (!g_backdrop) return false;
@@ -172,6 +198,15 @@ GFX_SYMBOLS(no_cover)
 GFX_SYMBOLS(grid)
 GFX_SYMBOLS(look_ring)
 GFX_SYMBOLS(look_dot)
+GFX_SYMBOLS(svc_gfn)
+GFX_SYMBOLS(svc_xbox)
+GFX_SYMBOLS(svc_steam)
+GFX_SYMBOLS(icon_gfn)
+GFX_SYMBOLS(icon_xbox)
+GFX_SYMBOLS(icon_steam)
+GFX_SYMBOLS(cover_bigpicture)
+GFX_SYMBOLS(cover_desktop)
+GFX_SYMBOLS(hub_backdrop)
 extern const unsigned char _binary_video_shbin_start[];
 extern const unsigned char _binary_video_shbin_end[];
 #define GFX_ENTRY(name) { _binary_##name##_t3x_start, _binary_##name##_t3x_end }
@@ -181,7 +216,10 @@ static const struct { const unsigned char *start, *end; } GFX_DATA[UI_IMAGE_COUN
     GFX_ENTRY(seal16), GFX_ENTRY(lantern), GFX_ENTRY(discord),
     GFX_ENTRY(sec_controls), GFX_ENTRY(sec_picture), GFX_ENTRY(sec_sound), GFX_ENTRY(sec_network),
     GFX_ENTRY(sec_system), GFX_ENTRY(sec_account), GFX_ENTRY(no_cover), GFX_ENTRY(grid),
-    GFX_ENTRY(look_ring), GFX_ENTRY(look_dot)
+    GFX_ENTRY(look_ring), GFX_ENTRY(look_dot),
+    GFX_ENTRY(svc_gfn), GFX_ENTRY(svc_xbox), GFX_ENTRY(svc_steam),
+    GFX_ENTRY(icon_gfn), GFX_ENTRY(icon_xbox), GFX_ENTRY(icon_steam),
+    GFX_ENTRY(cover_bigpicture), GFX_ENTRY(cover_desktop), GFX_ENTRY(hub_backdrop)
 };
 static C2D_SpriteSheet g_sheets[UI_IMAGE_COUNT];
 
@@ -620,6 +658,66 @@ bool ui_image_rotated(UiImage image, float cx, float cy, float scale, float angl
                                   angle, recolour || alpha < 1.0f ? &tint : NULL, scale, scale);
 }
 
+bool ui_image_fade(UiImage image, float x, float y, float w, float h, float alpha_top, float alpha_bottom,
+                   bool flip)
+{
+    if (image >= UI_IMAGE_COUNT || !g_sheets[image] || w < 1.0f || h < 1.0f) return false;
+    const C2D_Image full = C2D_SpriteSheetGetImage(g_sheets[image], 0);
+    Tex3DS_SubTexture sub = *full.subtex;
+    if (flip) {
+        sub.top = full.subtex->bottom;
+        sub.bottom = full.subtex->top;
+    }
+    const C2D_Image part = { full.tex, &sub };
+    C2D_ImageTint tint;
+    const u32 top = C2D_Color32f(1, 1, 1, alpha_top), bottom = C2D_Color32f(1, 1, 1, alpha_bottom);
+    C2D_SetImageTint(&tint, C2D_TopLeft, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_TopRight, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotLeft, bottom, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotRight, bottom, 0.0f);
+    const bool plain = alpha_top >= 1.0f && alpha_bottom >= 1.0f;
+    return C2D_DrawImageAt(part, x, y, 0.0f, plain ? NULL : &tint, w / sub.width, h / sub.height);
+}
+
+bool ui_image_part(UiImage image, float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+                   float alpha)
+{
+    if (image >= UI_IMAGE_COUNT || !g_sheets[image] || w < 1.0f || h < 1.0f) return false;
+    const C2D_Image full = C2D_SpriteSheetGetImage(g_sheets[image], 0);
+    const Tex3DS_SubTexture *f = full.subtex;
+    Tex3DS_SubTexture sub = *f;
+    sub.left = f->left + (f->right - f->left) * u0;
+    sub.right = f->left + (f->right - f->left) * u1;
+    sub.top = f->top + (f->bottom - f->top) * v0;
+    sub.bottom = f->top + (f->bottom - f->top) * v1;
+    sub.width = (u16)(f->width * (u1 - u0));
+    sub.height = (u16)(f->height * (v1 - v0));
+    const C2D_Image part = { full.tex, &sub };
+    C2D_ImageTint tint;
+    C2D_AlphaImageTint(&tint, alpha);
+    return C2D_DrawImageAt(part, x, y, 0.0f, alpha < 1.0f ? &tint : NULL, w / sub.width, h / sub.height);
+}
+
+bool ui_image_fit(UiImage image, float x, float y, float w, float h, float alpha)
+{
+    return ui_image_fade(image, x, y, w, h, alpha, alpha, false);
+}
+
+bool ui_icon(UiImage image, float cx, float cy, float size, u32 color)
+{
+    if (image >= UI_IMAGE_COUNT || !g_sheets[image]) return false;
+    const C2D_Image full = C2D_SpriteSheetGetImage(g_sheets[image], 0);
+    C2D_ImageTint tint;
+    C2D_PlainImageTint(&tint, color, 1.0f);
+    const float scale = size / full.subtex->width;
+    return C2D_DrawImageAt(full, cx - size / 2, cy - size / 2, 0.0f, &tint, scale, scale);
+}
+
+void ui_gradient(float x, float y, float w, float h, u32 top, u32 bottom)
+{
+    if (w > 0 && h > 0) C2D_DrawRectangle(x, y, 0.0f, w, h, top, top, bottom, bottom);
+}
+
 void ui_texture(UiImage image, float x, float y, float w, float h, u32 color)
 {
     if (image >= UI_IMAGE_COUNT || !g_sheets[image] || w < 1.0f || h < 1.0f) return;
@@ -1023,42 +1121,113 @@ void ui_battery_icon(float x, float y, unsigned level, bool charging)
     ui_rect(x + 2.0f, y + 2.0f, 16.0f * (float)level / 5.0f, 6.0f, color);
 }
 
+/* The system font has no arrow glyphs (they came out as boxes): arrow
+ * chips are drawn. "◀ ▶" left and right, "▲ ▼" up and down. */
+static int arrow_chip(const char *button)
+{
+    if (!strcmp(button, "◀ ▶") || !strcmp(button, "◀▶")) return 1;
+    if (!strcmp(button, "▲ ▼") || !strcmp(button, "▲▼")) return 2;
+    return 0;
+}
+
+static void draw_arrows(float cx, float cy, int kind, float s, u32 color)
+{
+    const float gap = s * 1.4f;
+    if (kind == 1) {
+        ui_triangle(cx - gap + s * 0.5f, cy - s, cx - gap + s * 0.5f, cy + s, cx - gap - s * 0.7f, cy, color);
+        ui_triangle(cx + gap - s * 0.5f, cy - s, cx + gap - s * 0.5f, cy + s, cx + gap + s * 0.7f, cy, color);
+    } else {
+        ui_triangle(cx - gap - s, cy + s * 0.5f, cx - gap + s, cy + s * 0.5f, cx - gap, cy - s * 0.7f, color);
+        ui_triangle(cx + gap - s, cy - s * 0.5f, cx + gap + s, cy - s * 0.5f, cx + gap, cy + s * 0.7f, color);
+    }
+}
+
+static bool round_chip(const char *button)
+{
+    return strlen(button) == 1 && strchr("ABXY", button[0]);
+}
+
 float ui_button_chip(float x, float y, const char *button, u32 color)
 {
     /* Face buttons are circles; shoulders and system buttons are pills. */
-    const bool round = strlen(button) == 1 && strchr("ABXY", button[0]);
-    if (round) {
+    if (round_chip(button)) {
         ui_ring(x + 7.5f, y + 7.5f, 7.5f, 1.2f, color, UI_BG);
         ui_text(x + 7.5f, y + 1.5f, 12.0f, color, UI_ALIGN_CENTER, button);
         return 15.0f;
     }
-    const float width = ui_text_width(button, 10.0f) + 10.0f;
+    const int arrows = arrow_chip(button);
+    const float width = arrows ? 28.0f : ui_text_width(button, 10.0f) + 10.0f;
     ui_rounded(x, y + 0.5f, width, 14.0f, 7.0f, color);
     ui_rounded(x + 1.0f, y + 1.5f, width - 2.0f, 12.0f, 6.0f, UI_BG);
-    ui_text(x + width / 2.0f, y + 2.0f, 10.0f, color, UI_ALIGN_CENTER, button);
+    if (arrows) draw_arrows(x + width / 2.0f, y + 7.5f, arrows, 3.2f, color);
+    else ui_text(x + width / 2.0f, y + 2.0f, 10.0f, color, UI_ALIGN_CENTER, button);
     return width;
+}
+
+/* Hint rows: the system font is sharp only at 30 px and exactly half that,
+ * so a row is set at 15 px when it fits and at 12 px when it doesn't.
+ * Big chips: a filled disc for face buttons, an outlined pill otherwise. */
+static float hint_chip_width(const char *button, bool big)
+{
+    if (!big) return round_chip(button) ? 15.0f : arrow_chip(button) ? 28.0f : ui_text_width(button, 10.0f) + 10.0f;
+    if (round_chip(button)) return 17.0f;
+    if (arrow_chip(button)) return 32.0f;
+    return ui_text_width(button, 15.0f) + 12.0f;
+}
+
+static void hint_chip(float x, float y, const char *button, u32 color)
+{
+    const float h = 17.0f, w = hint_chip_width(button, true);
+    if (round_chip(button)) {
+        ui_circle(x + h / 2, y + h / 2, h / 2, color);
+        ui_text(x + h / 2, y + 1.0f, 15.0f, UI_BG, UI_ALIGN_CENTER, button);
+        return;
+    }
+    ui_rounded(x, y, w, h, h / 2, color);
+    ui_rounded(x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, h / 2 - 1.0f, UI_BG);
+    const int arrows = arrow_chip(button);
+    if (arrows) draw_arrows(x + w / 2, y + h / 2, arrows, 3.8f, color);
+    else ui_text(x + w / 2, y + 1.0f, 15.0f, color, UI_ALIGN_CENTER, button);
+}
+
+static float hint_width(const char *button, const char *label, bool big)
+{
+    return hint_chip_width(button, big) + (big ? 6.0f : 5.0f) + ui_text_width(label, big ? 15.0f : 12.0f);
 }
 
 float ui_hint(float x, float y, const char *button, const char *label, bool measure_only)
 {
-    const bool round = strlen(button) == 1 && strchr("ABXY", button[0]);
-    const float chip = round ? 15.0f : ui_text_width(button, 10.0f) + 10.0f;
-    const float total = chip + 5.0f + ui_text_width(label, 12.0f);
+    const float total = hint_width(button, label, false);
     if (!measure_only) {
         ui_button_chip(x, y, button, UI_TEXT_DIM);
-        ui_text(x + chip + 5.0f, y + 1.0f, 12.0f, UI_TEXT, UI_ALIGN_LEFT, label);
+        ui_text(x + hint_chip_width(button, false) + 5.0f, y + 1.0f, 12.0f, UI_TEXT, UI_ALIGN_LEFT, label);
     }
     return total;
 }
 
 void ui_hint_row(float center_x, float y, const char *const *pairs)
 {
+    unsigned count = 0;
+    float big_total = 0.0f;
+    for (const char *const *p = pairs; p[0] && p[1]; p += 2, ++count) big_total += hint_width(p[0], p[1], true);
+    if (!count) return;
+    const float big_gap = 14.0f;
+    big_total += big_gap * (float)(count - 1);
+    /* The row is centred on its screen: the room is the screen less margins. */
+    const bool big = big_total <= center_x * 2.0f - 24.0f;
+    if (big) {
+        float x = floorf(center_x - big_total / 2.0f);
+        for (const char *const *p = pairs; p[0] && p[1]; p += 2) {
+            hint_chip(x, y - 1.0f, p[0], UI_TEXT_DIM);
+            const float chip = hint_chip_width(p[0], true);
+            ui_text(x + chip + 6.0f, y - 1.0f, 15.0f, UI_TEXT, UI_ALIGN_LEFT, p[1]);
+            x += hint_width(p[0], p[1], true) + big_gap;
+        }
+        return;
+    }
     const float gap = 16.0f;
     float total = 0.0f;
-    unsigned count = 0;
-    for (const char *const *p = pairs; p[0] && p[1]; p += 2, ++count)
-        total += ui_hint(0, 0, p[0], p[1], true);
-    if (!count) return;
+    for (const char *const *p = pairs; p[0] && p[1]; p += 2) total += ui_hint(0, 0, p[0], p[1], true);
     total += gap * (float)(count - 1);
     float x = center_x - total / 2.0f;
     for (const char *const *p = pairs; p[0] && p[1]; p += 2)
@@ -1171,9 +1340,13 @@ void ui_button(UiRect r, const char *label, const char *jp, UiButtonStyle style,
     else if (style == UI_BUTTON_DANGER) sub = UI_DANGER;
     else if (style == UI_BUTTON_ACTIVE) sub = UI_ACCENT;
     const UiRect f = ui_key(r, style, pressed);
-    const float label_size = r.h >= 40.0f ? 14.0f : 12.0f;
-    const float jp_size = r.h >= 40.0f ? 12.0f : 11.0f;
-    if (jp && jp[0] && r.h >= 30.0f && (g_has_japanese || !contains_japanese(jp))) {
+    /* 15 px is half the font's size, the only small size that stays sharp:
+     * used whenever the label fits (the kanji line too, when there's room). */
+    const bool sharp = ui_text_width(label, 15.0f) <= f.w - 10.0f;
+    const float label_size = sharp ? 15.0f : r.h >= 40.0f ? 14.0f : 12.0f;
+    const float jp_size = sharp ? 15.0f : r.h >= 40.0f ? 12.0f : 11.0f;
+    const bool room = f.h >= label_size + 2.0f + jp_size + 2.0f || !sharp;
+    if (jp && jp[0] && r.h >= 30.0f && room && (g_has_japanese || !contains_japanese(jp))) {
         const float block = label_size + 2.0f + jp_size;
         const float top = f.y + (f.h - block) / 2.0f;
         ui_text_fit(f.x + f.w / 2.0f, top, label_size, text, UI_ALIGN_CENTER, f.w - 8.0f, label);

@@ -8,6 +8,8 @@
  * network was choppy, the next one starts in Weak / hotspot by itself. */
 
 /* The last Standard session on this network (within two weeks) was choppy. */
+/* Read the file into memory (startup, before the background writer runs). */
+void net_memory_load(void);
 bool net_memory_choppy_here(void);
 /* After a session: how it went on this network. weak: the player chose
  * Weak / hotspot (says nothing about Standard, so it is not recorded). */

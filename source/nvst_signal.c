@@ -1,6 +1,7 @@
 #include "nvst_signal.h"
 #include "diagnostic.h"
 #include "stream_profile.h"
+#include "webrtc_transport.h"
 #include <3ds.h>
 #include <curl/curl.h>
 #include <jansson.h>
@@ -39,11 +40,22 @@ static void record(NvstSignal *s, const char *event)
  * name gets nowhere, the next try uses a new one. */
 static char g_last_session[160], g_last_peer[32];
 static bool g_reuse_failed;
+/* "peerRemoved" right after signing in again under the old name is most
+ * likely NVIDIA clearing the previous connection of that name, not this one:
+ * the beta.36 export had 28 of them, and the switch to a new name then got
+ * no offer for ~20 s (until NVIDIA let the old session go). The same name
+ * is tried once more first, which costs ~1.5 s. */
+static bool g_removed_retry_used;
+/* This sign-in reuses the previous peer name. */
+static bool g_name_reused;
 
 static bool fail(NvstSignal *s, const char *message)
 {
-    if (s->reconnect && !s->offer_size && !g_reuse_failed && !strcmp(s->peer_name, g_last_peer))
-        g_reuse_failed = true;
+    const bool removed = !strcmp(message, "NVIDIA removed signaling peer");
+    if (s->reconnect && !s->offer_size && !g_reuse_failed && !strcmp(s->peer_name, g_last_peer)) {
+        if (removed && !g_removed_retry_used) g_removed_retry_used = true;
+        else g_reuse_failed = true;
+    }
     s->state = NVST_SIGNAL_ERROR;
     snprintf(s->status, sizeof(s->status), "%s", message);
     record(s, "failure");
@@ -195,6 +207,8 @@ static bool incoming(void *context, unsigned opcode, const uint8_t *data, size_t
     }
     if (json_object_get(root, "error")) {
         const char *why = json_string_value(json_object_get(root, "error"));
+        /* The whole message (no secrets in it), to see which peer it means. */
+        diagnostic_log("NVST", "error message: %.*s", (int)(size > 200 ? 200 : size), (const char *)data);
         fail(s, why && !strcmp(why, "peerRemoved") ?
             "NVIDIA removed signaling peer" : "NVIDIA signaling error (not transport)");
         json_decref(root); return false;
@@ -230,6 +244,7 @@ static bool incoming(void *context, unsigned opcode, const uint8_t *data, size_t
                 }
                 snprintf(s->status, sizeof(s->status), "NVST offer received (%lu bytes)", (unsigned long)n);
                 record(s, "offer-received");
+                g_removed_retry_used = false;
             }
         } else if (json_is_string(json_object_get(payload, "candidate"))) {
             /* Keep complete candidate objects for the future peer adapter. */
@@ -331,8 +346,9 @@ bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_
     uint32_t peer_random;
     if (!random_bytes(s, (unsigned char *)&peer_random, sizeof(peer_random))) return fail(s, "NVST random failed");
     s->reconnect = !strcmp(session_id, g_last_session);
-    if (!s->reconnect) g_reuse_failed = false;
-    if (s->reconnect && g_last_peer[0] && !g_reuse_failed) {
+    if (!s->reconnect) g_reuse_failed = g_removed_retry_used = false;
+    g_name_reused = s->reconnect && g_last_peer[0] && !g_reuse_failed;
+    if (g_name_reused) {
         snprintf(s->peer_name, sizeof(s->peer_name), "%s", g_last_peer);
     } else {
         snprintf(s->peer_name, sizeof(s->peer_name), "peer-%lu", (unsigned long)peer_random);
@@ -394,11 +410,16 @@ void nvst_signal_tick(NvstSignal *s)
         }
         if (!nvst_signal_active(s)) return;
     }
-    /* A reconnect normally gets its offer within 2 s; waiting 30 s for a
-     * server that is not going to send one only delays the next try. */
-    const u64 offer_wait = s->reconnect ? 12000 : 30000;
+    /* A reconnect under the old name normally gets its offer within 2 s;
+     * waiting 30 s for a server that is not going to send one only delays
+     * the next try. Under a new name the offer comes once NVIDIA lets the
+     * old connection go, ~20 s after the drop (beta.36 export: 36 new-name
+     * tries gave up at 12 s, the ones that waited longer got through). */
+    const u64 offer_wait = !s->reconnect ? 30000 : g_name_reused ? 12000 : 22000;
     if (!s->offer_size && osGetTime()-s->started_ms >= offer_wait)
-        fail(s, s->reconnect ? "No SDP offer within 12s after reconnecting" : "No SDP offer within 30s; see NVST counters");
+        fail(s, !s->reconnect ? "No SDP offer within 30s; see NVST counters" :
+                g_name_reused ? "No SDP offer within 12s after reconnecting" :
+                                "No SDP offer within 22s after reconnecting (new peer)");
 }
 
 bool nvst_signal_send_answer(NvstSignal *s, const char *sdp, const char *nvst)
@@ -435,6 +456,7 @@ void nvst_signal_close(NvstSignal *s)
         mbedtls_ctr_drbg_free(&rng->drbg); mbedtls_entropy_free(&rng->entropy); free(rng);
     }
     ws_parser_free(&s->parser); free(s->offer_sdp); free(s->offer_nvst_sdp);
+    if (s->xcloud_peer) webrtc_transport_discard_peer(s->xcloud_peer);
     memset(s, 0, sizeof(*s));
 }
 bool nvst_signal_active(const NvstSignal *s)

@@ -552,6 +552,14 @@ int peer_connection_datachannel_send_binary_lossy_sid(PeerConnection* pc, char* 
   return sctp_outgoing_data_lossy(&pc->sctp, message, len, PPID_BINARY, sid);
 }
 
+int peer_connection_datachannel_send_string_sid(PeerConnection* pc, char* message, size_t len, uint16_t sid) {
+  if (!sctp_is_connected(&pc->sctp)) {
+    LOGE("sctp not connected");
+    return -1;
+  }
+  return sctp_outgoing_data(&pc->sctp, message, len, PPID_STRING, sid);
+}
+
 int peer_connection_create_datachannel(PeerConnection* pc, DecpChannelType channel_type, uint16_t priority, uint32_t reliability_parameter, char* label, char* protocol) {
   return peer_connection_create_datachannel_sid(pc, channel_type, priority, reliability_parameter, label, protocol, 0);
 }
@@ -1054,7 +1062,7 @@ void peer_connection_set_remote_description(PeerConnection* pc, const char* sdp,
   }
 }
 
-static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_type) {
+static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_type, int dtls_client_offer) {
   char* description = (char*)pc->temp_buf;
 
   memset(pc->temp_buf, 0, sizeof(pc->temp_buf));
@@ -1064,7 +1072,7 @@ static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_ty
 
   switch (sdp_type) {
     case SDP_TYPE_OFFER:
-      role = DTLS_SRTP_ROLE_SERVER;
+      role = dtls_client_offer ? DTLS_SRTP_ROLE_CLIENT : DTLS_SRTP_ROLE_SERVER;
       agent_clear_candidates(&pc->agent);
       pc->agent.mode = AGENT_MODE_CONTROLLING;
       break;
@@ -1094,7 +1102,7 @@ static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_ty
   sdp_append(pc->sdp, "a=ice-ufrag:%s", pc->agent.local_ufrag);
   sdp_append(pc->sdp, "a=ice-pwd:%s", pc->agent.local_upwd);
   sdp_append(pc->sdp, "a=fingerprint:sha-256 %s", pc->dtls_srtp.local_fingerprint);
-  sdp_append(pc->sdp, peer_connection_dtls_role_setup_value(role));
+  sdp_append(pc->sdp, dtls_client_offer ? "a=setup:actpass" : peer_connection_dtls_role_setup_value(role));
 
   if (pc->config.video_codec == CODEC_H264) {
     sdp_append_h264(pc->sdp);
@@ -1138,11 +1146,15 @@ static const char* peer_connection_create_sdp(PeerConnection* pc, SdpType sdp_ty
 }
 
 const char* peer_connection_create_offer(PeerConnection* pc) {
-  return peer_connection_create_sdp(pc, SDP_TYPE_OFFER);
+  return peer_connection_create_sdp(pc, SDP_TYPE_OFFER, 0);
+}
+
+const char* peer_connection_create_offer_dtls_client(PeerConnection* pc) {
+  return peer_connection_create_sdp(pc, SDP_TYPE_OFFER, 1);
 }
 
 const char* peer_connection_create_answer(PeerConnection* pc) {
-  const char* sdp = peer_connection_create_sdp(pc, SDP_TYPE_ANSWER);
+  const char* sdp = peer_connection_create_sdp(pc, SDP_TYPE_ANSWER, 0);
   agent_update_candidate_pairs(&pc->agent);
   STATE_CHANGED(pc, PEER_CONNECTION_CHECKING);
   return sdp;

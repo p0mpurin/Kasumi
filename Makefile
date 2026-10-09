@@ -21,10 +21,10 @@ APP_AUTHOR := p0mpurin
 
 # Release version: GitHub releases are tagged v$(VERSION). The CIA's own
 # version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
-VERSION_MAJOR := 0
-VERSION_MINOR := 9
+VERSION_MAJOR := 1
+VERSION_MINOR := 0
 VERSION_MICRO := 0
-VERSION_SUFFIX := -beta.36
+VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 APP_PRODUCT_CODE := CTR-P-KSMI
 APP_UNIQUE_ID := 0x4B534
@@ -99,7 +99,7 @@ GFX_FORMAT_discord := rgb565
 GFX_FORMAT_no_cover := rgb565
 
 $(BUILD)/%.t3x: gfx/%.png | $(BUILD)
-	@$(DEVKITPRO)/tools/bin/tex3ds -f $(or $(GFX_FORMAT_$*),$(if $(filter bg_% glass_%,$*),etc1),rgba8) -z auto -o "$@" "$<" > /dev/null
+	@$(DEVKITPRO)/tools/bin/tex3ds -f $(or $(GFX_FORMAT_$*),$(if $(filter bg_% glass_% svc_% cover_% hub_%,$*),etc1),rgba8) -z auto -o "$@" "$<" > /dev/null
 
 $(CURDIR)/$(BUILD)/%.t3x.o: $(BUILD)/%.t3x
 	@cd $(BUILD) && $(OBJCOPY) -I binary -O elf32-littlearm -B arm 		--rename-section .data=.rodata.gfx,alloc,load,readonly,data,contents "$*.t3x" "$*.t3x.o"

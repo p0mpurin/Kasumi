@@ -31,19 +31,33 @@ static bool current_ssid(char out[40])
     return out[0] != '\0';
 }
 
+/* The file, kept in memory: read once at startup, written in the background.
+ * Beta.36 re-read it after every game, waiting for the background writer
+ * first, and on a slow card that froze the return to the menus for 2-10 s
+ * (beta.36 export). */
+static json_t *g_root;
+
+void net_memory_load(void)
+{
+    if (g_root) return;
+    json_error_t error;
+    g_root = json_load_file(NET_MEMORY_PATH, 0, &error);
+    if (!json_is_object(g_root)) {
+        json_decref(g_root);
+        g_root = json_object();
+    }
+}
+
 bool net_memory_choppy_here(void)
 {
     char ssid[40];
     if (!current_ssid(ssid)) return false;
-    json_error_t error;
-    json_t *root = json_load_file(NET_MEMORY_PATH, 0, &error);
-    json_t *entry = json_is_object(root) ? json_object_get(root, ssid) : NULL;
+    net_memory_load();
+    json_t *entry = json_object_get(g_root, ssid);
     json_t *at = json_is_object(entry) ? json_object_get(entry, "at") : NULL;
     const bool recent = json_is_integer(at) &&
                         (int64_t)time(NULL) - json_integer_value(at) < NET_MEMORY_DAYS * 86400;
-    const bool result = recent && json_is_true(json_object_get(entry, "choppy"));
-    json_decref(root);
-    return result;
+    return recent && json_is_true(json_object_get(entry, "choppy"));
 }
 
 void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeated)
@@ -52,13 +66,8 @@ void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeat
     if (seconds < 120 || weak) return;
     char ssid[40];
     if (!current_ssid(ssid)) return;
-    file_worker_flush();
-    json_error_t error;
-    json_t *root = json_load_file(NET_MEMORY_PATH, 0, &error);
-    if (!json_is_object(root)) {
-        json_decref(root);
-        root = json_object();
-    }
+    net_memory_load();
+    json_t *root = g_root;
     const bool bad = choppy(seconds, lost, repeated);
     json_object_set_new(root, ssid, json_pack("{s:b,s:I}", "choppy", (int)bad, "at", (json_int_t)time(NULL)));
     /* Forget the oldest networks beyond a handful. */
@@ -77,6 +86,7 @@ void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeat
         snprintf(oldest_key, sizeof(oldest_key), "%s", oldest);
         json_object_del(root, oldest_key);
     }
-    file_worker_save_json(NET_MEMORY_PATH, root, JSON_COMPACT);
+    /* The writer takes its own copy; this one stays for the next game. */
+    file_worker_save_json(NET_MEMORY_PATH, json_deep_copy(root), JSON_COMPACT);
     diagnostic_log("NET", "network memory: last Standard session here %s", bad ? "choppy" : "smooth");
 }

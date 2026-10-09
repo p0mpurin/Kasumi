@@ -27,6 +27,9 @@ bool report_previous_run_unclean(void);
  * (written by perf_stats; survives an exit). */
 #define REPORT_STATS_PENDING_PATH APP_DATA_DIR "/stats-pending.json"
 bool report_stats_pending(void);
+/* A summary or launch record was queued (true) or the files were dropped
+ * (false). */
+void report_stats_mark_pending(bool pending);
 /* Worker thread only: send and delete the pending summary. */
 bool report_send_stats(void);
 

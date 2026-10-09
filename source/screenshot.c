@@ -81,6 +81,9 @@ static void writer_main(void *arg)
         }
         char path[128];
         snprintf(path, sizeof(path), SHOT_DIR "/%s", g_name);
+        /* Here, not on the UI thread: on a slow card any SD call there
+         * froze the game 3-4 s (beta.36 export). */
+        mkdir(SHOT_DIR, 0777);
         FILE *f = fopen(path, "wb");
         if (f) {
             if (stbi_write_png_to_func(write_chunk, f, OUT_W, OUT_H, 3, rgb, OUT_W * 3)) result = 1;
@@ -109,7 +112,6 @@ bool screenshot_capture(const void *surface)
     const u16 *src = surface;
     for (int y = 0; y < SRC_H; ++y)
         memcpy(g_frame + y * SRC_W, src + y * SRC_STRIDE, SRC_W * sizeof(u16));
-    mkdir(SHOT_DIR, 0777);
     const time_t now = time(NULL);
     const struct tm *t = gmtime(&now);
     if (t) strftime(g_name, sizeof(g_name), "kasumi_%Y%m%d_%H%M%S.png", t);

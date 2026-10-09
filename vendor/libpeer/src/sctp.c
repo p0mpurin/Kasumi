@@ -257,7 +257,9 @@ static int sctp_record_open(Sctp* sctp, uint16_t sid, const char* data, size_t l
  * Chunks now wait here until a SACK covers them and are sent again when
  * one stays unacknowledged for longer than the retransmission timeout. */
 #define SCTP_RTX_SLOTS 256
-#define SCTP_RTX_PACKET_MAX 192
+/* Kasumi: Xbox Cloud Gaming's JSON messages run to ~400 bytes (build 124:
+ * "rtx_oversize bytes=196" on its screen-size message). */
+#define SCTP_RTX_PACKET_MAX 512
 
 typedef struct {
   uint32_t tsn;

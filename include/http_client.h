@@ -22,6 +22,11 @@ bool http_request(const char *method, const char *url, const char *user_agent,
                   const char *const *headers, size_t header_count,
                   const char *body, size_t max_response, HttpResponse *response);
 void http_response_free(HttpResponse *response);
+/* Box art, on its own thread and connection: never waits behind the
+ * network worker's requests. http_art_cancel aborts the one in flight. */
+bool http_request_art(const char *url, const char *user_agent, const char *const *headers, size_t header_count,
+                      size_t max_response, HttpResponse *response);
+void http_art_cancel(void);
 /* Abort the request in flight (from any thread); cleared by the next request. */
 void http_cancel(void);
 /* For the next request only: a longer total timeout (large downloads) and a

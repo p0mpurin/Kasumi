@@ -36,12 +36,26 @@ static char *read_file(const char *path, size_t cap, size_t *length);
 
 bool report_available(void) { return strstr(REPORT_BASE, "CHANGE-ME") == NULL; }
 
-bool report_stats_pending(void)
+static bool pending_on_card(void)
 {
     struct stat st;
     return (stat(REPORT_STATS_PENDING_PATH, &st) == 0 && st.st_size > 0) ||
            (stat(LAUNCH_PENDING_PATH, &st) == 0 && st.st_size > 2);
 }
+
+/* Whether a summary or launch records wait to be sent, kept in memory: the
+ * menus asked the SD card every frame, and on a slow card each stat() waited
+ * behind the background writer (3-5 s freezes at startup, beta.36 export).
+ * Looked up once at startup; writers and the sender keep it current. */
+static volatile int g_pending = -1;
+
+bool report_stats_pending(void)
+{
+    if (g_pending < 0) g_pending = pending_on_card();
+    return g_pending > 0;
+}
+
+void report_stats_mark_pending(bool pending) { g_pending = pending; }
 
 /* Launch records (launch_stats.h), as {"app":"Kasumi","launches":[...]}. */
 static bool send_launches(void)
@@ -77,7 +91,10 @@ bool report_send_stats(void)
     size_t length = 0;
     file_worker_flush();
     char *summary = read_file(REPORT_STATS_PENDING_PATH, 4096, &length);
-    if (!summary) return false;
+    if (!summary) {
+        g_pending = pending_on_card();
+        return false;
+    }
     static const char *const headers[] = { "Content-Type: application/json" };
     HttpResponse response;
     http_next_request(5, NULL, NULL); /* ~1 KB: never worth a long wait */
@@ -89,6 +106,8 @@ bool report_send_stats(void)
      * connection, rate limit, a service without /stats yet) keeps it for a
      * later try; a newer session's summary replaces it anyway. */
     if (sent && (status == 200 || status == 400 || status == 413)) remove(REPORT_STATS_PENDING_PATH);
+    /* On the network worker: the card may be asked here. */
+    g_pending = pending_on_card();
     diagnostic_log("REPORT", "session summary sent=%d http=%ld", sent, sent ? status : 0);
     return sent && status == 200;
 }
