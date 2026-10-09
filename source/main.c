@@ -2629,6 +2629,9 @@ static void track_session(void)
     fps60_latency_guard(now);
     const u64 last_frame = g_transport.last_decoded_frame_at;
     const bool frozen = g_app.view == VIEW_STREAM && g_transport.state == WEBRTC_CONNECTED &&
+                        !g_transport.steam_capture_unavailable &&
+                        (!g_transport.steam_capture_resumed_at ||
+                         (now > g_transport.steam_capture_resumed_at && now - g_transport.steam_capture_resumed_at > 12000)) &&
                         last_frame && now > last_frame && now - last_frame > 12000 &&
                         !g_app.lid_paused && !g_resumed_at && now >= g_loop_gap_grace_until && wifi_connected();
     if (frozen && !net_worker_busy() && g_client.session_state == GFN_SESSION_READY && g_app.reconnect_attempt < 3) {
@@ -3091,7 +3094,7 @@ static void watch_for_bugs(void)
     /* Signalling and media up, the stream never started. */
     static u64 connect_since;
     if (gfn_session_active(&g_client) && g_client.session_state == GFN_SESSION_READY && !g_app.stream_started_at &&
-        g_transport.state == WEBRTC_CONNECTED) {
+        g_transport.state == WEBRTC_CONNECTED && !g_transport.steam_capture_unavailable) {
         if (!connect_since) connect_since = now;
         else if (now - connect_since > 45000) {
             diagnostic_flag("no-first-frame", "connected %llus without a picture (video AU=%u decoded=%u errors=%u)",
@@ -4107,6 +4110,8 @@ int main(int argc, char **argv)
                        : g_app.view == VIEW_SESSION ? MENU_SCENE_WAITING : MENU_SCENE_MENUS);
         g_app.status = current_status();
         g_app.toast = g_notice[0] && osGetTime() < g_notice_until ? g_notice : NULL;
+        if (!g_app.toast && g_transport.state == WEBRTC_CONNECTED && g_transport.steam_capture_unavailable)
+            g_app.toast = g_transport.status;
         track_session();
         setup_retry_tick();
         watch_session_errors();

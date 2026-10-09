@@ -246,7 +246,9 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
         snprintf(g_status, sizeof(g_status), "MVD init failed %08lX", (unsigned long)rc);
         diagnostic_log("MVD", "%s", g_status);
         diagnostic_checkpoint();
-        mvdstdExit();
+        /* libctru already closes the service handle and unwinds its refcount
+         * when init fails. Calling Exit here makes later Init calls appear to
+         * succeed without a handle (SetConfig then returns D8E007F7). */
         return false;
     }
     diagnostic_log("MVD", "init-return %ux%u rc=%08lX", input_width, input_height,
@@ -753,8 +755,9 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
     }
     const u64 process_start = svcGetSystemTick();
     bool hd_has_vcl = false;
+    MVDSTD_ProcessNALUnitOut process_out = {0};
     Result rc = hd ? process_720p_nals(annex_b, size, &hd_has_vcl) :
-                     mvdstdProcessVideoFrame(input, size, 1, NULL);
+                     mvdstdProcessVideoFrame(input, size, 1, &process_out);
     const u64 process_ticks = svcGetSystemTick() - process_start;
     if (!MVD_CHECKNALUPROC_SUCCESS(rc) && g_soft_resync) {
         ++g_errors;
@@ -788,8 +791,8 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
     else if (rc == MVD_STATUS_FRAMEREADY) ++g_status_ready;
     else if (rc == MVD_STATUS_INCOMPLETEPROCESSING) ++g_status_incomplete;
     if (g_frames < 3 && (g_status_ok + g_status_paramset + g_status_ready + g_status_incomplete) <= 12)
-        diagnostic_log("MVD", "process status=%08lX AU=%lu counts ok=%u ps=%u ready=%u inc=%u",
-                       (unsigned long)rc, (unsigned long)size, g_status_ok,
+        diagnostic_log("MVD", "process status=%08lX AU=%lu remaining=%lu counts ok=%u ps=%u ready=%u inc=%u",
+                       (unsigned long)rc, (unsigned long)size, (unsigned long)process_out.remaining_size, g_status_ok,
                        g_status_paramset, g_status_ready, g_status_incomplete);
 
     /* 0x17003 is explicitly MVD_STATUS_FRAMEREADY and must be presented.
@@ -863,7 +866,7 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
      * looks (beta.27 report GTXMTY), so that is logged when it happens. */
     if (g_frames <= 5 || g_frames % 120 == 0) {
         const bool dark = g_level_max < 24;
-        if (g_frames <= 5 || g_frames % 600 == 0 || dark != g_picture_dark) {
+        if (g_frames <= 600 || g_frames % 600 == 0 || dark != g_picture_dark) {
             diagnostic_log("MVD", "%s status=%08lX sampleNonzero=%u hash=%08lx",
                            g_status, (unsigned long)rc, nonzero, (unsigned long)sample_hash);
             diagnostic_log("MVD", "levels green min=%u max=%u output=%ux%u wide=%u%s",

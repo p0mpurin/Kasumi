@@ -124,6 +124,11 @@ typedef struct {
     /* Steam Link (steam_session.h): `peer` is the SteamSession, and the
      * stream runs on its own protocol instead of WebRTC. */
     bool steam;
+    /* MVD may consume the first IDR while priming; request another once it
+     * has produced output, including after a size rebuild. */
+    bool steam_decoder_keyframe_pending;
+    bool steam_capture_unavailable;
+    uint64_t steam_capture_resumed_at;
     /* Reconnecting can't help: the PC ended the Steam stream itself, or the
      * video decoder stopped working. The status says why. */
     bool no_reconnect;

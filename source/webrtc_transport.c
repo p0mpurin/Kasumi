@@ -382,16 +382,19 @@ static void inspect_h264_access_unit(const unsigned char *data, size_t size,
     }
 }
 
-static void request_video_keyframe(WebRtcTransport *t, const char *reason)
+static bool request_video_keyframe(WebRtcTransport *t, const char *reason)
 {
-    if (!t || !t->peer || t->state != WEBRTC_CONNECTED) return;
+    if (!t || !t->peer || t->state != WEBRTC_CONNECTED) return false;
     int result = 0;
-    if (t->steam) steam_session_request_keyframe(t->peer);
+    if (t->steam) {
+        if (!steam_session_request_keyframe(t->peer)) return false;
+    }
     else result = peer_connection_request_video_keyframe(t->peer);
     t->last_keyframe_request_at = osGetTime();
     t->keyframe_requests++;
     diagnostic_log("VIDEO", "PLI reason=%s attempt=%u result=%d",
                    reason, t->keyframe_requests, result);
+    return true;
 }
 
 static void on_video(const PeerVideoPacket *packet, void *userdata)
@@ -555,6 +558,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
         }
         t->decoder_failed_width = t->decoder_failed_height = 0;
         t->decoder_init_failures = 0;
+        if (t->steam) t->steam_decoder_keyframe_pending = true;
     }
     t->decoder_width = decode_width;
     t->decoder_height = decode_height;
@@ -969,6 +973,9 @@ static void steam_tick(WebRtcTransport *t)
         snprintf(t->status, sizeof(t->status), "%s", steam_session_status(s));
     SteamSessionStats stats;
     steam_session_stats(s, &stats);
+    if (t->steam_capture_unavailable && !stats.capture_unavailable)
+        t->steam_capture_resumed_at = now;
+    t->steam_capture_unavailable = stats.capture_unavailable;
     t->rtt_ms = stats.rtt_ms;
     t->keyframe_requests = stats.keyframe_requests;
     const unsigned decoded = mvd_video_decoded_frames();
@@ -977,9 +984,18 @@ static void steam_tick(WebRtcTransport *t)
         t->last_decoded_frame_at = now;
     }
     if (t->state != WEBRTC_CONNECTED) return;
+    /* 5B3PWC: x264 kept producing gray output without an IDR request.
+     * CFPQQB's NVENC stream sent a second IDR immediately and
+     * worked. MVD can use the first AU to prime itself (Moonlight-N3DS also
+     * requests another IDR after its first decode). Do this once after
+     * output starts, so software encoders don't have to send one unasked. */
+    if (t->steam_decoder_keyframe_pending && decoded && !stats.capture_unavailable) {
+        if (request_video_keyframe(t, "decoder_primed"))
+            t->steam_decoder_keyframe_pending = false;
+    }
     /* The decoder fell behind or lost its place: start again at a keyframe. */
     if (mvd_video_take_resync_request()) request_video_keyframe(t, "decoder_queue_full");
-    if (t->video_saw_idr && t->last_decoded_frame_at && now - t->last_decoded_frame_at >= 3000 &&
+    if (!stats.capture_unavailable && t->video_saw_idr && t->last_decoded_frame_at && now - t->last_decoded_frame_at >= 3000 &&
         now - t->last_keyframe_request_at >= 3000)
         request_video_keyframe(t, "decoder_stalled");
 

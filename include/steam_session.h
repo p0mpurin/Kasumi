@@ -69,6 +69,8 @@ typedef struct {
     unsigned video_width, video_height;
     int rtt_ms;
     bool input_ready;
+    /* The host explicitly selected its Black Frame capture placeholder. */
+    bool capture_unavailable;
 } SteamSessionStats;
 
 SteamSession *steam_session_open(const SteamSessionConfig *config, const SteamSessionCallbacks *callbacks);
@@ -79,8 +81,9 @@ int steam_session_receive(SteamSession *s);
 void steam_session_tick(SteamSession *s);
 /* The controller's current state; sent when it changes. */
 void steam_session_set_pad(SteamSession *s, const SteamPad *pad);
-/* The decoder lost its place: ask for a keyframe. */
-void steam_session_request_keyframe(SteamSession *s);
+/* The decoder lost its place: ask for a keyframe. False if no video channel
+ * exists yet, or another request was sent within the last 200 ms. */
+bool steam_session_request_keyframe(SteamSession *s);
 SteamSessionState steam_session_state(const SteamSession *s);
 const char *steam_session_status(const SteamSession *s);
 void steam_session_stats(const SteamSession *s, SteamSessionStats *out);

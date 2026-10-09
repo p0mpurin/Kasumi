@@ -26,7 +26,8 @@ enum {
 };
 /* Video data frame flags. */
 enum {
-    VF_START_SEQUENCE = 0x01, VF_ESCAPE = 0x02, VF_FRAME_FINISH = 0x08, VF_KEYFRAME = 0x10, VF_ENCRYPTED = 0x20
+    VF_START_SEQUENCE = 0x01, VF_ESCAPE = 0x02, VF_SUBFRAME_ADVANCE = 0x04,
+    VF_FRAME_FINISH = 0x08, VF_KEYFRAME = 0x10, VF_ENCRYPTED = 0x20
 };
 
 #define HEADER_SIZE 13
@@ -38,6 +39,8 @@ enum {
 #define VIDEO_WINDOW 512
 #define AUDIO_WINDOW 64
 #define FRAME_MAX (512 * 1024)
+#define VIDEO_PARTS_MAX 64
+#define VIDEO_PART_TIMEOUT_MS 150
 #define HID_REPORT_SIZE 48
 #define HID_DEVICE 1
 
@@ -69,6 +72,13 @@ typedef struct {
     Slot slots[CONTROL_WINDOW];
 } ReliableIn;
 
+typedef struct {
+    uint8_t *data;
+    size_t size;
+    uint16_t frame_id, first, last;
+    uint8_t flags;
+} VideoPart;
+
 struct SteamSession {
     SteamSessionConfig config;
     SteamSessionCallbacks cb;
@@ -88,6 +98,15 @@ struct SteamSession {
     uint8_t frame[FRAME_MAX];
     size_t frame_size;
     bool frame_key, waiting_key, have_sequence;
+    /* Software encoders can finish their slices in a different order from
+     * their position in the picture. UDP sequence alone cannot order them.
+     * Steam's seven-byte video header carries the inclusive slice range. */
+    VideoPart video_parts[VIDEO_PARTS_MAX];
+    unsigned video_part_count, video_part_logs, video_reordered;
+    size_t video_part_bytes;
+    uint64_t video_part_since;
+    uint16_t video_next_slice, video_frame_id;
+    bool video_frame_active;
     /* Steam encodes a black placeholder ("Desktop Black Frame") while it
      * has nothing to capture, at another size than the picture: each switch
      * would rebuild the decoder, and a PC that switched every few seconds
@@ -109,6 +128,18 @@ struct SteamSession {
     SteamSessionStats stats;
     uint8_t scratch[FRAME_MAX / 8];
 };
+
+static void clear_video_frame(SteamSession *s)
+{
+    for (unsigned i = 0; i < s->video_part_count; ++i) free(s->video_parts[i].data);
+    s->video_part_count = 0;
+    s->video_part_bytes = 0;
+    s->video_part_since = 0;
+    s->video_next_slice = 0;
+    s->video_frame_active = false;
+    s->frame_size = 0;
+    s->frame_key = false;
+}
 
 static uint32_t stream_time(void)
 {
@@ -252,6 +283,7 @@ void steam_session_stats(const SteamSession *s, SteamSessionStats *out)
 {
     *out = s->stats;
     out->input_ready = s->hid_started;
+    out->capture_unavailable = s->placeholder;
 }
 
 static void send_connect(SteamSession *s)
@@ -452,7 +484,7 @@ static void on_start_data(SteamSession *s, unsigned type, const uint8_t *data, s
         s->video_channel = (int)channel;
         s->waiting_key = true;
         s->have_sequence = false;
-        s->frame_size = 0;
+        clear_video_frame(s);
         memset(s->video_slots, 0, sizeof(s->video_slots));
         s->stats.video_width = width;
         s->stats.video_height = height;
@@ -704,6 +736,7 @@ static void on_control(SteamSession *s, const uint8_t *message, size_t size)
     case CTL_STOP_VIDEO:
         diagnostic_log("STEAM", "video stopped by the PC");
         s->video_channel = -1;
+        clear_video_frame(s);
         break;
     case CTL_STOP_AUDIO: s->audio_channel = -1; break;
     case CTL_SET_ACTIVITY: on_activity(s, data, data_size); break;
@@ -722,12 +755,13 @@ static void on_control(SteamSession *s, const uint8_t *message, size_t size)
             /* Back to the picture: start again at its keyframe. */
             if (s->placeholder && !placeholder) {
                 s->waiting_key = true;
-                s->frame_size = 0;
+                clear_video_frame(s);
                 steam_session_request_keyframe(s);
             }
+            if (!s->placeholder && placeholder) clear_video_frame(s);
             s->placeholder = placeholder;
             if (s->state == STEAM_SESSION_STREAMING)
-                set_status(s, placeholder ? "The PC has nothing on screen to send (locked, asleep or switching)"
+                set_status(s, placeholder ? "Steam can't capture the PC screen. Check screen-sharing permissions."
                                           : "Streaming from your PC");
         }
         break;
@@ -831,45 +865,23 @@ static void on_ack(SteamSession *s, unsigned channel, uint16_t id, const uint8_t
 
 /* ---- Media channels ---------------------------------------------------------- */
 
-static void video_frame(SteamSession *s, const uint8_t *data, size_t size)
+static bool video_part_ready(const SteamSession *s, const VideoPart *part)
 {
-    if (size < 7) return;
-    const uint16_t sequence = get16(data);
-    const uint8_t flags = data[2];
-    data += 7;
-    size -= 7;
-    if (flags & VF_KEYFRAME) {
-        if (s->waiting_key) diagnostic_log("STEAM", "keyframe");
-        s->waiting_key = false;
-        s->frame_size = 0;
-        s->frame_key = true;
-    } else if (s->have_sequence && sequence != (uint16_t)(s->video_sequence + 1)) {
-        /* A piece of a frame never came: the picture would smear until the
-         * next keyframe, so drop to one now. */
-        s->stats.video_lost++;
-        if (!s->waiting_key) steam_session_request_keyframe(s);
-        s->waiting_key = true;
-        s->frame_size = 0;
-    }
-    s->have_sequence = true;
-    s->video_sequence = sequence;
-    if (s->waiting_key || s->placeholder) return;
-    if (flags & VF_ENCRYPTED) {
-        static const uint8_t zero_iv[16];
-        const int n = steam_cbc_decrypt(s->config.key, s->config.key_size, zero_iv, data, size, s->scratch,
-                                        sizeof(s->scratch));
-        if (n < 0) {
-            s->waiting_key = true;
-            steam_session_request_keyframe(s);
-            return;
-        }
-        data = s->scratch;
-        size = (size_t)n;
-    }
-    /* The pieces arrive without start codes or emulation prevention bytes
-     * when the flags say so. */
+    if (s->video_frame_active && part->frame_id != s->video_frame_id) return false;
+    return !part->last || part->first == s->video_next_slice;
+}
+
+static bool append_video_part(SteamSession *s, const VideoPart *part)
+{
+    const uint8_t flags = part->flags;
+    const uint8_t *data = part->data;
+    const size_t size = part->size;
+    s->video_frame_active = true;
+    s->video_frame_id = part->frame_id;
+    /* Escaping is per Steam data fragment, after decryption, as in ihslib's
+     * frame_h264.c. The start sequence is not part of the bytes to escape. */
     if (flags & VF_ESCAPE) {
-        if (s->frame_size + 4 + size * 3 / 2 + 2 > FRAME_MAX) goto overflow;
+        if (size > FRAME_MAX || s->frame_size + 4 + size * 3 / 2 + 2 > FRAME_MAX) return false;
         uint8_t *out = s->frame + s->frame_size;
         size_t n = 0;
         if (flags & VF_START_SEQUENCE) {
@@ -884,10 +896,11 @@ static void video_frame(SteamSession *s, const uint8_t *data, size_t size)
         }
         s->frame_size += n;
     } else {
-        if (s->frame_size + size > FRAME_MAX) goto overflow;
+        if (size > FRAME_MAX - s->frame_size) return false;
         memcpy(s->frame + s->frame_size, data, size);
         s->frame_size += size;
     }
+    if (part->last && (flags & VF_SUBFRAME_ADVANCE)) s->video_next_slice = (uint16_t)(part->last + 1u);
     if (flags & VF_KEYFRAME) s->frame_key = true;
     if (flags & VF_FRAME_FINISH) {
         s->stats.video_frames++;
@@ -896,10 +909,95 @@ static void video_frame(SteamSession *s, const uint8_t *data, size_t size)
         if (s->cb.video) s->cb.video(s->cb.user, s->frame, s->frame_size, s->frame_key);
         s->frame_size = 0;
         s->frame_key = false;
+        s->video_frame_active = false;
+        s->video_next_slice = 0;
     }
+    return true;
+}
+
+static void video_frame(SteamSession *s, uint16_t frame_id, const uint8_t *data, size_t size)
+{
+    if (size < 7) return;
+    const uint16_t sequence = get16(data);
+    const uint8_t flags = data[2];
+    const uint16_t first = get16(data + 3), last = get16(data + 5);
+    if (s->video_part_logs++ < 16)
+        diagnostic_log("STEAM", "video part frame=%u seq=%u flags=%02x range=%u..%u bytes=%lu",
+                       frame_id, sequence, flags, first, last, (unsigned long)(size - 7));
+    data += 7;
+    size -= 7;
+    if (flags & VF_KEYFRAME) {
+        if (s->waiting_key) diagnostic_log("STEAM", "keyframe");
+        s->waiting_key = false;
+        clear_video_frame(s);
+        s->frame_key = true;
+    } else if (s->have_sequence && sequence != (uint16_t)(s->video_sequence + 1)) {
+        /* A piece of a frame never came: the picture would smear until the
+         * next keyframe, so drop to one now. */
+        s->stats.video_lost++;
+        if (!s->waiting_key) steam_session_request_keyframe(s);
+        s->waiting_key = true;
+        clear_video_frame(s);
+    }
+    s->have_sequence = true;
+    s->video_sequence = sequence;
+    if (s->waiting_key || s->placeholder) return;
+    if (flags & VF_ENCRYPTED) {
+        static const uint8_t zero_iv[16];
+        const int n = steam_cbc_decrypt(s->config.key, s->config.key_size, zero_iv, data, size, s->scratch,
+                                        sizeof(s->scratch));
+        if (n < 0) {
+            s->waiting_key = true;
+            clear_video_frame(s);
+            steam_session_request_keyframe(s);
+            return;
+        }
+        data = s->scratch;
+        size = (size_t)n;
+    }
+    if (last && first > last) goto overflow;
+    VideoPart part = { (uint8_t *)data, size, frame_id, first, last, flags };
+    if (!s->video_part_count && video_part_ready(s, &part)) {
+        if (!append_video_part(s, &part)) goto overflow;
+    } else {
+        if (s->video_part_count == VIDEO_PARTS_MAX || size > FRAME_MAX - s->video_part_bytes ||
+            s->frame_size > FRAME_MAX - s->video_part_bytes - size) goto overflow;
+        part.data = malloc(size ? size : 1);
+        if (!part.data) goto overflow;
+        memcpy(part.data, data, size);
+        unsigned at = s->video_part_count;
+        for (unsigned i = 0; i < s->video_part_count; ++i) {
+            if (s->video_parts[i].frame_id == frame_id && last < s->video_parts[i].first) {
+                at = i;
+                break;
+            }
+        }
+        memmove(s->video_parts + at + 1, s->video_parts + at,
+                (s->video_part_count - at) * sizeof(VideoPart));
+        s->video_parts[at] = part;
+        if (!s->video_part_count) s->video_part_since = steam_now_ms();
+        ++s->video_part_count;
+        s->video_part_bytes += size;
+        if (at + 1 < s->video_part_count && ++s->video_reordered <= 3)
+            diagnostic_log("STEAM", "reordered video slice frame=%u range=%u..%u pending=%u",
+                           frame_id, first, last, s->video_part_count);
+    }
+    /* FRAME_FINISH belongs to the final range in picture order. It cannot
+     * publish a frame until all preceding ranges have been appended. */
+    while (s->video_part_count && video_part_ready(s, &s->video_parts[0])) {
+        VideoPart next = s->video_parts[0];
+        --s->video_part_count;
+        s->video_part_bytes -= next.size;
+        memmove(s->video_parts, s->video_parts + 1, s->video_part_count * sizeof(VideoPart));
+        const bool ok = append_video_part(s, &next);
+        free(next.data);
+        if (!ok) goto overflow;
+    }
+    if (!s->video_part_count) s->video_part_since = 0;
     return;
 overflow:
-    s->frame_size = 0;
+    diagnostic_log("STEAM", "video assembly refused frame=%u range=%u..%u; requesting keyframe", frame_id, first, last);
+    clear_video_frame(s);
     s->waiting_key = true;
     steam_session_request_keyframe(s);
 }
@@ -911,7 +1009,7 @@ static void on_data_message(SteamSession *s, unsigned channel, const uint8_t *da
     if (size <= 13 || data[0] != 1) return;
     const uint16_t frame_id = get16(data + 1);
     if ((int)channel == s->video_channel) {
-        video_frame(s, data + 13, size - 13);
+        video_frame(s, frame_id, data + 13, size - 13);
     } else if ((int)channel == s->audio_channel) {
         s->stats.audio_packets++;
         if (s->cb.audio) s->cb.audio(s->cb.user, data + 13, size - 13, frame_id);
@@ -976,15 +1074,16 @@ static void on_unreliable(SteamSession *s, unsigned channel, const uint8_t *h, c
     }
 }
 
-void steam_session_request_keyframe(SteamSession *s)
+bool steam_session_request_keyframe(SteamSession *s)
 {
-    if (!s || s->video_channel < 0) return;
+    if (!s || s->video_channel < 0) return false;
     const uint64_t now = steam_now_ms();
-    if (now - s->last_keyframe_request_at < 200) return;
+    if (now - s->last_keyframe_request_at < 200) return false;
     s->last_keyframe_request_at = now;
     s->stats.keyframe_requests++;
     const uint8_t body[1] = { 2 };   /* k_EStreamDataLost, empty CStreamDataLostMsg */
     send_unreliable(s, (unsigned)s->video_channel, body, sizeof(body));
+    return true;
 }
 
 /* ---- Discovery channel ------------------------------------------------------- */
@@ -1123,6 +1222,15 @@ void steam_session_tick(SteamSession *s)
         s->stats.resends++;
     }
     if (s->state == STEAM_SESSION_STREAMING) {
+        if (s->video_part_count && now - s->video_part_since >= VIDEO_PART_TIMEOUT_MS) {
+            diagnostic_log("STEAM", "video slice timeout expected=%u pending=%u; requesting keyframe",
+                           s->video_next_slice, s->video_part_count);
+            clear_video_frame(s);
+            s->waiting_key = true;
+            ++s->stats.video_lost;
+        }
+        if (s->waiting_key && !s->placeholder && now - s->last_keyframe_request_at >= 200)
+            steam_session_request_keyframe(s);
         if (now - s->last_keepalive_at >= 10000) send_keepalive(s);
         if (s->hid_started && now - s->hid_sent_at >= 8) hid_send_report(s, false);
     }
@@ -1221,5 +1329,6 @@ void steam_session_close(SteamSession *s)
                    s->stats.video_frames, s->stats.video_keyframes, s->stats.video_lost, s->stats.keyframe_requests,
                    s->stats.audio_packets, s->stats.resends, s->stats.packets_bad);
     steam_udp_close(s->sock);
+    clear_video_frame(s);
     free(s);
 }

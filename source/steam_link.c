@@ -724,9 +724,9 @@ bool steam_link_signal_start(NvstSignal *s, const GfnClient *client)
     s->steam_key_size = (uint8_t)g.grant.session_key_size;
     s->steam_id = g.host.steamid;
     s->steam_fps = stream_profile_fps();
-    /* Steam starts at the rate asked and adapts; the 3DS Wi-Fi does a few
-     * Mbit/s at best. */
-    s->steam_kbps = stream_profile_weak() ? 1500 : s->steam_fps >= 60 ? 4000 : 3000;
+    /* Respect the selected picture rate. A 3 Mbps Steam stream lost video
+     * frames and stalled while audio and input continued (report PZTSJC). */
+    s->steam_kbps = stream_profile_initial_bitrate();
     /* The transport starts once an "offer" is there. */
     s->offer_sdp = strdup("steam");
     s->offer_size = 5;
