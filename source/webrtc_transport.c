@@ -492,8 +492,9 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     const unsigned decode_height = (source_height + 15u) & ~15u;
     /* Xbox starts at 1280x720. Fortnite follows our screen size and sends
      * 800x480 about 3 s in; every other game stays at 720p (1.0.1 export:
-     * a black picture with sound). Give the switch 4 s, then decode the 720p
-     * stream, shrunk by MVD like 960x544. */
+     * a black picture with sound). Decoding that 720p, shrunk by MVD, crashed
+     * the console in 1.0.2, so give the switch 6 s and then say what happened
+     * instead of playing sound over a black screen. */
     if (t->xcloud) {
         const uint64_t now = osGetTime();
         if (decode_width <= 960 && decode_height <= 544) {
@@ -504,7 +505,14 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
             return;
         } else {
             if (!t->xcloud_hd_since) t->xcloud_hd_since = now;
-            if (now - t->xcloud_hd_since < 4000) return;
+            if (now - t->xcloud_hd_since >= 6000 && !t->no_reconnect) {
+                diagnostic_flag("xcloud-720p", "the game stayed at %ux%u", source_width, source_height);
+                snprintf(t->status, sizeof(t->status),
+                         "This game only streams in 720p, which the 3DS can't show yet. Fortnite works.");
+                t->no_reconnect = true;
+                t->state = WEBRTC_FAILED;
+            }
+            return;
         }
     }
     if (decode_width > 960 || decode_height > 544) {
@@ -588,19 +596,6 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     if (t->steam) mvd_video_set_visible(source_width, source_height);
     if (!mvd_video_submit(packet->data, packet->size))
         snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
-    /* An Xbox game at 720p the decoder won't take: say so, rather than play
-     * its sound over a black screen until the player gives up. */
-    if (t->xcloud && (decode_width > 960 || decode_height > 544) && !t->no_reconnect) {
-        const bool refused = mvd_video_failed();
-        if (refused || (!mvd_video_decoded_frames() && osGetTime() - t->decoder_started_at > 10000)) {
-            diagnostic_flag("xcloud-720p", "%s (%s)", refused ? "decoder refused 720p" : "no 720p frame in 10 s",
-                            mvd_video_status());
-            snprintf(t->status, sizeof(t->status),
-                     "This game streams in 720p, which the 3DS couldn't decode. Fortnite works.");
-            t->no_reconnect = true;
-            t->state = WEBRTC_FAILED;
-        }
-    }
 }
 
 static void on_audio(const PeerAudioPacket *packet, void *userdata)
