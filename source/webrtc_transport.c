@@ -493,22 +493,27 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     /* Xbox starts at 1280x720. Fortnite follows our screen size and sends
      * 800x480 about 3 s in; every other game stays at 720p (1.0.1 export:
      * a black picture with sound). Decoding that 720p, shrunk by MVD, crashed
-     * the console in 1.0.2, so give the switch 6 s and then say what happened
-     * instead of playing sound over a black screen. */
+     * the console in 1.0.2, so wait for the switch and then say what happened
+     * instead of playing sound over a black screen. Fortnite switches after
+     * ~3 s, but sometimes 6 or 11 (1.0.3 export: a 6 s limit cut it off), so
+     * 15 s. Once a picture has shown, a bigger stretch only holds it. Some
+     * games send even more (Dragon Ball Xenoverse 2: 2560x1440). */
     if (t->xcloud) {
         const uint64_t now = osGetTime();
         if (decode_width <= 960 && decode_height <= 544) {
             t->xcloud_hd_since = 0;
-        } else if (decode_width > 1280 || decode_height > 720) {
-            snprintf(t->status, sizeof(t->status), "Xbox sent %ux%u video, more than the 3DS can decode",
-                     source_width, source_height);
-            return;
         } else {
             if (!t->xcloud_hd_since) t->xcloud_hd_since = now;
-            if (now - t->xcloud_hd_since >= 6000 && !t->no_reconnect) {
+            const bool shown = mvd_video_active() && mvd_video_decoded_frames();
+            if (now - t->xcloud_hd_since >= 15000 && !shown && !t->no_reconnect) {
                 diagnostic_flag("xcloud-720p", "the game stayed at %ux%u", source_width, source_height);
-                snprintf(t->status, sizeof(t->status),
-                         "This game only streams in 720p, which the 3DS can't show yet. Fortnite works.");
+                if (decode_width <= 1280 && decode_height <= 720)
+                    snprintf(t->status, sizeof(t->status),
+                             "This game only streams in 720p, which the 3DS can't show yet. Fortnite works.");
+                else
+                    snprintf(t->status, sizeof(t->status),
+                             "This game streams at %ux%u, which the 3DS can't show. Fortnite works.",
+                             source_width, source_height);
                 t->no_reconnect = true;
                 t->state = WEBRTC_FAILED;
             }
