@@ -490,10 +490,23 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     const unsigned source_height = t->video_source_height ? t->video_source_height :
                                    stream_profile_height();
     const unsigned decode_height = (source_height + 15u) & ~15u;
-    /* Xbox starts at its default 1280x720 until our screen size reaches it
-     * (~3 s); MVD refused that stream (build 124: decoder-fatal), and the
-     * 800x480 one follows with its own keyframe. */
-    if (t->xcloud && (decode_width > 960 || decode_height > 544)) return;
+    /* Xbox starts at 1280x720. Fortnite follows our screen size and sends
+     * 800x480 about 3 s in; every other game stays at 720p (1.0.1 export:
+     * a black picture with sound). Give the switch 4 s, then decode the 720p
+     * stream, shrunk by MVD like 960x544. */
+    if (t->xcloud) {
+        const uint64_t now = osGetTime();
+        if (decode_width <= 960 && decode_height <= 544) {
+            t->xcloud_hd_since = 0;
+        } else if (decode_width > 1280 || decode_height > 720) {
+            snprintf(t->status, sizeof(t->status), "Xbox sent %ux%u video, more than the 3DS can decode",
+                     source_width, source_height);
+            return;
+        } else {
+            if (!t->xcloud_hd_since) t->xcloud_hd_since = now;
+            if (now - t->xcloud_hd_since < 4000) return;
+        }
+    }
     if (decode_width > 960 || decode_height > 544) {
         if (!t->video_sps_signature || t->video_source_refs > 6) {
             snprintf(t->status, sizeof(t->status),
@@ -534,9 +547,17 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     }
     if (!mvd_video_active()) {
         const uint64_t now = osGetTime();
+        /* A new decoder starts at a keyframe. Xbox's first frame is a P-frame
+         * sent before its SPS: MVD answered D96170CA and took nothing more
+         * (1.0.1 export: ~200 decoder-fatal flags, nearly all this). */
+        if (!has_idr) {
+            if (now - t->last_keyframe_request_at >= 1000) request_video_keyframe(t, "decoder_start");
+            return;
+        }
         if (t->decoder_failed_width == decode_width && t->decoder_failed_height == decode_height &&
             now - t->decoder_failed_at < 2000)
             return;
+        mvd_video_set_shrink_hd(t->xcloud);
         if (!mvd_video_init(decode_width, decode_height)) {
             t->decoder_failed_width = decode_width;
             t->decoder_failed_height = decode_height;
@@ -558,6 +579,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
         }
         t->decoder_failed_width = t->decoder_failed_height = 0;
         t->decoder_init_failures = 0;
+        t->decoder_started_at = now;
         if (t->steam) t->steam_decoder_keyframe_pending = true;
     }
     t->decoder_width = decode_width;
@@ -566,6 +588,19 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     if (t->steam) mvd_video_set_visible(source_width, source_height);
     if (!mvd_video_submit(packet->data, packet->size))
         snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
+    /* An Xbox game at 720p the decoder won't take: say so, rather than play
+     * its sound over a black screen until the player gives up. */
+    if (t->xcloud && (decode_width > 960 || decode_height > 544) && !t->no_reconnect) {
+        const bool refused = mvd_video_failed();
+        if (refused || (!mvd_video_decoded_frames() && osGetTime() - t->decoder_started_at > 10000)) {
+            diagnostic_flag("xcloud-720p", "%s (%s)", refused ? "decoder refused 720p" : "no 720p frame in 10 s",
+                            mvd_video_status());
+            snprintf(t->status, sizeof(t->status),
+                     "This game streams in 720p, which the 3DS couldn't decode. Fortnite works.");
+            t->no_reconnect = true;
+            t->state = WEBRTC_FAILED;
+        }
+    }
 }
 
 static void on_audio(const PeerAudioPacket *packet, void *userdata)

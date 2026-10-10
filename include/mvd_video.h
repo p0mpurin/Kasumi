@@ -10,6 +10,12 @@
 #define MVD_VIDEO_WIDE_HEIGHT 480
 
 bool mvd_video_init(unsigned input_width, unsigned input_height);
+/* Decode 1280x720 like 960x544: whole access units, shrunk by MVD to the
+ * top screen (Xbox). Off, 720p takes the older NAL-by-NAL path. Set before
+ * mvd_video_init. */
+void mvd_video_set_shrink_hd(bool on);
+/* The decoder refused a frame and stopped taking any. */
+bool mvd_video_failed(void);
 /* True while decoding for the 800-column wide screen via the GPU. */
 bool mvd_video_wide(void);
 /* The picture inside the wide surface: 800x480, or smaller for a stream

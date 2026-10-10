@@ -52,6 +52,9 @@ typedef struct {
     unsigned pending_width, pending_height;
     uint64_t pending_since;
     unsigned decoder_rebuilds;
+    /* Xbox: when a 1280x720 stream began (most games never switch to our
+     * 800x480), and when the decoder was set up for it. */
+    uint64_t xcloud_hd_since, decoder_started_at;
     unsigned keyframe_requests;
     unsigned audio_packets;
     unsigned audio_decoded;

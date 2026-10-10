@@ -4105,8 +4105,10 @@ int main(int argc, char **argv)
 
         g_app.view = derive_view();
         g_app.keyboard_open = g_transport.keyboard_mode;
+        /* The game's sound can start before its picture: no menu music over it. */
+        const bool game_audio = g_transport.state == WEBRTC_CONNECTED && g_transport.audio_decoded > 0;
         menu_audio_set((MenuMusicMode)g_app.settings.music_mode,
-                       g_app.view == VIEW_STREAM ? MENU_SCENE_GAME
+                       g_app.view == VIEW_STREAM || game_audio ? MENU_SCENE_GAME
                        : g_app.view == VIEW_SESSION ? MENU_SCENE_WAITING : MENU_SCENE_MENUS);
         g_app.status = current_status();
         g_app.toast = g_notice[0] && osGetTime() < g_notice_until ? g_notice : NULL;

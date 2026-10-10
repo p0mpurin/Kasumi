@@ -29,6 +29,8 @@ static u64 g_last_zoom_pan_at;
 static bool g_first_process_done;
 static bool g_first_render_done;
 static bool g_process_failed;
+/* 720p through the NAL-by-NAL path (g_hd), or shrunk like 540p. */
+static bool g_hd, g_shrink_hd;
 static bool g_first_sps_logged;
 static unsigned g_sps_level_rewrites;
 static unsigned g_hd_nal_logs;
@@ -152,8 +154,11 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     /* At 720p, render into a full-size linear surface before scaling to the
      * top screen.  Moonlight's MVD path says the decoder cannot downsample;
      * Video_player_for_3DS also configures its output at source dimensions.
-     * Keep the proven direct 400x240 path for 540p. */
-    const bool hd = input_width > 960 || input_height > 544;
+     * Keep the proven direct 400x240 path for 540p. MVD does shrink 960x544
+     * to 800x480, though, so Xbox's 720p (Main, one reference) goes that way:
+     * the NAL-by-NAL path never got past its first IDR (build 124). */
+    const bool hd = (input_width > 960 || input_height > 544) && !g_shrink_hd;
+    g_hd = hd;
     g_wide = stream_profile_wide() && !hd;
     if (hd) {
         g_output_width = HD_OUTPUT_WIDTH;
@@ -747,7 +752,7 @@ static Result process_720p_nals(const unsigned char *data, size_t size, bool *ha
 static bool decode_access_unit(const unsigned char *annex_b, unsigned char *input,
                                size_t size, u16 *output)
 {
-    const bool hd = g_input_width > 960 || g_input_height > 544;
+    const bool hd = g_hd;
     if (!g_first_process_done) {
         diagnostic_log("MVD", "first-process-enter bytes=%lu input=%ux%u",
                        (unsigned long)size, g_input_width, g_input_height);
@@ -963,8 +968,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         diagnostic_log("MVD", "keyframe after recovering without one: picture clean again");
     }
     if (!g_wide) {
-        const bool hd = g_input_width > 960 || g_input_height > 544;
-        if (!hd) {
+        if (!g_hd) {
             memcpy(g_input, annex_b, size);
             GSPGPU_FlushDataCache(g_input, size);
         }
@@ -1061,6 +1065,8 @@ void mvd_video_close(void)
 }
 
 bool mvd_video_active(void) { return g_active; }
+void mvd_video_set_shrink_hd(bool on) { g_shrink_hd = on; }
+bool mvd_video_failed(void) { return g_active && g_process_failed; }
 unsigned mvd_video_decoded_frames(void) { return g_frames; }
 unsigned mvd_video_pending_units(void) { return g_queue_count; }
 unsigned mvd_video_frames_lost(void) { return g_frames_lost; }
