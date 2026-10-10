@@ -36,6 +36,7 @@ void settings_defaults(AppSettings *settings)
     settings->touch_camera = 1;
     settings->touch_camera_shown = false;
     settings->touch_stick_size = 1;
+    settings->slider = 0;
     settings->theme = UI_THEME_AI; /* indigo: the default look since beta.30 */
     settings->volume = 5;
     settings->mute_in_menus = false;
@@ -115,6 +116,7 @@ bool settings_load(AppSettings *settings)
     settings->touch_camera = (unsigned)read_int(root, "touch_camera", (int)settings->touch_camera, 3);
     settings->touch_camera_shown = read_bool(root, "touch_camera_shown", settings->touch_camera_shown);
     settings->touch_stick_size = (unsigned)read_int(root, "touch_stick_size", (int)settings->touch_stick_size, 3);
+    settings->slider = (unsigned)read_int(root, "slider", (int)settings->slider, (int)gfn_slider_choice_count());
     settings->theme = (unsigned)read_int(root, "theme", (int)settings->theme, UI_THEME_COUNT);
     settings->volume = (unsigned)read_int(root, "volume", (int)settings->volume, 6);
     settings->mute_in_menus = read_bool(root, "mute_in_menus", settings->mute_in_menus);
@@ -189,6 +191,7 @@ static json_t *settings_json(const AppSettings *settings)
     json_object_set_new(root, "fps60", json_boolean(settings->fps60));
     json_object_set_new(root, "touch_camera_shown", json_boolean(settings->touch_camera_shown));
     json_object_set_new(root, "touch_stick_size", json_integer((json_int_t)settings->touch_stick_size));
+    json_object_set_new(root, "slider", json_integer((json_int_t)settings->slider));
     json_object_set_new(root, "video_sharpen", json_integer((json_int_t)settings->video_sharpen));
     json_object_set_new(root, "video_color", json_integer((json_int_t)settings->video_color));
     json_object_set_new(root, "xbox_names", json_boolean(settings->xbox_names));
@@ -258,6 +261,7 @@ void settings_apply_input(const AppSettings *settings)
     };
     gfn_input_configure(&config);
     gfn_input_set_xbox_names(settings->xbox_names);
+    gfn_input_set_slider_output(gfn_slider_choice_output(settings->slider));
     /* Every game's own map, if there is one (a game's own map or layout
      * replaces it at launch, main.c). */
     if (settings->has_map) gfn_input_set_custom_map(&settings->map);

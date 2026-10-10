@@ -238,6 +238,7 @@ static const SettingEntry SETTING_ENTRIES[] = {
     { SETTING_CAMERA_INVERT, NULL, NULL },
     { SETTING_TOUCH_CAMERA, NULL, NULL },
     { SETTING_TOUCH_STICK_SIZE, NULL, NULL },
+    { SETTING_SLIDER, NULL, NULL },
     { SETTING_GYRO, NULL, NULL },
     { SETTING_GYRO_SPEED, NULL, NULL },
     { SETTING_POINTER, NULL, NULL },
@@ -356,6 +357,7 @@ static const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_FILTER] = "Server sharpening", [SETTING_GYRO] = "Gyro aim",
     [SETTING_VIDEO_SHARPEN] = "Sharpness", [SETTING_VIDEO_COLOR] = "Colour",
     [SETTING_TOUCH_CAMERA] = "Touch camera", [SETTING_TOUCH_STICK_SIZE] = "Touch C-stick size",
+    [SETTING_SLIDER] = "3D slider",
     [SETTING_FRAME_RATE] = "Frame rate",
     [SETTING_GYRO_SPEED] = "Gyro speed", [SETTING_ACCOUNT] = "Account",
     [SETTING_CAMERA_SPEED] = "Camera stick speed", [SETTING_CAMERA_INVERT] = "Invert camera",
@@ -380,6 +382,7 @@ static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_FILTER] = "鋭化", [SETTING_GYRO] = "ジャイロ",
     [SETTING_VIDEO_SHARPEN] = "鮮明", [SETTING_VIDEO_COLOR] = "色彩",
     [SETTING_TOUCH_CAMERA] = "タッチ視点", [SETTING_TOUCH_STICK_SIZE] = "大きさ",
+    [SETTING_SLIDER] = "3D",
     [SETTING_FRAME_RATE] = "フレーム",
     [SETTING_GYRO_SPEED] = "感度", [SETTING_ACCOUNT] = "アカウント",
     [SETTING_CAMERA_SPEED] = "カメラ速度", [SETTING_CAMERA_INVERT] = "カメラ反転",
@@ -479,6 +482,7 @@ static unsigned setting_option(const App *app, int setting, unsigned *count)
     case SETTING_CAMERA_INVERT: *count = 3; return s->camera_invert;
     case SETTING_TOUCH_CAMERA: *count = 3; return s->touch_camera;
     case SETTING_TOUCH_STICK_SIZE: *count = 3; return s->touch_stick_size;
+    case SETTING_SLIDER: *count = gfn_slider_choice_count(); return s->slider;
     case SETTING_FRAME_RATE: *count = 2; return s->fps60 ? 1 : 0;
     case SETTING_THEME: *count = UI_THEME_COUNT; return s->theme;
     case SETTING_VOLUME: *count = 6; return s->volume;
@@ -537,6 +541,8 @@ static const char *setting_value(const App *app, int setting)
     case SETTING_TOUCH_CAMERA: return s->touch_camera == 1 ? "Stick" : s->touch_camera == 2 ? "Trackpad" : "Off";
     case SETTING_TOUCH_STICK_SIZE:
         return s->touch_stick_size == 0 ? "Small" : s->touch_stick_size == 2 ? "Large" : "Medium";
+    case SETTING_SLIDER:
+        return s->slider == 0 ? "Off" : s->slider == 1 ? "Zoom" : gfn_output_short_name(gfn_slider_choice_output(s->slider));
     case SETTING_FRAME_RATE: return s->fps60 ? "60 fps (beta)" : "30 fps";
     case SETTING_THEME: return ui_theme_name((UiTheme)s->theme);
     case SETTING_VOLUME: {
@@ -682,6 +688,14 @@ static const char *setting_description(const App *app, int setting)
         return s->touch_stick_size == 0 ? "A short push turns at full speed: quick, for small thumbs or fast games."
              : s->touch_stick_size == 2 ? "A long push for full speed: finer control when aiming slowly."
                                         : "How far you push the touch C-stick for full speed. Medium suits most games.";
+    case SETTING_SLIDER: {
+        static char text[140];
+        if (s->slider == 0) return "The 3D slider does nothing in games. Slide it to choose zoom or a button.";
+        if (s->slider == 1) return "In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.";
+        snprintf(text, sizeof(text), "In a game, the 3D slider past halfway holds %s until you slide it back down.",
+                 gfn_output_name(gfn_slider_choice_output(s->slider)));
+        return text;
+    }
     case SETTING_TOUCH_CAMERA:
         return s->touch_camera == 0
             ? "No C-STICK button in games: the lower screen keeps its stats and buttons."
@@ -856,6 +870,11 @@ void screens_setting_change(App *app, int setting, int direction)
     case SETTING_CAMERA_INVERT: s->camera_invert = (s->camera_invert + 3 + step) % 3; break;
     case SETTING_TOUCH_CAMERA: s->touch_camera = (s->touch_camera + 3 + step) % 3; break;
     case SETTING_TOUCH_STICK_SIZE: s->touch_stick_size = (s->touch_stick_size + 3 + step) % 3; break;
+    case SETTING_SLIDER: {
+        const unsigned n = gfn_slider_choice_count();
+        s->slider = (s->slider + n + step) % n;
+        break;
+    }
     case SETTING_FRAME_RATE: s->fps60 = !s->fps60; break;
     case SETTING_THEME: s->theme = (s->theme + UI_THEME_COUNT + step) % UI_THEME_COUNT; break;
     case SETTING_VOLUME: s->volume = (s->volume + 6 + step) % 6; break;
@@ -1191,10 +1210,11 @@ static void draw_service_card(const App *app, int s, UiRect r, float alpha, floa
         /* A gold tag at 15 px (sharp), on the full-size card only: scaled
          * down on the side cards it would only blur. */
         if (s == SERVICE_XBOX && k > 0.94f) {
-            const float bw = floorf(ui_text_width("BETA", 15) + 12.0f), bh = 19.0f;
+            const char *tag = app->xbox_paused ? "MAINTENANCE" : "BETA";
+            const float bw = floorf(ui_text_width(tag, 15) + 12.0f), bh = 19.0f;
             const float bx = floorf(r.x + r.w - pad - bw), by = floorf(r.y + pad);
-            ui_rect(bx, by, bw, bh, ui_with_alpha(UI_KIN, (u8)(235.0f * da)));
-            ui_text(bx + bw / 2, by + 2, 15, ui_with_alpha(UI_BG, a8), UI_ALIGN_CENTER, "BETA");
+            ui_rect(bx, by, bw, bh, ui_with_alpha(app->xbox_paused ? UI_TEXT_DIM : UI_KIN, (u8)(235.0f * da)));
+            ui_text(bx + bw / 2, by + 2, 15, ui_with_alpha(UI_BG, a8), UI_ALIGN_CENTER, tag);
         }
     }
     const bool lit = focus > 0.5f;
@@ -3265,15 +3285,19 @@ static void draw_hub_bottom(const App *app)
         ui_circle(pr.x + 64 + ox, pr.y + 40, 2.5f, ui_with_alpha(ready ? light : UI_TEXT_FAINT, a));
         ui_text_fit(pr.x + 71 + ox, pr.y + 33, 11, ui_with_alpha(ready ? UI_TEXT : UI_TEXT_DIM, a), UI_ALIGN_LEFT,
                     150, app->service_status[s]);
+        const bool paused = s == SERVICE_XBOX && app->xbox_paused;
         ui_text_wrap(pr.x + 12 + ox, pr.y + 58, 11, ui_with_alpha(UI_TEXT_DIM, a), UI_ALIGN_LEFT, pr.w - 24, 2, 13,
-                     SERVICE_INFO[s].about);
+                     paused ? "Most Xbox games stream at a size the 3DS can't show yet. Back when they do."
+                            : SERVICE_INFO[s].about);
         /* "A Enter" at 15 px, the size the font stays sharp at. */
-        const char *verb = ready ? "Enter" : "Set up";
-        const float verb_w = ui_text_width(verb, 15);
-        const float vx = floorf(pr.x + pr.w - 12 - verb_w);
-        ui_text(vx, pr.y + 12, 15, ui_with_alpha(light, (u8)(255.0f * panel_in)), UI_ALIGN_LEFT, verb);
-        ui_circle(vx - 12, pr.y + 20, 8.5f, ui_with_alpha(light, (u8)(255.0f * panel_in)));
-        ui_text(vx - 12, pr.y + 12, 15, UI_BG, UI_ALIGN_CENTER, "A");
+        const char *verb = paused ? NULL : ready ? "Enter" : "Set up";
+        if (verb) {
+            const float verb_w = ui_text_width(verb, 15);
+            const float vx = floorf(pr.x + pr.w - 12 - verb_w);
+            ui_text(vx, pr.y + 12, 15, ui_with_alpha(light, (u8)(255.0f * panel_in)), UI_ALIGN_LEFT, verb);
+            ui_circle(vx - 12, pr.y + 20, 8.5f, ui_with_alpha(light, (u8)(255.0f * panel_in)));
+            ui_text(vx - 12, pr.y + 12, 15, UI_BG, UI_ALIGN_CENTER, "A");
+        }
     }
 
     /* Every service as a tile: tap one to go straight in. */

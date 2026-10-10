@@ -82,6 +82,21 @@ const char *gfn_bind_mode_name(unsigned mode)
     return mode < GFN_BIND_MODE_COUNT ? names[mode] : "";
 }
 void gfn_input_set_xbox_names(bool xbox) { g_xbox_names = xbox; }
+
+static const unsigned char SLIDER_OUTPUTS[] = {
+    GFN_OUT_L3, GFN_OUT_R3, GFN_OUT_PS, GFN_OUT_SHARE, GFN_OUT_OPTIONS, GFN_OUT_L1, GFN_OUT_R1,
+    GFN_OUT_L2, GFN_OUT_R2, GFN_OUT_CROSS, GFN_OUT_CIRCLE, GFN_OUT_SQUARE, GFN_OUT_TRIANGLE,
+};
+static unsigned g_slider_output;
+
+unsigned gfn_slider_choice_count(void) { return 2 + sizeof(SLIDER_OUTPUTS); }
+
+unsigned gfn_slider_choice_output(unsigned choice)
+{
+    return choice >= 2 && choice - 2 < sizeof(SLIDER_OUTPUTS) ? SLIDER_OUTPUTS[choice - 2] : GFN_OUT_NONE;
+}
+
+void gfn_input_set_slider_output(unsigned output) { g_slider_output = output < GFN_OUTPUT_COUNT ? output : GFN_OUT_NONE; }
 bool gfn_input_xbox_names(void) { return g_xbox_names; }
 
 void gfn_input_default_map(GfnButtonLayout layout, bool swap, GfnButtonMap *map)
@@ -350,6 +365,9 @@ void gfn_input_read_3ds(GfnGamepadState *state)
         if (held & left_trigger) state->left_trigger = 255;
         if (held & right_trigger) state->right_trigger = 255;
     }
+    /* The 3D slider as a button: held while it is past halfway (no slider
+     * on a 2DS: it reads 0, so nothing is pressed). */
+    if (g_slider_output && osGet3DSliderState() > 0.5f) press_output(state, g_slider_output, &sticks);
     circlePosition circle;
     circlePosition cstick;
     hidCircleRead(&circle);

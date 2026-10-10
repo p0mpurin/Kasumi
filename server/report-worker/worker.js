@@ -249,10 +249,23 @@ async function view(url, env, code, wantDump) {
   return text(lines.join("\n"));
 }
 
+// Every stored report. One KV list call stops at 1000 keys, in code order,
+// so past 1000 reports the ones whose codes sort late (S..Z) never showed up
+// in the dashboard (report XG8Z77, 2026-10-10).
+async function listReportKeys(env) {
+  const keys = [];
+  let cursor;
+  do {
+    const page = await env.REPORTS.list({ prefix: "r:", limit: 1000, cursor });
+    keys.push(...page.keys);
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return keys;
+}
+
 async function list(url, env) {
   if (!authorised(url, env)) return text("Not authorised", 401);
-  const result = await env.REPORTS.list({ prefix: "r:", limit: 1000 });
-  const rows = result.keys
+  const rows = (await listReportKeys(env))
     .map((k) => ({ code: k.name.slice(2), ...(k.metadata || {}) }))
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const key = encodeURIComponent(url.searchParams.get("key"));
@@ -545,8 +558,7 @@ async function apiStats(url, env) {
 
 async function apiReports(url, env) {
   if (!authorised(url, env)) return json({ error: "not authorised" }, 401);
-  const result = await env.REPORTS.list({ prefix: "r:", limit: 1000 });
-  const rows = result.keys
+  const rows = (await listReportKeys(env))
     .map((k) => ({ code: k.name.slice(2), ...(k.metadata || {}) }))
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   return json({ rows });

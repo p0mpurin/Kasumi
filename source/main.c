@@ -148,12 +148,18 @@ static bool init_services(char *error, size_t error_size)
 
 /* ---- Rendering ----------------------------------------------------------- */
 
+/* Frames put on the screen. The FPS readout counted decoded frames, so a
+ * picture held back by the pacer or a stalled loop still read "30" while it
+ * looked like 5 (player report, 2026-10-10). */
+static unsigned g_shown_frames;
+
 static void present_video(void)
 {
     static unsigned last_frame;
     const unsigned frame = mvd_video_decoded_frames();
     if (frame == last_frame) return;
     last_frame = frame;
+    ++g_shown_frames;
     /* MVD frames are copied into the single-buffered top framebuffer by the
      * CPU; flush them to memory and re-present that buffer. */
     u16 width = 0, height = 0;
@@ -328,6 +334,7 @@ static void render_wide_video(bool draw_bottom)
     }
     ui_frame_end();
     if (!frame) return;
+    ++g_shown_frames;
     last_present_vblank = vblank;
     const u64 ticks = svcGetSystemTick() - start;
     present_ticks += ticks;
@@ -502,7 +509,7 @@ static void refresh_device_status(void)
     g_app.charging = charging != 0;
 
     static unsigned last_frames;
-    const unsigned frames = mvd_video_decoded_frames();
+    const unsigned frames = g_shown_frames;
     g_app.fps = frames >= last_frames ? frames - last_frames : 0;
     last_frames = frames;
 
@@ -719,6 +726,32 @@ static void retry_session(void)
 
 static void apply_session_input(void);
 static void open_mapping(const GamePrefs *prefs);
+
+/* The 3D slider as zoom (Settings > Controls > 3D slider, a player's idea):
+ * down is the whole picture, up zooms in three steps around the current
+ * zoom centre. A step changes only 0.03 past its edge, so a slider resting
+ * on an edge does not flicker between two. */
+static void slider_zoom_tick(bool streaming)
+{
+    static int level = -1;
+    if (!streaming || g_app.settings.slider != 1 || !mvd_video_active()) {
+        level = -1;
+        return;
+    }
+    static const float edges[3] = { 0.08f, 0.40f, 0.75f };
+    const float v = osGet3DSliderState();
+    int next = 0;
+    while (next < 3 && v >= edges[next]) ++next;
+    if (next == level) return;
+    if (level >= 0) {
+        const float edge = edges[next > level ? next - 1 : next];
+        if (v > edge - 0.03f && v < edge + 0.03f) return;
+    }
+    level = next;
+    unsigned x = 50, y = 50;
+    mvd_video_zoom_position(&x, &y);
+    mvd_video_set_zoom((unsigned)level, x, y);
+}
 
 static void save_settings(void)
 {
@@ -1453,7 +1486,7 @@ static void refresh_service_status(void)
     snprintf(g_app.service_status[SERVICE_GFN], sizeof(g_app.service_status[0]), "%s",
              ready[SERVICE_GFN] ? "Signed in" : "Not signed in");
     snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), "%s",
-             ready[SERVICE_XBOX] ? "Signed in" : "Not signed in");
+             g_app.xbox_paused ? "Paused for maintenance" : ready[SERVICE_XBOX] ? "Signed in" : "Not signed in");
     if (paired) snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "PC: %.40s", pc);
     else snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "No PC paired");
 }
@@ -1472,6 +1505,8 @@ static void refresh_current_status(void)
     else
         snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "%s",
                  ready ? "Signed in" : "Not signed in");
+    if (g_app.xbox_paused)
+        snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), "Paused for maintenance");
 }
 
 static void open_hub(void)
@@ -1489,6 +1524,10 @@ static int g_entering = -1;
 static void enter_service(int service)
 {
     if (service < 0 || service >= SERVICE_COUNT) return;
+    if (service == SERVICE_XBOX && g_app.xbox_paused) {
+        show_notice("Xbox Cloud Gaming is paused for maintenance");
+        return;
+    }
     g_app.hub_index = service;
     g_entering = service;
     screens_hub_zoom(service, true);
@@ -1514,6 +1553,7 @@ static void go_home(void)
 static const GfnGame *hub_continue_game(void)
 {
     if (g_app.hub_index != (int)current_service() || !gfn_has_session(&g_client)) return NULL;
+    if (current_service() == SERVICE_XBOX && g_app.xbox_paused) return NULL;
     if (g_app.continue_index < 0 || (size_t)g_app.continue_index >= g_client.game_count) return NULL;
     return &g_client.games[g_app.continue_index];
 }
@@ -2721,8 +2761,13 @@ static void track_session(void)
     g_app.waiting_wifi = false;
     if (reconnect_at && now - reconnect_at < 2500 && g_app.reconnect_attempt) return;
     if (g_app.reconnect_attempt == 3) {
-        /* Three tries failed: hand the choice back to the player. */
-        if (now - reconnect_at >= 8000) {
+        /* Three tries failed: hand the choice back to the player. Not while
+         * the third is still waiting for NVIDIA's offer: under a new peer
+         * name that takes ~20 s (up to 22 s allowed), and 8 s gave up on
+         * reconnects that were about to work (report 8ERH7K). */
+        const bool still_trying = nvst_signal_active(&g_signal) && g_signal.state != NVST_SIGNAL_ERROR &&
+                                  now - reconnect_at < 25000;
+        if (now - reconnect_at >= 8000 && !still_trying) {
             g_app.reconnect_attempt = 4;
             log_session_end("reconnect-failed");
             queue_auto_report("reconnect-failed");
@@ -3124,7 +3169,7 @@ static void watch_for_bugs(void)
     if (!memory_flagged && now - memory_checked > 10000) {
         memory_checked = now;
         const u32 free_bytes = linearSpaceFree();
-        if (free_bytes < 1536 * 1024) {
+        if (free_bytes < 1024 * 1024) {
             memory_flagged = true;
             diagnostic_flag("low-memory", "linear free %lu KiB (view %d)", (unsigned long)(free_bytes / 1024),
                             (int)g_app.view);
@@ -3893,6 +3938,9 @@ int main(int argc, char **argv)
     }
     nvst_signal_init(&g_signal);
     webrtc_transport_init(&g_transport);
+    /* Xbox is paused: a 3DS left on it opens GeForce NOW instead. */
+    g_app.xbox_paused = !xcloud_available();
+    if (g_app.xbox_paused) g_app.settings.xbox_service = false;
     steam_link_select(g_app.settings.steam_service);
     xcloud_select(g_app.settings.xbox_service && !g_app.settings.steam_service);
     gfn_client_init(&g_client);
@@ -4078,6 +4126,7 @@ int main(int argc, char **argv)
         look_tick(touch_down, g_app.touching, touch);
         g_app.touch_buttons = streaming ? stream_touch_buttons(touch_down, touch) : 0;
         gfn_input_set_virtual_buttons(g_app.touch_buttons | (g_app.look_r3 ? GFN_PAD_RIGHT_THUMB : 0));
+        slider_zoom_tick(streaming);
         mic_tick(streaming);
         /* The phone keyboard lives as long as the game. */
         if (phone_keyboard_running()) {

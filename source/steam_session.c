@@ -855,7 +855,11 @@ static void on_ack(SteamSession *s, unsigned channel, uint16_t id, const uint8_t
     for (unsigned i = 0; i < PENDING_MAX; ++i) {
         Pending *p = &s->pending[i];
         if (!p->used || p->channel != channel || (uint16_t)(id - p->id) >= 0x8000) continue;
-        if (p->id == id && !p->retries) {
+        /* A NACK zeroes sent_at to resend at the next tick; an ACK in
+         * between timed "now - 0", the console's uptime (sessions logged
+         * pings of 4,777,061 ms), and the resend timeout built on the round
+         * trip grew so long that lost packets were never sent again. */
+        if (p->id == id && !p->retries && p->sent_at && now >= p->sent_at && now - p->sent_at < 5000) {
             const int sample = (int)(now - p->sent_at);
             s->stats.rtt_ms = s->stats.rtt_ms ? (s->stats.rtt_ms * 7 + sample) / 8 : sample;
         }
@@ -1208,12 +1212,22 @@ void steam_session_tick(SteamSession *s)
         return;
     }
     /* Resend what the PC hasn't acknowledged: quickly at first, backing off. */
-    const unsigned base = s->stats.rtt_ms > 0 ? (unsigned)s->stats.rtt_ms * 2 + 30 : 80;
+    const unsigned base = s->stats.rtt_ms > 0 && s->stats.rtt_ms < 1000 ? (unsigned)s->stats.rtt_ms * 2 + 30 : 80;
     for (unsigned i = 0; i < PENDING_MAX; ++i) {
         Pending *p = &s->pending[i];
         if (!p->used) continue;
         const unsigned timeout = base << (p->retries < 4 ? p->retries : 4);
         if (now - p->sent_at < timeout) continue;
+        /* One the PC never acknowledges was resent every ~1 s for the rest
+         * of the session (18,622 resends in one log): its moment is long
+         * gone after a dozen tries (about 15 s), so let it go. */
+        if (p->retries >= 12) {
+            if (++s->stats.abandoned <= 5)
+                diagnostic_log("STEAM", "gave up on packet channel=%u id=%u after %u resends", p->channel, p->id,
+                               p->retries);
+            p->used = false;
+            continue;
+        }
         p->retries++;
         p->data[1] = (uint8_t)(p->retries < 255 ? p->retries : 255);
         put32(p->data + p->size - 4, steam_crc32c(p->data, p->size - 4u));
@@ -1325,9 +1339,9 @@ void steam_session_close(SteamSession *s)
             send_raw(s, packet, n);
         }
     }
-    diagnostic_log("STEAM", "session closed: frames=%u keyframes=%u lost=%u kfreq=%u audio=%u resends=%u bad=%u",
+    diagnostic_log("STEAM", "session closed: frames=%u keyframes=%u lost=%u kfreq=%u audio=%u resends=%u abandoned=%u bad=%u",
                    s->stats.video_frames, s->stats.video_keyframes, s->stats.video_lost, s->stats.keyframe_requests,
-                   s->stats.audio_packets, s->stats.resends, s->stats.packets_bad);
+                   s->stats.audio_packets, s->stats.resends, s->stats.abandoned, s->stats.packets_bad);
     steam_udp_close(s->sock);
     clear_video_frame(s);
     free(s);

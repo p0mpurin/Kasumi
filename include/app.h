@@ -135,7 +135,7 @@ enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SET
        SETTING_PROVIDER, SETTING_ACCOUNT, SETTING_COMMUNITY, SETTING_MUSIC, SETTING_VOICE, SETTING_SFX,
        SETTING_CAMERA_SPEED, SETTING_CAMERA_INVERT, SETTING_SCREENSHOTS,
        SETTING_VIDEO_SHARPEN, SETTING_VIDEO_COLOR, SETTING_TOUCH_CAMERA, SETTING_TOUCH_STICK_SIZE,
-       SETTING_FRAME_RATE, SETTING_MIC, SETTING_SERVICE, SETTING_COUNT };
+       SETTING_FRAME_RATE, SETTING_MIC, SETTING_SERVICE, SETTING_SLIDER, SETTING_COUNT };
 
 /* Library tabs (L / R). */
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
@@ -167,6 +167,8 @@ typedef struct {
     /* "What do you want to play?": the services as cards (first run, and B
      * from the library). hub_index is the highlighted card. */
     bool hub_open;
+    /* Xbox Cloud Gaming paused for maintenance (xcloud_available). */
+    bool xbox_paused;
     int hub_index;
     /* A service's login and library are being read (after entering it). */
     bool service_loading;

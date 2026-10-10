@@ -64,7 +64,7 @@ typedef struct {
 
 typedef struct {
     unsigned video_frames, video_keyframes, video_lost, keyframe_requests;
-    unsigned audio_packets, packets_in, packets_bad, resends, hid_reports;
+    unsigned audio_packets, packets_in, packets_bad, resends, abandoned, hid_reports;
     uint64_t video_bytes;
     unsigned video_width, video_height;
     int rtt_ms;

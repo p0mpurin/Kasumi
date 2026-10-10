@@ -10,10 +10,13 @@
 #define MVD_VIDEO_WIDE_HEIGHT 480
 
 bool mvd_video_init(unsigned input_width, unsigned input_height);
-/* Decode 1280x720 like 960x544: whole access units, shrunk by MVD to the
- * top screen (Xbox). Off, 720p takes the older NAL-by-NAL path. Set before
- * mvd_video_init. */
-void mvd_video_set_shrink_hd(bool on);
+/* How 1280x720 is decoded; set before mvd_video_init. Whole access units
+ * at 720p crash the mvd module (1.0.2 shrunk, report XG8Z77 full size).
+ * NAL by NAL decodes (XG8Z77: 101 s of Xbox 720p): NAL renders full size
+ * for the CPU to scale on the media thread, NAL_SHRINK has MVD scale to the
+ * wide 800x480 pipeline (own thread, GPU). */
+enum { MVD_HD_GUARDED, MVD_HD_SHRINK, MVD_HD_NAL, MVD_HD_WHOLE, MVD_HD_NAL_SHRINK };
+void mvd_video_set_hd_mode(int mode);
 /* The decoder refused a frame and stopped taking any. */
 bool mvd_video_failed(void);
 /* True while decoding for the 800-column wide screen via the GPU. */

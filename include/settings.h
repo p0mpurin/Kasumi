@@ -63,6 +63,9 @@ typedef struct {
     /* How far the touch C-stick pushes for full speed: 0 small, 1 medium,
      * 2 large. */
     unsigned touch_stick_size;
+    /* The 3D slider in games (player suggestion): 0 off, 1 zoom, 2+ holds a
+     * button while it is up (gfn_slider_choice_output). */
+    unsigned slider;
     /* Appearance and audio. */
     unsigned theme;
     /* Stream volume in steps of 20 %: 0 = mute ... 5 = 100 %. */

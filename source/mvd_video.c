@@ -29,8 +29,9 @@ static u64 g_last_zoom_pan_at;
 static bool g_first_process_done;
 static bool g_first_render_done;
 static bool g_process_failed;
-/* 720p through the NAL-by-NAL path (g_hd), or shrunk like 540p. */
-static bool g_hd, g_shrink_hd;
+/* 720p at full size (g_hd), decoded per g_hd_mode (mvd_video.h). */
+static bool g_hd;
+static int g_hd_mode;
 static bool g_first_sps_logged;
 static unsigned g_sps_level_rewrites;
 static unsigned g_hd_nal_logs;
@@ -157,8 +158,10 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
      * Keep the proven direct 400x240 path for 540p. MVD does shrink 960x544
      * to 800x480, though, so Xbox's 720p (Main, one reference) goes that way:
      * the NAL-by-NAL path never got past its first IDR (build 124). */
-    const bool hd = (input_width > 960 || input_height > 544) && !g_shrink_hd;
-    g_hd = hd;
+    const bool big = input_width > 960 || input_height > 544;
+    const bool shrink = g_hd_mode == MVD_HD_SHRINK || g_hd_mode == MVD_HD_NAL_SHRINK;
+    g_hd = big && g_hd_mode != MVD_HD_SHRINK;   /* 720p processing */
+    const bool hd = big && !shrink;              /* full-size 720p output */
     g_wide = stream_profile_wide() && !hd;
     if (hd) {
         g_output_width = HD_OUTPUT_WIDTH;
@@ -734,7 +737,9 @@ static Result process_720p_nals(const unsigned char *data, size_t size, bool *ha
             diagnostic_checkpoint();
         }
         if (!MVD_CHECKNALUPROC_SUCCESS(last)) return last;
-        if ((type == 1 || type == 5) &&
+        /* 800x480 answers its first IDR the same way and then decodes:
+         * the NAL experiment carries on instead of stopping. */
+        if ((type == 1 || type == 5) && g_hd_mode != MVD_HD_NAL && g_hd_mode != MVD_HD_NAL_SHRINK &&
             last == MVD_STATUS_INCOMPLETEPROCESSING &&
             result.remaining_size >= nal_size + 3) {
             diagnostic_log("MVD", "720p slice not consumed type=%u bytes=%lu; stop before next service call",
@@ -752,7 +757,7 @@ static Result process_720p_nals(const unsigned char *data, size_t size, bool *ha
 static bool decode_access_unit(const unsigned char *annex_b, unsigned char *input,
                                size_t size, u16 *output)
 {
-    const bool hd = g_hd;
+    const bool hd = g_hd && g_hd_mode != MVD_HD_WHOLE;
     if (!g_first_process_done) {
         diagnostic_log("MVD", "first-process-enter bytes=%lu input=%ux%u",
                        (unsigned long)size, g_input_width, g_input_height);
@@ -968,7 +973,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         diagnostic_log("MVD", "keyframe after recovering without one: picture clean again");
     }
     if (!g_wide) {
-        if (!g_hd) {
+        if (!g_hd || g_hd_mode == MVD_HD_WHOLE) {
             memcpy(g_input, annex_b, size);
             GSPGPU_FlushDataCache(g_input, size);
         }
@@ -1065,7 +1070,7 @@ void mvd_video_close(void)
 }
 
 bool mvd_video_active(void) { return g_active; }
-void mvd_video_set_shrink_hd(bool on) { g_shrink_hd = on; }
+void mvd_video_set_hd_mode(int mode) { g_hd_mode = mode; }
 bool mvd_video_failed(void) { return g_active && g_process_failed; }
 unsigned mvd_video_decoded_frames(void) { return g_frames; }
 unsigned mvd_video_pending_units(void) { return g_queue_count; }

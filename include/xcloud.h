@@ -42,6 +42,18 @@ bool xcloud_fetch_library(GfnClient *client);
 /* Filters the last fetched library by title (there is no search service). */
 bool xcloud_search(GfnClient *client, const char *query);
 bool xcloud_start_session(GfnClient *client, const GfnGame *game);
+/* Resolution experiments (test build): only Fortnite follows our 800x480,
+ * every other game streams 1280x720. Each non-Fortnite launch runs the next
+ * experiment (the number is kept on the SD card); 0 = none. */
+enum {
+    XCLOUD_TEST_NONE, XCLOUD_TEST_720P_SHRINK, XCLOUD_TEST_720P_FULL, XCLOUD_TEST_COUNT
+};
+int xcloud_experiment(void);
+/* Xbox is paused for maintenance (1.0.4): every game but Fortnite streams
+ * 1280x720, and decoding that is still being tested. Consoles with the test
+ * file (sdmc:/3ds/kasumi/xbox-test.txt) keep it for the tests. */
+bool xcloud_available(void);
+const char *xcloud_experiment_name(int experiment);
 /* Polls the session to ready (and connects it), then keeps it alive. */
 void xcloud_session_tick(GfnClient *client);
 bool xcloud_stop_session(GfnClient *client);

@@ -97,6 +97,13 @@ void gfn_button_map_clean(GfnButtonMap *map);
 void gfn_input_set_custom_map(const GfnButtonMap *map);
 bool gfn_input_custom_map_active(void);
 
+/* The 3D slider setting: 0 off, 1 zoom (main.c), then buttons. The output
+ * of a choice (GFN_OUT_NONE for off and zoom) is held while the slider is
+ * past halfway. */
+unsigned gfn_slider_choice_count(void);
+unsigned gfn_slider_choice_output(unsigned choice);
+void gfn_input_set_slider_output(unsigned output);
+
 void gfn_input_configure(const GfnInputConfig *config);
 /* Buttons the 3DS lacks (L3, R3, Guide), held from the touch screen; they
  * are sent as they are, whatever the map says. */

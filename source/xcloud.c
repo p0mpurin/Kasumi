@@ -642,8 +642,60 @@ bool xcloud_search(GfnClient *c, const char *query)
 
 /* ---- Sessions ------------------------------------------------------------------- */
 
+/* ---- Resolution experiments ---------------------------------------------------- */
+
+static int g_experiment;
+
+int xcloud_experiment(void) { return g_experiment; }
+
+const char *xcloud_experiment_name(int experiment)
+{
+    switch (experiment) {
+    case XCLOUD_TEST_720P_SHRINK: return "720p shrunk to 800x480, 1.5 Mbps (new)";
+    case XCLOUD_TEST_720P_FULL: return "720p full size, 1.2 Mbps";
+    default: return "none";
+    }
+}
+
+/* The next experiment, kept on the SD card so a crash moves on to the next. */
+static int next_experiment(void)
+{
+    const char *path = APP_DATA_DIR "/xbox-test.txt";
+    int last = 0;
+    FILE *f = fopen(path, "r");
+    if (f) {
+        if (fscanf(f, "%d", &last) != 1) last = 0;
+        fclose(f);
+    }
+    int next = last + 1;
+    if (next <= XCLOUD_TEST_NONE || next >= XCLOUD_TEST_COUNT) next = XCLOUD_TEST_NONE + 1;
+    f = fopen(path, "w");
+    if (f) {
+        fprintf(f, "%d\n", next);
+        fclose(f);
+    }
+    return next;
+}
+
+bool xcloud_available(void)
+{
+    static int known = -1;
+    if (known < 0) {
+        FILE *f = fopen(APP_DATA_DIR "/xbox-test.txt", "r");
+        known = f != NULL;
+        if (f) fclose(f);
+    }
+    return known == 1;
+}
+
 bool xcloud_start_session(GfnClient *c, const GfnGame *game)
 {
+    /* Fortnite already streams 800x480: keep it plain. Tests only run on
+     * a tester's console (xcloud_available). */
+    g_experiment = xcloud_available() && strcmp(game->app_id, "FORTNITE") ? next_experiment()
+                                                                            : XCLOUD_TEST_NONE;
+    if (g_experiment)
+        diagnostic_log("XCLOUD", "resolution test %d: %s", g_experiment, xcloud_experiment_name(g_experiment));
     c->session_state = GFN_SESSION_IDLE;
     c->fail_code[0] = c->end_error_code[0] = '\0';
     c->queue_position = 0;
