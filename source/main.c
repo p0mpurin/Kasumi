@@ -2582,9 +2582,8 @@ static void track_session(void)
                 net_memory_note(g_perf.weak && !g_app.auto_weak, g_perf.seconds, g_perf.lost, g_perf.repeated);
             /* A clearly choppy session on Standard: point at Weak / hotspot
              * (beta.17 stats: one console lost ~5 frames a minute). */
-            const unsigned minutes = g_perf.seconds / 60;
-            if (minutes >= 2 && !g_app.settings.net_weak &&
-                (g_perf.lost / minutes >= 3 || g_perf.repeated / minutes >= 15))
+            if (g_perf.seconds >= 120 && !g_app.settings.net_weak &&
+                net_memory_session_choppy(g_perf.seconds, g_perf.lost, g_perf.repeated))
                 show_notice("Choppy connection? Try Settings > Network > Connection type: Weak / hotspot");
         }
         /* A game's own options only last for its session. */

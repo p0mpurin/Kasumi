@@ -14,3 +14,6 @@ bool net_memory_choppy_here(void);
 /* After a session: how it went on this network. weak: the player chose
  * Weak / hotspot (says nothing about Standard, so it is not recorded). */
 void net_memory_note(bool weak, unsigned seconds, unsigned lost, unsigned repeated);
+/* A session clearly choppy enough for Weak / hotspot (the tip after a game
+ * and the switch next time use the same test). */
+bool net_memory_session_choppy(unsigned seconds, unsigned lost, unsigned repeated);

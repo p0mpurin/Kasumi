@@ -14,11 +14,20 @@
 #define NET_MEMORY_DAYS 14
 #define NET_MEMORY_MAX 8
 
-/* Same test as the Weak-mode tip after a session. */
+/* Lost frames (each freezes the picture until a keyframe), or more than a
+ * repeated frame a second. 15 repeats a minute (one 33 ms repeat every 4 s)
+ * marked smooth sessions choppy: one player's network was put on Weak every
+ * time (report DPYTTZ: 27 a minute, 1 lost frame a minute), and the lower
+ * bitrate made games look worse, not better. */
 static bool choppy(unsigned seconds, unsigned lost, unsigned repeated)
 {
     const unsigned minutes = seconds / 60;
-    return minutes && (lost / minutes >= 3 || repeated / minutes >= 15);
+    return minutes && (lost / minutes >= 3 || repeated / minutes >= 60);
+}
+
+bool net_memory_session_choppy(unsigned seconds, unsigned lost, unsigned repeated)
+{
+    return choppy(seconds, lost, repeated);
 }
 
 static bool current_ssid(char out[40])

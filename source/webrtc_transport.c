@@ -436,6 +436,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     }
     t->last_video_timestamp = packet->timestamp;
     t->last_video_arrival_at = rate_now;
+    if (!has_idr && packet->size < 200) t->video_static_units++;
     if (t->xcloud) xcloud_stream_note_frame(packet->timestamp);
     if (!t->video_rate_started_at) {
         t->video_rate_started_at = rate_now;
@@ -452,12 +453,12 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
         if (!t->video_log_seconds || t->video_kbps < t->video_log_kbps_min) t->video_log_kbps_min = t->video_kbps;
         ++t->video_log_seconds;
         if (t->video_log_seconds >= 5 || t->video_src_skipped || t->video_max_gap_ms >= 150) {
-            diagnostic_log("VIDEO", "rate=%u kbps min=%u over=%us totalBytes=%llu AU=%u srcSkipped=%u late50=%u maxGap=%u",
+            diagnostic_log("VIDEO", "rate=%u kbps min=%u over=%us totalBytes=%llu AU=%u srcSkipped=%u late50=%u maxGap=%u static=%u",
                            t->video_log_kbps_sum / t->video_log_seconds, t->video_log_kbps_min,
                            t->video_log_seconds, (unsigned long long)t->video_bytes,
                            t->video_access_units, t->video_src_skipped, t->video_late_arrivals,
-                           t->video_max_gap_ms);
-            t->video_src_skipped = t->video_late_arrivals = t->video_max_gap_ms = 0;
+                           t->video_max_gap_ms, t->video_static_units);
+            t->video_src_skipped = t->video_late_arrivals = t->video_max_gap_ms = t->video_static_units = 0;
             t->video_log_seconds = t->video_log_kbps_sum = t->video_log_kbps_min = 0;
         }
     }

@@ -106,6 +106,10 @@ typedef struct {
     uint32_t last_video_timestamp;
     uint64_t last_video_arrival_at;
     unsigned video_src_skipped, video_late_arrivals, video_max_gap_ms;
+    /* Frames too small to carry a new picture (nothing moved, or the
+     * encoder starved at a low bitrate): 30 decoded frames a second can
+     * still look like 5 (report DPYTTZ). Counted per rate log. */
+    unsigned video_static_units;
     /* The 5 s window behind each VIDEO rate line. */
     unsigned video_log_seconds, video_log_kbps_sum, video_log_kbps_min;
     uint64_t last_au_drop_at;
