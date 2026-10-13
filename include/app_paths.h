@@ -1,7 +1,7 @@
 #pragma once
 
 #define APP_NAME "Kasumi"
-#define APP_BUILD "155"
+#define APP_BUILD "158"
 /* Set by the Makefile from VERSION_MAJOR / MINOR / MICRO / SUFFIX. */
 #ifndef APP_VERSION
 #define APP_VERSION "0.0.0-dev"

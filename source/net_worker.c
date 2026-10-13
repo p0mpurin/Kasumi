@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "diagnostic.h"
 #include "http_client.h"
@@ -17,6 +18,7 @@
 #include "provider.h"
 #include "xcloud.h"
 #include "steam_link.h"
+#include "app_paths.h"
 
 #define WORKER_STACK_SIZE (128 * 1024)
 #define WORKER_IDLE_NS 50000000LL
@@ -60,6 +62,46 @@ static void publish(void)
     copy_client(&g_shared, &g_work);
     ++g_version;
     LightLock_Unlock(&g_lock);
+}
+
+/* The Kasumi HOME Menu theme by morrisonion (pull request #8). Themezer
+ * always serves his latest version; Anemone3DS installs zips from /Themes. */
+#define HOME_THEME_URL "https://api.themezer.net/3ds/themes/1E965/download?src=qr"
+#define HOME_THEME_DIR "sdmc:/Themes"
+#define HOME_THEME_PATH HOME_THEME_DIR "/Kasumi Theme.zip"
+
+static bool home_theme_download(GfnClient *c)
+{
+    HttpResponse r;
+    http_next_request(90, NULL, NULL);
+    if (!http_request("GET", HOME_THEME_URL, "Kasumi/" APP_VERSION, NULL, 0, NULL, 8u << 20, &r)) {
+        diagnostic_log("THEME", "download failed: %s", r.error);
+        snprintf(c->status, sizeof(c->status), "Couldn't download the HOME Menu theme: %.100s", r.error);
+        return false;
+    }
+    const bool zip = r.status == 200 && r.size > 4 && r.body && !memcmp(r.body, "PK", 2);
+    diagnostic_log("THEME", "download http=%ld bytes=%lu zip=%d", r.status, (unsigned long)r.size, zip ? 1 : 0);
+    bool ok = false;
+    if (zip) {
+        mkdir(HOME_THEME_DIR, 0777);
+        /* A whole file or none: a cut-off zip would break Anemone3DS's list. */
+        const char *tmp = HOME_THEME_DIR "/Kasumi Theme.zip.part";
+        FILE *f = fopen(tmp, "wb");
+        if (f) {
+            ok = fwrite(r.body, 1, r.size, f) == r.size;
+            ok = fclose(f) == 0 && ok;
+            if (ok) {
+                remove(HOME_THEME_PATH);
+                ok = rename(tmp, HOME_THEME_PATH) == 0;
+            }
+            if (!ok) remove(tmp);
+        }
+    }
+    http_response_free(&r);
+    if (!ok)
+        snprintf(c->status, sizeof(c->status), "%s", zip ? "Couldn't save the theme to the SD card."
+                                                         : "The theme download didn't work. Try again later.");
+    return ok;
 }
 
 static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
@@ -141,6 +183,7 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
     case NET_JOB_RECOVER: return gfn_recover_session(&g_work, game);
     case NET_JOB_KEEP_LOGIN: return gfn_keep_login(&g_work);
     case NET_JOB_SHORTCUT: return shortcut_work();
+    case NET_JOB_HOME_THEME: return home_theme_download(&g_work);
     case NET_JOB_SWITCH_SERVICE:
         gfn_client_switch_service(&g_work);
         if (g_work.game_count) game_art_prefetch(g_work.games, (unsigned)g_work.game_count);

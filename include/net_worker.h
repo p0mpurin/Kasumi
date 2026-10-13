@@ -44,7 +44,9 @@ typedef enum {
     /* GeForce NOW <-> Xbox: load the other service's login and library. */
     NET_JOB_SWITCH_SERVICE,
     /* Steam Link: stream from another paired PC (text: its index). */
-    NET_JOB_USE_PC
+    NET_JOB_USE_PC,
+    /* The Kasumi HOME Menu theme (by morrisonion) into sdmc:/Themes. */
+    NET_JOB_HOME_THEME
 } NetJobKind;
 
 typedef struct {

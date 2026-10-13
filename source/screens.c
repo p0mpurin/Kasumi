@@ -259,6 +259,7 @@ static const SettingEntry SETTING_ENTRIES[] = {
     { SETTING_VOICE, NULL, NULL },
     { SETTING_SFX, NULL, NULL },
     { SETTING_THEME, NULL, NULL },
+    { SETTING_HOME_THEME, NULL, NULL },
     { -1, "接続", "NETWORK" },
     { SETTING_CONNECTION, NULL, NULL },
     { SETTING_NETWORK, NULL, NULL },
@@ -367,6 +368,7 @@ static const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_NETWORK] = "Connection type", [SETTING_SERVER] = "Server",
     [SETTING_REPORT] = "Send diagnostic report", [SETTING_SHARE] = "Share problem reports",
     [SETTING_SHARE_STATS] = "Share performance stats", [SETTING_COMMUNITY] = "Kasumi Discord", [SETTING_SCREENSHOTS] = "Screenshots",
+    [SETTING_HOME_THEME] = "HOME Menu theme",
     [SETTING_MUSIC] = "Menu music", [SETTING_VOICE] = "Voice", [SETTING_SFX] = "Sound effects",
     [SETTING_UPDATES] = "Software update", [SETTING_AUTO_UPDATE] = "Check automatically",
     [SETTING_UPDATE_CHANNEL] = "Update channel", [SETTING_PROVIDER] = "GeForce NOW provider",
@@ -391,7 +393,7 @@ static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_CONNECTION] = "接続", [SETTING_GUIDE] = "案内",
     [SETTING_NETWORK] = "回線", [SETTING_SERVER] = "サーバー",
     [SETTING_REPORT] = "報告", [SETTING_SHARE] = "協力", [SETTING_SHARE_STATS] = "統計",
-    [SETTING_COMMUNITY] = "仲間", [SETTING_SCREENSHOTS] = "写真", [SETTING_MUSIC] = "音楽", [SETTING_VOICE] = "声", [SETTING_SFX] = "効果音",
+    [SETTING_COMMUNITY] = "仲間", [SETTING_SCREENSHOTS] = "写真", [SETTING_HOME_THEME] = "壁紙", [SETTING_MUSIC] = "音楽", [SETTING_VOICE] = "声", [SETTING_SFX] = "効果音",
     [SETTING_UPDATES] = "更新", [SETTING_AUTO_UPDATE] = "自動確認",
     [SETTING_UPDATE_CHANNEL] = "チャンネル", [SETTING_PROVIDER] = "提供元", [SETTING_SERVICE] = "サービス",
 };
@@ -580,6 +582,7 @@ static const char *setting_value(const App *app, int setting)
         return text;
     }
     case SETTING_GUIDE: return "Open";
+    case SETTING_HOME_THEME: return "Download";
     case SETTING_COMMUNITY: return "Scan";
     case SETTING_SCREENSHOTS: {
         static char text[24];
@@ -735,6 +738,9 @@ static const char *setting_description(const App *app, int setting)
                                      : "Both directions of the C-Stick are reversed. Gyro aim is not inverted.";
     case SETTING_THEME:
         return "The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.";
+    case SETTING_HOME_THEME:
+        return "A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to "
+               "/Themes; install it with Anemone3DS.";
     case SETTING_VOLUME:
         if (audio_system_firmware_missing())
             return "No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the "

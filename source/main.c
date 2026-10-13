@@ -1008,6 +1008,10 @@ static void change_setting(int direction)
         g_app.guide_page = 0;
         return;
     }
+    if (index == SETTING_HOME_THEME) {
+        submit_job(NET_JOB_HOME_THEME, "Downloading the Kasumi HOME Menu theme...", NULL, NULL);
+        return;
+    }
     if (index == SETTING_COMMUNITY) return; /* the QR code on the bottom screen is the whole row */
     if (index == SETTING_SCREENSHOTS) {
         if (gallery_open()) g_app.gallery_open = true;
@@ -3735,6 +3739,8 @@ static void finish_jobs(void)
         snprintf(text, sizeof(text), "Streaming from %.60s", steam_link_host_name());
         show_notice(text);
     }
+    if (result.kind == NET_JOB_HOME_THEME && !result.cancelled)
+        show_notice(result.ok ? "Theme saved to /Themes: install it with Anemone3DS" : g_client.status);
     /* A service signed in before but with no saved library yet. */
     if (result.kind == NET_JOB_SWITCH_SERVICE && gfn_has_session(&g_client) && !g_client.game_count)
         load_library();
