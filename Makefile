@@ -26,6 +26,9 @@ VERSION_MINOR := 1
 VERSION_MICRO := 0
 VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
+# makerom drops the minor number from the CIA's title version (1.1.0 came out
+# as 1.0.0 and the 3DS refused it as older), so cia_set_version.py writes it.
+PYTHON ?= python3
 APP_PRODUCT_CODE := CTR-P-KSMI
 APP_UNIQUE_ID := 0x4B534
 RSF := resources/app.rsf
@@ -125,6 +128,7 @@ cia: all
 	@$(BANNERTOOL) makebanner -i "$(BANNER_IMAGE)" -a "$(BANNER_AUDIO)" -o "$(BUILD)/banner.bnr"
 	@$(BANNERTOOL) makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i "$(APP_ICON)" -f "visible,nosavebackups,new3ds" -o "$(BUILD)/icon.icn"
 	@$(MAKEROM) -f cia -o "$(TARGET).cia" -target t -exefslogo -elf "$(TARGET).elf" -rsf "$(RSF)" -banner "$(BUILD)/banner.bnr" -icon "$(BUILD)/icon.icn" -DAPP_TITLE="$(APP_TITLE)" -DAPP_PRODUCT_CODE="$(APP_PRODUCT_CODE)" -DAPP_UNIQUE_ID="$(APP_UNIQUE_ID)" -major $(VERSION_MAJOR) -minor $(VERSION_MINOR) -micro $(VERSION_MICRO)
+	@$(PYTHON) tools/cia_set_version.py "$(TARGET).cia" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_MICRO)
 
 version:
 	@echo $(VERSION)
