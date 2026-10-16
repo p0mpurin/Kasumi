@@ -1,4 +1,5 @@
 #include "ui.h"
+#include "i18n.h"
 
 #include <math.h>
 #include <stdarg.h>
@@ -821,9 +822,12 @@ static float glyph_advance(u32 code_point)
 static bool contains_japanese(const char *text);
 static float japanese_size(const char *text, float size, float *dy);
 
+/* Every text drawn or measured here goes through i18n_text first, so the
+ * screens pass English and get the chosen language (i18n.h). */
 float ui_text_width(const char *text, float size)
 {
     if (!text) return 0.0f;
+    text = i18n_text(text);
     float dy;
     size = japanese_size(text, size, &dy);
     float width = 0.0f;
@@ -873,6 +877,7 @@ static float japanese_size(const char *text, float size, float *dy)
 float ui_text(float x, float y, float size, u32 color, UiAlign align, const char *text)
 {
     if (!text || !text[0]) return 0.0f;
+    text = i18n_text(text);
     if (!g_has_japanese && contains_japanese(text)) return 0.0f;
     float dy;
     size = japanese_size(text, size, &dy);
@@ -895,7 +900,7 @@ float ui_textf(float x, float y, float size, u32 color, UiAlign align, const cha
     char buffer[256];
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    vsnprintf(buffer, sizeof(buffer), i18n_text(format), args);
     va_end(args);
     return ui_text(x, y, size, color, align, buffer);
 }
@@ -910,6 +915,7 @@ void ui_text_fit(float x, float y, float size, u32 color, UiAlign align,
                  float max_width, const char *text)
 {
     if (!text) return;
+    text = i18n_text(text);
     if (ui_text_width(text, size) <= max_width) {
         ui_text(x, y, size, color, align, text);
         return;
@@ -933,6 +939,7 @@ int ui_text_wrap(float x, float y, float size, u32 color, UiAlign align,
                  float max_width, int max_lines, float line_height, const char *text)
 {
     if (!text) return 0;
+    text = i18n_text(text);
     int lines = 0;
     const char *cursor = text;
     char line[256];
@@ -976,11 +983,19 @@ int ui_text_wrap(float x, float y, float size, u32 color, UiAlign align,
 void ui_label(float x, float y, float size, u32 color, UiAlign align, const char *text)
 {
     /* Hand-spaced capitals: one code point at a time with a tracking gap. */
+    if (!text) return;
+    text = i18n_text(text);
     const float tracking = size * 0.10f;
     char upper[128];
     size_t n = 0;
-    for (const char *p = text; *p && n < sizeof(upper) - 1; ++p)
-        upper[n++] = (*p >= 'a' && *p <= 'z') ? (char)(*p - 32) : *p;
+    for (const unsigned char *p = (const unsigned char *)text; *p && n < sizeof(upper) - 1; ++p) {
+        unsigned char c = *p;
+        if (c >= 'a' && c <= 'z') c -= 32;
+        /* Latin-1 small letters (C3 A0..BE, not the division sign) have
+         * their capital 0x20 below: e acute -> E acute, for French, German... */
+        else if (p > (const unsigned char *)text && p[-1] == 0xC3 && c >= 0xA0 && c <= 0xBE && c != 0xB7) c -= 0x20;
+        upper[n++] = (char)c;
+    }
     upper[n] = '\0';
     float width = 0.0f;
     char glyph[5];
@@ -1037,7 +1052,10 @@ void ui_dots(float cx, float cy, unsigned count, unsigned active, u32 on, u32 of
 void ui_section(float x, float y, float w, const char *jp, const char *en)
 {
     float cursor = x;
-    if (g_has_japanese) {
+    /* In Japanese the kanji heading says it all. */
+    if (g_has_japanese && i18n_get() == LANG_JA && jp && jp[0]) {
+        ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp);
+    } else if (g_has_japanese) {
         cursor += ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp) + 6.0f;
         ui_label(cursor, y + 1.0f, 11.0f, UI_TEXT_FAINT, UI_ALIGN_LEFT, en);
     } else {
@@ -1346,6 +1364,8 @@ void ui_button(UiRect r, const char *label, const char *jp, UiButtonStyle style,
     const float label_size = sharp ? 15.0f : r.h >= 40.0f ? 14.0f : 12.0f;
     const float jp_size = sharp ? 15.0f : r.h >= 40.0f ? 12.0f : 11.0f;
     const bool room = f.h >= label_size + 2.0f + jp_size + 2.0f || !sharp;
+    /* The kanji line repeats the label in Japanese: not when that is the language. */
+    if (i18n_get() == LANG_JA && g_has_japanese) jp = NULL;
     if (jp && jp[0] && r.h >= 30.0f && room && (g_has_japanese || !contains_japanese(jp))) {
         const float block = label_size + 2.0f + jp_size;
         const float top = f.y + (f.h - block) / 2.0f;

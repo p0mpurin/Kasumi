@@ -1,4 +1,5 @@
 #include "net_worker.h"
+#include "i18n.h"
 #include "shortcut.h"
 #include "queue_eta.h"
 
@@ -76,7 +77,7 @@ static bool home_theme_download(GfnClient *c)
     http_next_request(90, NULL, NULL);
     if (!http_request("GET", HOME_THEME_URL, "Kasumi/" APP_VERSION, NULL, 0, NULL, 8u << 20, &r)) {
         diagnostic_log("THEME", "download failed: %s", r.error);
-        snprintf(c->status, sizeof(c->status), "Couldn't download the HOME Menu theme: %.100s", r.error);
+        snprintf(c->status, sizeof(c->status), i18n_text("Couldn't download the HOME Menu theme: %.100s"), r.error);
         return false;
     }
     const bool zip = r.status == 200 && r.size > 4 && r.body && !memcmp(r.body, "PK", 2);
@@ -99,8 +100,8 @@ static bool home_theme_download(GfnClient *c)
     }
     http_response_free(&r);
     if (!ok)
-        snprintf(c->status, sizeof(c->status), "%s", zip ? "Couldn't save the theme to the SD card."
-                                                         : "The theme download didn't work. Try again later.");
+        snprintf(c->status, sizeof(c->status), "%s", zip ? i18n_text("Couldn't save the theme to the SD card.")
+                                                         : i18n_text("The theme download didn't work. Try again later."));
     return ok;
 }
 
@@ -112,7 +113,7 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
         /* Pairing another PC: the one paired before stays signed in. */
         g_work.auth_state = steam_link_selected() && steam_link_load_login(&g_work) ? GFN_AUTH_LOGGED_IN
                             : GFN_AUTH_LOGGED_OUT;
-        snprintf(g_work.status, sizeof(g_work.status), "Sign-in cancelled");
+        snprintf(g_work.status, sizeof(g_work.status), i18n_text("Sign-in cancelled"));
         return true;
     case NET_JOB_LOAD_LIBRARY:
         if (!gfn_fetch_library(&g_work)) return false;
@@ -121,14 +122,14 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
     case NET_JOB_CONNECTION_TEST: {
         const bool ok = gfn_connection_test(&g_work);
         if (ok) {
-            snprintf(g_work.status, sizeof(g_work.status), "Pinging GeForce NOW servers...");
+            snprintf(g_work.status, sizeof(g_work.status), i18n_text("Pinging GeForce NOW servers..."));
             publish();
             regions_update();
             regions_measure();
             const int best = regions_fastest();
             Region region;
             if (best >= 0 && regions_get((unsigned)best, &region))
-                snprintf(g_work.status, sizeof(g_work.status), "Connection: %u ms, %u.%u Mbps; fastest server %s %d ms",
+                snprintf(g_work.status, sizeof(g_work.status), i18n_text("Connection: %u ms, %u.%u Mbps; fastest server %s %d ms"),
                          g_work.conn_latency_ms, g_work.conn_kbps / 1000, g_work.conn_kbps % 1000 / 100,
                          region.name, region.ms);
         }

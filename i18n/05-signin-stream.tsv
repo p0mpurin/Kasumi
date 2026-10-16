@@ -1,0 +1,92 @@
+# en	ja	fr	de	es	it	pt
+Signed in; session %s	サインインしました。セッション：%s	Connecté ; session %s	Angemeldet; Sitzung %s	Sesión iniciada; sesión %s	Accesso effettuato; sessione %s	Conectado; sessão %s
+Paired with %.60s	%.60s とペアリングしました	Associé à %.60s	Gekoppelt mit %.60s	Vinculado con %.60s	Abbinato a %.60s	Pareado com %.60s
+Sign-in happens on your phone or computer:	サインインはスマホかパソコンで行います：	La connexion se fait sur votre téléphone ou ordinateur :	Die Anmeldung erfolgt auf Handy oder Computer:	El inicio de sesión se hace en el móvil u ordenador:	L'accesso avviene sul telefono o computer:	O login é feito no celular ou computador:
+no password is typed on this console.	この本体ではパスワードを入力しません。	aucun mot de passe n'est saisi sur cette console.	auf dieser Konsole wird kein Passwort eingegeben.	no se escribe ninguna contraseña en esta consola.	nessuna password viene digitata su questa console.	nenhuma senha é digitada neste console.
+Go to the PC named above.	上に表示された PC へ。	Allez sur le PC indiqué ci-dessus.	Geh zum oben genannten PC.	Ve al PC indicado arriba.	Vai al PC indicato sopra.	Vá até o PC indicado acima.
+Open the address shown above.	上のアドレスを開きます。	Ouvrez l'adresse ci-dessus.	Öffne die oben gezeigte Adresse.	Abre la dirección de arriba.	Apri l'indirizzo qui sopra.	Abra o endereço acima.
+Steam shows Authorize Device.	Steam に「デバイスの承認」が表示されます。	Steam affiche Autoriser l'appareil.	Steam zeigt „Gerät autorisieren“.	Steam muestra Autorizar dispositivo.	Steam mostra Autorizza dispositivo.	O Steam mostra Autorizar dispositivo.
+Sign in to your Microsoft account.	Microsoft アカウントにサインイン。	Connectez-vous à votre compte Microsoft.	Melde dich bei deinem Microsoft-Konto an.	Inicia sesión en tu cuenta de Microsoft.	Accedi al tuo account Microsoft.	Entre na sua conta Microsoft.
+Sign in to your NVIDIA account.	NVIDIA アカウントにサインイン。	Connectez-vous à votre compte NVIDIA.	Melde dich bei deinem NVIDIA-Konto an.	Inicia sesión en tu cuenta de NVIDIA.	Accedi al tuo account NVIDIA.	Entre na sua conta NVIDIA.
+Enter the code. Kasumi continues	コードを入力。Kasumi は	Saisissez le code. Kasumi continue	Gib den Code ein. Kasumi macht	Escribe el código. Kasumi sigue	Inserisci il codice. Kasumi prosegue	Digite o código. O Kasumi continua
+on its own.	自動で進みます。	tout seul.	von selbst weiter.	por sí solo.	da solo.	sozinho.
+The pairing stays on this console's SD card; the stream never leaves your Wi-Fi. Kasumi is unofficial, not made by Valve.	ペアリングはこの本体の SD カードに保存され、ストリームは Wi-Fi の外に出ません。Kasumi は非公式で、Valve 製ではありません。	L'association reste sur la carte SD de cette console ; le flux ne quitte jamais votre Wi-Fi. Kasumi est non officiel, pas créé par Valve.	Die Kopplung bleibt auf der SD-Karte dieser Konsole; der Stream verlässt nie dein WLAN. Kasumi ist inoffiziell und nicht von Valve.	La vinculación se guarda en la SD de esta consola; el stream nunca sale de tu Wi-Fi. Kasumi no es oficial ni de Valve.	L'abbinamento resta sulla scheda SD di questa console; lo stream non esce mai dalla tua Wi-Fi. Kasumi non è ufficiale, né di Valve.	O pareamento fica no cartão SD deste console; o stream nunca sai do seu Wi-Fi. O Kasumi não é oficial nem da Valve.
+Your login stays on this console's SD card only. Kasumi is unofficial, not made by Microsoft.	ログインはこの本体の SD カードにだけ保存されます。Kasumi は非公式で、Microsoft 製ではありません。	Votre connexion reste uniquement sur la carte SD de cette console. Kasumi est non officiel, pas créé par Microsoft.	Dein Login bleibt nur auf der SD-Karte dieser Konsole. Kasumi ist inoffiziell und nicht von Microsoft.	Tu sesión se guarda solo en la SD de esta consola. Kasumi no es oficial ni de Microsoft.	L'accesso resta solo sulla scheda SD di questa console. Kasumi non è ufficiale, né di Microsoft.	Seu login fica só no cartão SD deste console. O Kasumi não é oficial nem da Microsoft.
+Your login stays on this console's SD card only. Kasumi is unofficial, not made by NVIDIA.	ログインはこの本体の SD カードにだけ保存されます。Kasumi は非公式で、NVIDIA 製ではありません。	Votre connexion reste uniquement sur la carte SD de cette console. Kasumi est non officiel, pas créé par NVIDIA.	Dein Login bleibt nur auf der SD-Karte dieser Konsole. Kasumi ist inoffiziell und nicht von NVIDIA.	Tu sesión se guarda solo en la SD de esta consola. Kasumi no es oficial ni de NVIDIA.	L'accesso resta solo sulla scheda SD di questa console. Kasumi non è ufficiale, né di NVIDIA.	Seu login fica só no cartão SD deste console. O Kasumi não é oficial nem da NVIDIA.
+NEW CODE	新しいコード	NOUVEAU CODE	NEUER CODE	NUEVO CÓDIGO	NUOVO CODICE	NOVO CÓDIGO
+Your PCs: pick the one to stream from	あなたの PC：ストリーミングする PC を選んでください	Vos PC : choisissez celui à utiliser	Deine PCs: Wähle den, von dem du streamst	Tus PCs: elige desde cuál jugar	I tuoi PC: scegli da quale giocare	Seus PCs: escolha de qual transmitir
+IN USE - A RELOADS ITS GAMES	使用中 - A でゲームを再読み込み	UTILISÉ - A RECHARGE SES JEUX	AKTIV - A LÄDT SEINE SPIELE NEU	EN USO - A RECARGA SUS JUEGOS	IN USO - A RICARICA I GIOCHI	EM USO - A RECARREGA OS JOGOS
+STREAM FROM THIS PC	この PC から遊ぶ	JOUER SUR CE PC	VON DIESEM PC STREAMEN	JUGAR DESDE ESTE PC	GIOCA DA QUESTO PC	JOGAR DESTE PC
+Up to four PCs; pair another one below.	最大 4 台。下から別の PC をペアリング。	Jusqu'à quatre PC ; associez-en un autre ci-dessous.	Bis zu vier PCs; kopple unten einen weiteren.	Hasta cuatro PCs; vincula otro abajo.	Fino a quattro PC; abbinane un altro qui sotto.	Até quatro PCs; pareie outro abaixo.
+PAIR ANOTHER PC	別の PC をペアリング	ASSOCIER UN AUTRE PC	WEITEREN PC KOPPELN	VINCULAR OTRO PC	ABBINA UN ALTRO PC	PAREAR OUTRO PC
+FORGET THIS PC	この PC を削除	OUBLIER CE PC	DIESEN PC VERGESSEN	OLVIDAR ESTE PC	DIMENTICA QUESTO PC	ESQUECER ESTE PC
+No game selected	ゲームが選ばれていません	Aucun jeu choisi	Kein Spiel gewählt	Ningún juego elegido	Nessun gioco scelto	Nenhum jogo escolhido
+Load your library or search	ライブラリを読み込むか検索	Chargez votre bibliothèque ou cherchez	Lade deine Bibliothek oder suche	Carga tu biblioteca o busca	Carica la libreria o cerca	Carregue sua biblioteca ou busque
+OPEN GAME	ゲームを開く	OUVRIR LE JEU	SPIEL ÖFFNEN	ABRIR JUEGO	APRI GIOCO	ABRIR JOGO
+SHOW ALL GAMES	すべてのゲーム	TOUS LES JEUX	ALLE SPIELE	TODOS LOS JUEGOS	TUTTI I GIOCHI	TODOS OS JOGOS
+LOAD LIBRARY	ライブラリを読み込む	CHARGER LA BIBLIOTHÈQUE	BIBLIOTHEK LADEN	CARGAR BIBLIOTECA	CARICA LIBRERIA	CARREGAR BIBLIOTECA
+LIBRARY	ライブラリ	BIBLIOTHÈQUE	BIBLIOTHEK	BIBLIOTECA	LIBRERIA	BIBLIOTECA
+REFRESH	更新	ACTUALISER	AKTUALISIEREN	ACTUALIZAR	AGGIORNA	ATUALIZAR
+SEARCH	検索	RECHERCHE	SUCHE	BUSCAR	CERCA	BUSCAR
+HOLD L TO AIM	L 長押しで照準	MAINTENIR L POUR VISER	L HALTEN ZUM ZIELEN	MANTÉN L PARA APUNTAR	TIENI L PER MIRARE	SEGURE L PARA MIRAR
+HOLD ZL TO AIM	ZL 長押しで照準	MAINTENIR ZL POUR VISER	ZL HALTEN ZUM ZIELEN	MANTÉN ZL PARA APUNTAR	TIENI ZL PER MIRARE	SEGURE ZL PARA MIRAR
+SMOOTH	滑らか	FLUIDE	FLÜSSIG	FLUIDO	FLUIDO	FLUIDO
+SHARP	高画質	NET	SCHARF	NÍTIDO	NITIDO	NÍTIDO
+SIGN OUT	サインアウト	DÉCONNEXION	ABMELDEN	CERRAR SESIÓN	ESCI	SAIR
+Cloud session	クラウドセッション	Session cloud	Cloud-Sitzung	Sesión en la nube	Sessione cloud	Sessão na nuvem
+EST. WAIT	待ち時間の目安	ATTENTE EST.	WARTEZEIT CA.	ESPERA EST.	ATTESA STIMATA	ESPERA EST.
+~%d min	約 %d 分	~%d min	~%d Min.	~%d min	~%d min	~%d min
+~1 min	約 1 分	~1 min	~1 Min.	~1 min	~1 min	~1 min
+Soon	まもなく	Bientôt	Gleich	Pronto	A breve	Logo
+Weak Wi-Fi: move closer to the router.	Wi-Fi が弱い：ルーターに近づいてください。	Wi-Fi faible : rapprochez-vous du routeur.	Schwaches WLAN: Geh näher an den Router.	Wi-Fi débil: acércate al router.	Wi-Fi debole: avvicinati al router.	Wi-Fi fraco: chegue mais perto do roteador.
+RETRY	再試行	RÉESSAYER	ERNEUT	REINTENTAR	RIPROVA	TENTAR DE NOVO
+LEAVE	やめる	QUITTER	VERLASSEN	SALIR	ESCI	SAIR
+DRAG TO MOVE THE VIEW	ドラッグで表示を移動	GLISSEZ POUR DÉPLACER LA VUE	ZIEHEN, UM DIE ANSICHT ZU BEWEGEN	ARRASTRA PARA MOVER LA VISTA	TRASCINA PER SPOSTARE LA VISTA	ARRASTE PARA MOVER A VISTA
+MOUSE & KEYBOARD	マウスとキーボード	SOURIS ET CLAVIER	MAUS & TASTATUR	RATÓN Y TECLADO	MOUSE E TASTIERA	MOUSE E TECLADO
+Drag here to move, tap to click	ここをドラッグで移動、タッチでクリック	Glissez ici pour bouger, touchez pour cliquer	Hier ziehen zum Bewegen, tippen zum Klicken	Arrastra aquí para mover, toca para hacer clic	Trascina qui per muovere, tocca per cliccare	Arraste aqui para mover, toque para clicar
+C-Stick moves, A clicks, KEYS types	C スティックで移動、A でクリック、KEYS で入力	Le stick C bouge, A clique, KEYS tape	C-Stick bewegt, A klickt, KEYS tippt	El stick C mueve, A hace clic, KEYS escribe	Lo stick C muove, A clicca, KEYS scrive	O C-stick move, A clica, KEYS digita
+Tap MOUSE again for controller mode	もう一度 MOUSE でコントローラーモード	Touchez MOUSE à nouveau pour la manette	Tippe erneut auf MOUSE für den Controller-Modus	Toca MOUSE otra vez para el modo mando	Tocca di nuovo MOUSE per il controller	Toque em MOUSE de novo para o modo controle
+POSITION LAYOUT	位置で配置	DISPOSITION PAR POSITION	BELEGUNG NACH POSITION	DISTRIBUCIÓN POR POSICIÓN	DISPOSIZIONE PER POSIZIONE	LAYOUT POR POSIÇÃO
+LETTER LAYOUT	文字で配置	DISPOSITION PAR LETTRE	BELEGUNG NACH BUCHSTABE	DISTRIBUCIÓN POR LETRA	DISPOSIZIONE PER LETTERA	LAYOUT POR LETRA
+STREAM MENU	配信メニュー	MENU DU FLUX	STREAM-MENÜ	MENÚ DEL STREAM	MENU DELLO STREAM	MENU DO STREAM
+LAYOUT: POS	配置：位置	DISPO : POS	BELEGUNG: POS	DISTRIB.: POS	DISP.: POS	LAYOUT: POS
+LAYOUT: ABC	配置：文字	DISPO : ABC	BELEGUNG: ABC	DISTRIB.: ABC	DISP.: ABC	LAYOUT: ABC
+GYRO: ON	ジャイロ：オン	GYRO : ACTIVÉ	GYRO: AN	GIRO: SÍ	GIRO: SÌ	GIRO: LIGADO
+GYRO: AIM	ジャイロ：照準時	GYRO : VISÉE	GYRO: ZIELEN	GIRO: APUNTAR	GIRO: MIRA	GIRO: MIRA
+GYRO: OFF	ジャイロ：オフ	GYRO : DÉSACTIVÉ	GYRO: AUS	GIRO: NO	GIRO: NO	GIRO: DESLIGADO
+SAVE ZONE	範囲を保存	ENREGISTRER LA ZONE	ZONE SPEICHERN	GUARDAR ZONA	SALVA ZONA	SALVAR ZONA
+CLEAR ZONES	範囲を消去	EFFACER LES ZONES	ZONEN LÖSCHEN	BORRAR ZONAS	CANCELLA ZONE	APAGAR ZONAS
+RESUME	再開	REPRENDRE	FORTSETZEN	REANUDAR	RIPRENDI	RETOMAR
+SCREENSHOT	スクリーンショット	CAPTURE	SCREENSHOT	CAPTURA	SCREENSHOT	CAPTURA
+SOUND: OFF	音：オフ	SON : COUPÉ	TON: AUS	SONIDO: NO	AUDIO: NO	SOM: DESLIGADO
+SOUND: ON	音：オン	SON : ACTIVÉ	TON: AN	SONIDO: SÍ	AUDIO: SÌ	SOM: LIGADO
+DISCONNECT	切断	DÉCONNECTER	TRENNEN	DESCONECTAR	DISCONNETTI	DESCONECTAR
+Left stick	左スティック	Stick gauche	Linker Stick	Stick izquierdo	Stick sinistro	Analógico esquerdo
+Right stick + gyro	右スティック + ジャイロ	Stick droit + gyro	Rechter Stick + Gyro	Stick derecho + giroscopio	Stick destro + giroscopio	Analógico direito + giroscópio
+Right stick	右スティック	Stick droit	Rechter Stick	Stick derecho	Stick destro	Analógico direito
+LT / RT triggers	LT / RT トリガー	Gâchettes LT / RT	Trigger LT / RT	Gatillos LT / RT	Grilletti LT / RT	Gatilhos LT / RT
+L2 / R2 triggers	L2 / R2 トリガー	Gâchettes L2 / R2	Trigger L2 / R2	Gatillos L2 / R2	Grilletti L2 / R2	Gatilhos L2 / R2
+Menu	メニュー	Menu	Menü	Menú	Menu	Menu
+View	ビュー	Affichage	Ansicht	Vista	Visualizza	Exibir
+Share / View	シェア / ビュー	Partage / Affichage	Teilen / Ansicht	Compartir / Vista	Condividi / Visualizza	Compartilhar / Exibir
+TOUCH	タッチ	TACTILE	TOUCH	TÁCTIL	TOUCH	TOQUE
+LS / RS / Xbox · middle: both	LS / RS / Xbox · 中央：両方	LS / RS / Xbox · milieu : les deux	LS / RS / Xbox · Mitte: beide	LS / RS / Xbox · centro: ambos	LS / RS / Xbox · centro: entrambi	LS / RS / Xbox · meio: ambos
+L3 / R3 / PS · middle: both	L3 / R3 / PS · 中央：両方	L3 / R3 / PS · milieu : les deux	L3 / R3 / PS · Mitte: beide	L3 / R3 / PS · centro: ambos	L3 / R3 / PS · centro: entrambi	L3 / R3 / PS · meio: ambos
+Hold for the stream menu	長押しで配信メニュー	Maintenez pour le menu du flux	Halten für das Stream-Menü	Mantén para el menú del stream	Tieni premuto per il menu dello stream	Segure para o menu do stream
+Your own button mapping is in use	独自のボタン割り当てを使用中	Votre assignation des boutons est utilisée	Deine eigene Tastenzuweisung ist aktiv	Se usa tu asignación de botones	È in uso la tua assegnazione pulsanti	Seu mapeamento de botões está em uso
+Gyro aim: %s  ·  change it in the stream menu	ジャイロ照準：%s  ·  配信メニューで変更	Visée gyro : %s  ·  modifiable dans le menu du flux	Gyro-Zielen: %s  ·  im Stream-Menü änderbar	Apuntado con giroscopio: %s  ·  cámbialo en el menú del stream	Mira giroscopica: %s  ·  cambiala nel menu dello stream	Mira por giroscópio: %s  ·  mude no menu do stream
+Connection unstable - waiting for video	接続が不安定 - 映像を待っています	Connexion instable - en attente de la vidéo	Verbindung instabil - warte auf Bild	Conexión inestable - esperando vídeo	Connessione instabile - in attesa del video	Conexão instável - aguardando o vídeo
+Hold START + SELECT for the menu	START + SELECT 長押しでメニュー	Maintenez START + SELECT pour le menu	START + SELECT halten für das Menü	Mantén START + SELECT para el menú	Tieni START + SELECT per il menu	Segure START + SELECT para o menu
+MIC ON	マイク オン	MICRO ACTIVÉ	MIKRO AN	MICRO SÍ	MICRO SÌ	MIC LIGADO
+MIC OFF	マイク オフ	MICRO COUPÉ	MIKRO AUS	MICRO NO	MICRO NO	MIC DESLIGADO
+PUSH TO LOOK	押して見回す	POUSSER POUR REGARDER	SCHIEBEN ZUM UMSEHEN	EMPUJA PARA MIRAR	SPINGI PER GUARDARE	EMPURRE PARA OLHAR
+DRAG TO LOOK	ドラッグで見回す	GLISSER POUR REGARDER	ZIEHEN ZUM UMSEHEN	ARRASTRA PARA MIRAR	TRASCINA PER GUARDARE	ARRASTE PARA OLHAR
+DOUBLE-TAP  RS	ダブルタップ  RS	DOUBLE-TOUCHE  RS	DOPPELTIPPEN  RS	DOBLE TOQUE  RS	DOPPIO TOCCO  RS	TOQUE DUPLO  RS
+DOUBLE-TAP  R3	ダブルタップ  R3	DOUBLE-TOUCHE  R3	DOPPELTIPPEN  R3	DOBLE TOQUE  R3	DOPPIO TOCCO  R3	TOQUE DUPLO  R3
+HIDE	隠す	MASQUER	AUSBLENDEN	OCULTAR	NASCONDI	OCULTAR
+ZONE %d	範囲 %d	ZONE %d	ZONE %d	ZONA %d	ZONA %d	ZONA %d
+WELCOME BACK	おかえりなさい	BON RETOUR	WILLKOMMEN ZURÜCK	BIENVENIDO DE NUEVO	BENTORNATO	BEM-VINDO DE VOLTA
+Paused %u min · still connected	%u 分間一時停止中 · 接続中	En pause depuis %u min · toujours connecté	%u Min. pausiert · noch verbunden	En pausa %u min · aún conectado	In pausa da %u min · ancora connesso	Pausado há %u min · ainda conectado
+Paused %u s · still connected	%u 秒間一時停止中 · 接続中	En pause depuis %u s · toujours connecté	%u s pausiert · noch verbunden	En pausa %u s · aún conectado	In pausa da %u s · ancora connesso	Pausado há %u s · ainda conectado
+PLAY ANYWAY	それでも遊ぶ	JOUER QUAND MÊME	TROTZDEM SPIELEN	JUGAR DE TODOS MODOS	GIOCA COMUNQUE	JOGAR MESMO ASSIM
+QUIT GAME	ゲームを終了	QUITTER LE JEU	SPIEL BEENDEN	SALIR DEL JUEGO	ESCI DAL GIOCO	SAIR DO JOGO

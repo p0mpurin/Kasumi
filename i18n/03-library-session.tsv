@@ -1,0 +1,128 @@
+# en	ja	fr	de	es	it	pt
+PAIRED	ペアリング済み	ASSOCIÉ	GEKOPPELT	VINCULADO	ABBINATO	PAREADO
+SIGNED IN	サインイン済み	CONNECTÉ	ANGEMELDET	SESIÓN INICIADA	CONNESSO	CONECTADO
+Streaming from %.60s	%.60s からストリーミング	Diffusion depuis %.60s	Streaming von %.60s	Jugando desde %.60s	In streaming da %.60s	Transmitindo de %.60s
+your PC	あなたの PC	votre PC	deinem PC	tu PC	il tuo PC	seu PC
+HOME	ホーム	ACCUEIL	START	INICIO	HOME	INÍCIO
+Choose where to play	遊ぶサービスを選ぶ	Choisissez où jouer	Wähle, wo du spielst	Elige dónde jugar	Scegli dove giocare	Escolha onde jogar
+Choose	選ぶ	Choisir	Wählen	Elegir	Scegli	Escolher
+Enter	決定	Entrer	Öffnen	Entrar	Entra	Entrar
+START	スタート	DÉMARRER	STARTEN	EMPEZAR	INIZIA	COMEÇAR
+Exit	終了	Quitter	Beenden	Salir	Esci	Sair
+Continue	続ける	Continuer	Weiter	Continuar	Continua	Continuar
+You need: %s	必要なもの：%s	Il vous faut : %s	Du brauchst: %s	Necesitas: %s	Ti serve: %s	Você precisa de: %s
+Set up	設定する	Configurer	Einrichten	Configurar	Configura	Configurar
+Home	ホーム	Accueil	Start	Inicio	Home	Início
+Settings	設定	Réglages	Einstellungen	Ajustes	Impostazioni	Configurações
+Try again	もう一度	Réessayer	Erneut versuchen	Reintentar	Riprova	Tentar de novo
+PC address	PC のアドレス	Adresse du PC	PC-Adresse	Dirección del PC	Indirizzo del PC	Endereço do PC
+SIGN IN WITH XBOX	Xbox でサインイン	CONNEXION XBOX	MIT XBOX ANMELDEN	INICIAR SESIÓN CON XBOX	ACCEDI CON XBOX	ENTRAR COM O XBOX
+Steam asks for a code on	Steam がコードを求めます：	Steam demande un code sur	Steam fragt nach einem Code auf	Steam pide un código en	Steam chiede un codice su	O Steam pede um código em
+On your phone or computer, open	スマホかパソコンで開く：	Sur votre téléphone ou ordinateur, ouvrez	Öffne auf Handy oder Computer	En tu móvil u ordenador, abre	Sul telefono o computer, apri	No celular ou computador, abra
+Type it in the Authorize Device window	「デバイスの承認」ウィンドウに入力	Saisissez-le dans la fenêtre Autoriser l'appareil	Gib ihn im Fenster „Gerät autorisieren“ ein	Escríbelo en la ventana Autorizar dispositivo	Digitalo nella finestra Autorizza dispositivo	Digite na janela Autorizar dispositivo
+Waiting for approval	承認を待っています	En attente d'autorisation	Warte auf Freigabe	Esperando aprobación	In attesa di approvazione	Aguardando aprovação
+Code expires in %ld:%02ld	コードの期限 %ld:%02ld	Le code expire dans %ld:%02ld	Code läuft ab in %ld:%02ld	El código caduca en %ld:%02ld	Il codice scade tra %ld:%02ld	O código expira em %ld:%02ld
+New code	新しいコード	Nouveau code	Neuer Code	Nuevo código	Nuovo codice	Novo código
+Cancel	キャンセル	Annuler	Abbrechen	Cancelar	Annulla	Cancelar
+synced just now	たった今同期	synchronisé à l'instant	gerade synchronisiert	sincronizado ahora	sincronizzato ora	sincronizado agora
+synced %ld min ago	%ld 分前に同期	synchronisé il y a %ld min	vor %ld Min. synchronisiert	sincronizado hace %ld min	sincronizzato %ld min fa	sincronizado há %ld min
+synced %ld h ago	%ld 時間前に同期	synchronisé il y a %ld h	vor %ld Std. synchronisiert	sincronizado hace %ld h	sincronizzato %ld h fa	sincronizado há %ld h
+synced %ld days ago	%ld 日前に同期	synchronisé il y a %ld jours	vor %ld Tagen synchronisiert	sincronizado hace %ld días	sincronizzato %ld giorni fa	sincronizado há %ld dias
+From %s  ·  800x480 wide  ·  %u fps	%s から  ·  800x480 ワイド  ·  %u fps	Depuis %s  ·  800x480 large  ·  %u fps	Von %s  ·  800x480 breit  ·  %u fps	Desde %s  ·  800x480 ancho  ·  %u fps	Da %s  ·  800x480 ampio  ·  %u fps	De %s  ·  800x480 largo  ·  %u fps
+Xbox Cloud  ·  800x480 wide  ·  60 fps	Xbox Cloud  ·  800x480 ワイド  ·  60 fps	Xbox Cloud  ·  800x480 large  ·  60 fps	Xbox Cloud  ·  800x480 breit  ·  60 fps	Xbox Cloud  ·  800x480 ancho  ·  60 fps	Xbox Cloud  ·  800x480 ampio  ·  60 fps	Xbox Cloud  ·  800x480 largo  ·  60 fps
+RECENT	最近	RÉCENTS	ZULETZT	RECIENTES	RECENTI	RECENTES
+SEARCH  \"%s\"	検索「%s」	RECHERCHE  « %s »	SUCHE  „%s“	BUSCAR  «%s»	CERCA  «%s»	BUSCA  "%s"
+No games here yet	まだゲームがありません	Aucun jeu ici pour l'instant	Noch keine Spiele hier	Aún no hay juegos	Ancora nessun gioco	Nenhum jogo aqui ainda
+Try a different search.	別の言葉で検索してください。	Essayez une autre recherche.	Versuch eine andere Suche.	Prueba otra búsqueda.	Prova un'altra ricerca.	Tente outra busca.
+Press Y to load your library, or X to search.	Y でライブラリを読み込み、X で検索。	Y pour charger votre bibliothèque, X pour chercher.	Y lädt deine Bibliothek, X sucht.	Pulsa Y para cargar tu biblioteca o X para buscar.	Premi Y per caricare la libreria o X per cercare.	Aperte Y para carregar sua biblioteca ou X para buscar.
+GeForce NOW in %s is %s's: sign out in Settings > Account and pick %s.	%s の GeForce NOW は %s のサービスです：設定 > アカウントでサインアウトし、%s を選んでください。	GeForce NOW en %s est assuré par %s : déconnectez-vous dans Réglages > Compte et choisissez %s.	GeForce NOW in %s gehört zu %s: Melde dich unter Einstellungen > Konto ab und wähle %s.	GeForce NOW en %s es de %s: cierra sesión en Ajustes > Cuenta y elige %s.	GeForce NOW in %s è di %s: esci in Impostazioni > Account e scegli %s.	O GeForce NOW em %s é da %s: saia em Configurações > Conta e escolha %s.
+Signed in with NVIDIA	NVIDIA でサインイン中	Connecté avec NVIDIA	Mit NVIDIA angemeldet	Sesión iniciada con NVIDIA	Accesso con NVIDIA	Conectado com a NVIDIA
+No favourites yet	お気に入りはまだありません	Aucun favori pour l'instant	Noch keine Favoriten	Aún no hay favoritos	Ancora nessun preferito	Nenhum favorito ainda
+Open a game and press Y to add it here.	ゲームを開いて Y で追加できます。	Ouvrez un jeu et appuyez sur Y pour l'ajouter ici.	Öffne ein Spiel und drück Y, um es hier hinzuzufügen.	Abre un juego y pulsa Y para añadirlo aquí.	Apri un gioco e premi Y per aggiungerlo qui.	Abra um jogo e aperte Y para adicionar aqui.
+Nothing played on Kasumi yet	Kasumi でまだ何も遊んでいません	Rien joué sur Kasumi pour l'instant	Noch nichts auf Kasumi gespielt	Aún no has jugado en Kasumi	Ancora niente giocato su Kasumi	Nada jogado no Kasumi ainda
+Games you play show up here, newest first.	遊んだゲームが新しい順に表示されます。	Les jeux auxquels vous jouez apparaissent ici, du plus récent au plus ancien.	Gespielte Spiele erscheinen hier, die neuesten zuerst.	Los juegos que juegues aparecerán aquí, los más recientes primero.	I giochi a cui giochi appaiono qui, dai più recenti.	Os jogos que você jogar aparecem aqui, os mais recentes primeiro.
+NOT IN LIBRARY	ライブラリにありません	PAS DANS LA BIBLIOTHÈQUE	NICHT IN DER BIBLIOTHEK	NO ESTÁ EN TU BIBLIOTECA	NON IN LIBRERIA	FORA DA BIBLIOTECA
+PAID MEMBERSHIP ONLY	有料会員のみ	ABONNEMENT PAYANT REQUIS	NUR BEZAHLTE MITGLIEDSCHAFT	SOLO SUSCRIPCIÓN DE PAGO	SOLO ABBONAMENTO A PAGAMENTO	SÓ ASSINATURA PAGA
+Browse	見る	Parcourir	Blättern	Explorar	Sfoglia	Navegar
+Search	検索	Rechercher	Suchen	Buscar	Cerca	Buscar
+Close	閉じる	Fermer	Schließen	Cerrar	Chiudi	Fechar
+Library	ライブラリ	Bibliothèque	Bibliothek	Biblioteca	Libreria	Biblioteca
+In the queue	順番待ち中	Dans la file	In der Warteschlange	En la cola	In coda	Na fila
+Preparing your rig	リグを準備中	Préparation de votre machine	Dein Rechner wird vorbereitet	Preparando tu máquina	Preparazione della macchina	Preparando sua máquina
+Connecting	接続中	Connexion	Verbinden	Conectando	Connessione	Conectando
+Starting the stream	ストリームを開始中	Lancement du flux	Stream wird gestartet	Iniciando el stream	Avvio dello stream	Iniciando o stream
+Waiting for an Xbox	Xbox を待っています	En attente d'une Xbox	Warte auf eine Xbox	Esperando una Xbox	In attesa di una Xbox	Aguardando um Xbox
+Preparing the Xbox	Xbox を準備中	Préparation de la Xbox	Xbox wird vorbereitet	Preparando la Xbox	Preparazione della Xbox	Preparando o Xbox
+Waiting for the PC	PC を待っています	En attente du PC	Warte auf den PC	Esperando al PC	In attesa del PC	Aguardando o PC
+Starting on your PC	PC で開始中	Démarrage sur votre PC	Start auf deinem PC	Iniciando en tu PC	Avvio sul tuo PC	Iniciando no seu PC
+Connecting to your PC	PC に接続中	Connexion à votre PC	Verbinde mit deinem PC	Conectando con tu PC	Connessione al tuo PC	Conectando ao seu PC
+SESSION ENDED	セッション終了	SESSION TERMINÉE	SITZUNG BEENDET	SESIÓN TERMINADA	SESSIONE TERMINATA	SESSÃO ENCERRADA
+Play again	もう一度遊ぶ	Rejouer	Nochmal spielen	Jugar de nuevo	Gioca ancora	Jogar de novo
+Leave	やめる	Quitter	Verlassen	Salir	Esci	Sair
+SESSION PROBLEM	セッションの問題	PROBLÈME DE SESSION	SITZUNGSPROBLEM	PROBLEMA DE SESIÓN	PROBLEMA DI SESSIONE	PROBLEMA NA SESSÃO
+Retry	再試行	Réessayer	Erneut	Reintentar	Riprova	Tentar de novo
+Reconnecting	再接続中	Reconnexion	Neu verbinden	Reconectando	Riconnessione	Reconectando
+Paused with the lid closed; reconnecting when you open it.	フタを閉じたので一時停止中。開くと再接続します。	En pause, écran rabattu ; reconnexion à l'ouverture.	Pausiert bei geschlossenem Deckel; verbindet neu, wenn du ihn öffnest.	En pausa con la tapa cerrada; se reconecta al abrirla.	In pausa con il coperchio chiuso; si riconnette quando lo apri.	Pausado com a tampa fechada; reconecta quando você abrir.
+Waiting for Wi-Fi to come back; your game keeps running.	Wi-Fi の復帰を待っています。ゲームは続いています。	En attente du retour du Wi-Fi ; votre jeu continue.	Warte, bis das WLAN zurück ist; dein Spiel läuft weiter.	Esperando a que vuelva la Wi-Fi; tu juego sigue.	In attesa che torni la Wi-Fi; il gioco continua.	Aguardando o Wi-Fi voltar; seu jogo continua.
+The connection dropped. Attempt %u of 3; your game keeps running.	接続が切れました。%u / 3 回目。ゲームは続いています。	La connexion a coupé. Tentative %u sur 3 ; votre jeu continue.	Die Verbindung ist abgebrochen. Versuch %u von 3; dein Spiel läuft weiter.	Se cortó la conexión. Intento %u de 3; tu juego sigue.	Connessione persa. Tentativo %u di 3; il gioco continua.	A conexão caiu. Tentativa %u de 3; seu jogo continua.
+About %d min to go	あと約 %d 分	Encore environ %d min	Noch etwa %d Min.	Faltan unos %d min	Mancano circa %d min	Faltam cerca de %d min
+About a minute to go	あと約 1 分	Encore environ une minute	Noch etwa eine Minute	Falta un minuto	Manca circa un minuto	Falta cerca de um minuto
+Your rig should be ready any moment	まもなくリグの準備ができます	Votre machine sera prête d'un instant à l'autre	Dein Rechner ist gleich bereit	Tu máquina estará lista en cualquier momento	La macchina sarà pronta a momenti	Sua máquina deve ficar pronta a qualquer momento
+Waiting for a free Xbox	空いている Xbox を待っています	En attente d'une Xbox libre	Warte auf eine freie Xbox	Esperando una Xbox libre	In attesa di una Xbox libera	Aguardando um Xbox livre
+Your place in NVIDIA's queue	NVIDIA の待ち列での順番	Votre place dans la file NVIDIA	Dein Platz in NVIDIAs Warteschlange	Tu puesto en la cola de NVIDIA	Il tuo posto nella coda NVIDIA	Sua posição na fila da NVIDIA
+Waiting for a free rig	空いているリグを待っています	En attente d'une machine libre	Warte auf einen freien Rechner	Esperando una máquina libre	In attesa di una macchina libera	Aguardando uma máquina livre
+QUEUE	待ち列	FILE	WARTESCHLANGE	COLA	CODA	FILA
+SIGNAL	信号	SIGNAL	SIGNAL	SEÑAL	SEGNALE	SINAL
+STREAM	配信	FLUX	STREAM	STREAM	STREAM	STREAM
+Loading...	読み込み中...	Chargement...	Wird geladen...	Cargando...	Caricamento...	Carregando...
+Delete	削除	Supprimer	Löschen	Borrar	Elimina	Apagar
+Back	戻る	Retour	Zurück	Atrás	Indietro	Voltar
+SCREENSHOTS	スクリーンショット	CAPTURES	SCREENSHOTS	CAPTURAS	SCREENSHOT	CAPTURAS
+DELETE	削除	SUPPRIMER	LÖSCHEN	BORRAR	ELIMINA	APAGAR
+BACK	戻る	RETOUR	ZURÜCK	ATRÁS	INDIETRO	VOLTAR
+SETTINGS	設定	RÉGLAGES	EINSTELLUNGEN	AJUSTES	IMPOSTAZIONI	CONFIGURAÇÕES
+Save & back	保存して戻る	Enregistrer et revenir	Speichern & zurück	Guardar y volver	Salva e torna	Salvar e voltar
+Change	変更	Modifier	Ändern	Cambiar	Cambia	Mudar
+Section	項目	Section	Bereich	Sección	Sezione	Seção
+Sections	項目一覧	Sections	Bereiche	Secciones	Sezioni	Seções
+HELP IMPROVE KASUMI?	KASUMI の改善に協力しませんか？	AIDER À AMÉLIORER KASUMI ?	KASUMI VERBESSERN HELFEN?	¿AYUDAS A MEJORAR KASUMI?	AIUTI A MIGLIORARE KASUMI?	AJUDAR A MELHORAR O KASUMI?
+Share diagnostics with the developer to find bugs and make streaming smoother.	診断情報を開発者と共有して、不具合を見つけストリーミングを滑らかにします。	Partagez des diagnostics avec le développeur pour trouver des bugs et rendre le streaming plus fluide.	Teile Diagnosedaten mit dem Entwickler, um Fehler zu finden und das Streaming flüssiger zu machen.	Comparte diagnósticos con el desarrollador para encontrar errores y hacer el streaming más fluido.	Condividi la diagnostica con lo sviluppatore per trovare bug e rendere lo streaming più fluido.	Compartilhe diagnósticos com o desenvolvedor para achar bugs e deixar o streaming mais fluido.
+Problem reports: the log, after a crash or failed stream	問題レポート：クラッシュや配信失敗のあとのログ	Rapports d'erreur : le journal, après un plantage ou un flux raté	Fehlerberichte: das Protokoll nach einem Absturz oder Stream-Fehler	Informes de errores: el registro tras un cuelgue o stream fallido	Segnalazioni: il log, dopo un crash o uno stream fallito	Relatórios de erro: o log, após um travamento ou stream com falha
+Performance stats: ping and smoothness after each session	パフォーマンス統計：プレイごとの ping と滑らかさ	Statistiques : ping et fluidité après chaque session	Leistungsdaten: Ping und Flüssigkeit nach jeder Sitzung	Estadísticas: ping y fluidez tras cada sesión	Statistiche: ping e fluidità dopo ogni sessione	Estatísticas: ping e fluidez após cada sessão
+Never your login · change it in Settings > System	ログイン情報は送りません · 設定 > 本体で変更できます	Jamais vos identifiants · modifiable dans Réglages > Système	Nie dein Login · änderbar unter Einstellungen > System	Nunca tu inicio de sesión · cámbialo en Ajustes > Sistema	Mai i tuoi dati di accesso · cambialo in Impostazioni > Sistema	Nunca seu login · mude em Configurações > Sistema
+Share	共有する	Partager	Teilen	Compartir	Condividi	Compartilhar
+No thanks	しない	Non merci	Nein danke	No, gracias	No grazie	Não, obrigado
+Confirm	確認	Confirmer	Bestätigen	Confirmar	Conferma	Confirmar
+Resume	再開	Reprendre	Fortsetzen	Reanudar	Riprendi	Retomar
+End it	終了する	Y mettre fin	Beenden	Terminarla	Terminala	Encerrar
+Try now	今すぐ試す	Essayer	Jetzt versuchen	Probar ahora	Prova ora	Tentar agora
+Stop	停止	Arrêter	Stopp	Detener	Ferma	Parar
+%lu h %02lu m	%lu 時間 %02lu 分	%lu h %02lu min	%lu Std. %02lu Min.	%lu h %02lu min	%lu h %02lu min	%lu h %02lu min
+%lu min	%lu 分	%lu min	%lu Min.	%lu min	%lu min	%lu min
+Taking it off the HOME Menu...	HOME メニューから削除中...	Retrait du menu HOME...	Wird aus dem HOME-Menü entfernt...	Quitándolo del menú HOME...	Rimozione dal menu HOME...	Removendo do menu HOME...
+Getting the game's art...	ゲームの画像を取得中...	Récupération des images du jeu...	Spielbilder werden geladen...	Obteniendo las imágenes del juego...	Recupero delle immagini del gioco...	Baixando as imagens do jogo...
+Drawing the icon and banner...	アイコンとバナーを作成中...	Dessin de l'icône et de la bannière...	Symbol und Banner werden gezeichnet...	Dibujando el icono y el banner...	Disegno di icona e banner...	Desenhando o ícone e o banner...
+Building the shortcut...	ショートカットを作成中...	Création du raccourci...	Verknüpfung wird erstellt...	Creando el acceso directo...	Creazione della scorciatoia...	Criando o atalho...
+Installing on the HOME Menu  %u%%	HOME メニューにインストール中  %u%%	Installation dans le menu HOME  %u%%	Installation im HOME-Menü  %u%%	Instalando en el menú HOME  %u%%	Installazione nel menu HOME  %u%%	Instalando no menu HOME  %u%%
+Done	完了	Terminé	Fertig	Hecho	Fatto	Pronto
+HOME MENU SHORTCUT	HOME メニューのショートカット	RACCOURCI DU MENU HOME	HOME-MENÜ-VERKNÜPFUNG	ACCESO DIRECTO EN EL MENÚ HOME	SCORCIATOIA NEL MENU HOME	ATALHO NO MENU HOME
+Removing	削除中	Retrait	Entfernen	Quitando	Rimozione	Removendo
+Drawing...	作成中...	Dessin...	Wird gezeichnet...	Dibujando...	Disegno...	Desenhando...
+BUILD	作成	CRÉER	ERSTELLEN	CREAR	CREA	CRIAR
+INSTALL	インストール	INSTALLER	INSTALLIEREN	INSTALAR	INSTALLA	INSTALAR
+Keep Kasumi open: this takes a few seconds.	Kasumi を開いたままにしてください。数秒かかります。	Gardez Kasumi ouvert : cela prend quelques secondes.	Lass Kasumi offen: Das dauert ein paar Sekunden.	Mantén Kasumi abierto: tarda unos segundos.	Tieni Kasumi aperto: ci vuole qualche secondo.	Mantenha o Kasumi aberto: leva alguns segundos.
+Added to your HOME Menu	HOME メニューに追加しました	Ajouté à votre menu HOME	Zum HOME-Menü hinzugefügt	Añadido a tu menú HOME	Aggiunto al menu HOME	Adicionado ao menu HOME
+Press HOME: it is at the end of your icons, wrapped as a present until you open it once. It starts Kasumi and launches %.60s.	HOME を押してください。アイコンの最後にプレゼントの箱として表示されます（一度開くまで）。Kasumi を起動して %.60s を始めます。	Appuyez sur HOME : il est à la fin de vos icônes, emballé comme un cadeau jusqu'à la première ouverture. Il ouvre Kasumi et lance %.60s.	Drück HOME: Es liegt am Ende deiner Symbole, als Geschenk verpackt, bis du es einmal öffnest. Es startet Kasumi und %.60s.	Pulsa HOME: está al final de tus iconos, envuelto como un regalo hasta que lo abras una vez. Abre Kasumi y lanza %.60s.	Premi HOME: è in fondo alle icone, incartato come un regalo finché non lo apri una volta. Avvia Kasumi e %.60s.	Aperte HOME: ele fica no fim dos ícones, embrulhado como presente até você abrir uma vez. Ele abre o Kasumi e inicia %.60s.
+Press HOME to find it. Tip: refresh your library (Y) and make it again to get the game's own banner art.	HOME を押すと見つかります。ヒント：ライブラリを更新（Y）して作り直すと、ゲーム独自のバナー画像になります。	Appuyez sur HOME pour le trouver. Astuce : actualisez votre bibliothèque (Y) et recréez-le pour obtenir la bannière du jeu.	Drück HOME, um es zu finden. Tipp: Bibliothek aktualisieren (Y) und neu erstellen, um das Banner des Spiels zu bekommen.	Pulsa HOME para encontrarlo. Consejo: actualiza tu biblioteca (Y) y créalo de nuevo para tener el banner del juego.	Premi HOME per trovarlo. Consiglio: aggiorna la libreria (Y) e ricrealo per avere il banner del gioco.	Aperte HOME para achar. Dica: atualize a biblioteca (Y) e crie de novo para ter o banner do jogo.
+Removed from your HOME Menu	HOME メニューから削除しました	Retiré de votre menu HOME	Aus dem HOME-Menü entfernt	Quitado de tu menú HOME	Rimosso dal menu HOME	Removido do menu HOME
+Add it again any time from this page.	このページからいつでも追加し直せます。	Rajoutez-le quand vous voulez depuis cette page.	Du kannst es jederzeit auf dieser Seite wieder hinzufügen.	Puedes añadirlo de nuevo cuando quieras desde esta página.	Puoi aggiungerlo di nuovo quando vuoi da questa pagina.	Adicione de novo quando quiser por esta página.
+Couldn't make the shortcut	ショートカットを作れませんでした	Impossible de créer le raccourci	Verknüpfung konnte nicht erstellt werden	No se pudo crear el acceso directo	Impossibile creare la scorciatoia	Não foi possível criar o atalho
+Please keep Kasumi open until it's done. Closing it now can leave a broken icon behind.	完了するまで Kasumi を閉じないでください。今閉じると壊れたアイコンが残ることがあります。	Gardez Kasumi ouvert jusqu'à la fin. Le fermer maintenant peut laisser une icône cassée.	Lass Kasumi bitte offen, bis es fertig ist. Jetzt schließen kann ein kaputtes Symbol hinterlassen.	Mantén Kasumi abierto hasta que termine. Cerrarlo ahora puede dejar un icono roto.	Tieni Kasumi aperto finché non ha finito. Chiuderlo ora può lasciare un'icona rotta.	Mantenha o Kasumi aberto até terminar. Fechar agora pode deixar um ícone quebrado.
+NOT ADDED	追加できませんでした	NON AJOUTÉ	NICHT HINZUGEFÜGT	NO AÑADIDO	NON AGGIUNTO	NÃO ADICIONADO
+REMOVED	削除しました	RETIRÉ	ENTFERNT	QUITADO	RIMOSSO	REMOVIDO
+ADDED TO THE HOME MENU	HOME メニューに追加しました	AJOUTÉ AU MENU HOME	ZUM HOME-MENÜ HINZUGEFÜGT	AÑADIDO AL MENÚ HOME	AGGIUNTO AL MENU HOME	ADICIONADO AO MENU HOME
+TRY AGAIN	もう一度	RÉESSAYER	ERNEUT	REINTENTAR	RIPROVA	TENTAR DE NOVO
+CLOSE	閉じる	FERMER	SCHLIESSEN	CERRAR	CHIUDI	FECHAR
+Press HOME to see it. Opening it starts this game for you.	HOME を押すと表示されます。開くとこのゲームが始まります。	Appuyez sur HOME pour le voir. L'ouvrir lance ce jeu.	Drück HOME, um es zu sehen. Öffnen startet dieses Spiel.	Pulsa HOME para verlo. Al abrirlo empieza este juego.	Premi HOME per vederlo. Aprirlo avvia questo gioco.	Aperte HOME para ver. Abrir inicia este jogo.
+Played %s on Kasumi	Kasumi で %s プレイ	Joué %s sur Kasumi	%s auf Kasumi gespielt	Jugado %s en Kasumi	Giocato %s su Kasumi	Jogado %s no Kasumi
+Played briefly on Kasumi	Kasumi で少しプレイ	Joué brièvement sur Kasumi	Kurz auf Kasumi gespielt	Jugado un rato en Kasumi	Giocato brevemente su Kasumi	Jogado rapidamente no Kasumi

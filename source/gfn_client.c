@@ -1,4 +1,5 @@
 #include "gfn_client.h"
+#include "i18n.h"
 #include "app_paths.h"
 #include "http_client.h"
 #include "diagnostic.h"
@@ -192,7 +193,7 @@ static void new_session_device_id(char output[40])
 static json_t *parse_response(HttpResponse *response, GfnClient *client, const char *operation)
 {
     if (response->status < 200 || response->status >= 300) {
-        snprintf(client->status, sizeof(client->status), "%s: HTTP %ld", operation, response->status);
+        snprintf(client->status, sizeof(client->status), i18n_text("%s: HTTP %ld"), operation, response->status);
         return NULL;
     }
     json_error_t error;
@@ -297,7 +298,7 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
     }
     if (!sent) {
         g_token_transient = true;
-        snprintf(client->status, sizeof(client->status), "Token request: %.130s", response.error);
+        snprintf(client->status, sizeof(client->status), i18n_text("Token request: %.130s"), response.error);
         diagnostic_log("AUTH", "token request got no answer: %.100s", response.error);
         return false;
     }
@@ -306,7 +307,7 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
     if (response.status == 200 && root) {
         json_t *access = json_object_get(root, "access_token");
         if (!json_is_string(access) || !json_string_length(access)) {
-            snprintf(client->status, sizeof(client->status), "Login response has no access token; X to sign in again");
+            snprintf(client->status, sizeof(client->status), i18n_text("Login response has no access token; X to sign in again"));
             client->auth_state = GFN_AUTH_ERROR;
             json_decref(root);
             http_response_free(&response);
@@ -338,7 +339,7 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
         }
         hydrate_session_identity(client);
         const bool saved = save_session(client);
-        snprintf(client->status, sizeof(client->status), "Signed in; session %s", saved ? "saved to SD" : "save failed");
+        snprintf(client->status, sizeof(client->status), i18n_text("Signed in; session %s"), saved ? i18n_text("saved to SD") : i18n_text("save failed"));
         return true;
     }
 
@@ -350,10 +351,10 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
         if (json_is_string(description_value)) description = json_string_value(description_value);
     }
     if (polling && strcmp(code, "authorization_pending") == 0) {
-        snprintf(client->status, sizeof(client->status), "Waiting for browser sign-in...");
+        snprintf(client->status, sizeof(client->status), i18n_text("Waiting for browser sign-in..."));
     } else if (polling && strcmp(code, "slow_down") == 0) {
         client->poll_interval += 5;
-        snprintf(client->status, sizeof(client->status), "NVIDIA asked to slow polling");
+        snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA asked to slow polling"));
     } else {
         /* Beta.22 report YVQ446: a partner login's refresh was refused and
          * the log couldn't say why. */
@@ -362,9 +363,9 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
         g_token_transient = token_status_transient(response.status);
         if (g_token_transient) {
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA's login server is busy (HTTP %ld). Try again in a moment.", response.status);
+                     i18n_text("NVIDIA's login server is busy (HTTP %ld). Try again in a moment."), response.status);
         } else {
-            snprintf(client->status, sizeof(client->status), "Token HTTP %ld: %.80s", response.status, code);
+            snprintf(client->status, sizeof(client->status), i18n_text("Token HTTP %ld: %.80s"), response.status, code);
             /* A refresh decides for itself (refresh_failed). */
             if (polling) client->auth_state = GFN_AUTH_ERROR;
         }
@@ -388,12 +389,12 @@ static bool refresh_failed(GfnClient *client, bool transient)
     }
     if (transient) {
         snprintf(client->status, sizeof(client->status),
-                 "Can't reach NVIDIA's login server right now. Check the Wi-Fi, then try again.");
+                 i18n_text("Can't reach NVIDIA's login server right now. Check the Wi-Fi, then try again."));
         return false;
     }
     diagnostic_log("AUTH", "refresh refused and the login has run out: sign-in needed");
     client->auth_state = GFN_AUTH_ERROR;
-    snprintf(client->status, sizeof(client->status), "Your NVIDIA login has expired. Press X to sign in again.");
+    snprintf(client->status, sizeof(client->status), i18n_text("Your NVIDIA login has expired. Press X to sign in again."));
     return false;
 }
 
@@ -473,20 +474,20 @@ void gfn_client_init(GfnClient *client)
         if (steam_link_selected()) {
             if (steam_link_load_login(client)) {
                 client->auth_state = GFN_AUTH_LOGGED_IN;
-                snprintf(client->status, sizeof(client->status), "Paired with %.60s", steam_link_host_name());
+                snprintf(client->status, sizeof(client->status), i18n_text("Paired with %.60s"), steam_link_host_name());
             } else {
                 client->auth_state = GFN_AUTH_LOGGED_OUT;
-                snprintf(client->status, sizeof(client->status), "Press X to pair with your PC");
+                snprintf(client->status, sizeof(client->status), i18n_text("Press X to pair with your PC"));
             }
             return;
         }
         if (xcloud_load_login(client)) {
             diagnostic_log("AUTH", "saved Xbox login%s", nvidia_saved ? " (NVIDIA login saved too)" : "");
             client->auth_state = GFN_AUTH_LOGGED_IN;
-            snprintf(client->status, sizeof(client->status), "Saved Xbox login loaded");
+            snprintf(client->status, sizeof(client->status), i18n_text("Saved Xbox login loaded"));
         } else {
             client->auth_state = GFN_AUTH_LOGGED_OUT;
-            snprintf(client->status, sizeof(client->status), "Press X to sign in with Microsoft");
+            snprintf(client->status, sizeof(client->status), i18n_text("Press X to sign in with Microsoft"));
         }
         return;
     }
@@ -495,10 +496,10 @@ void gfn_client_init(GfnClient *client)
         provider_active(&provider);
         diagnostic_log("AUTH", "saved login, provider %s", provider.code);
         client->auth_state = GFN_AUTH_LOGGED_IN;
-        snprintf(client->status, sizeof(client->status), "Saved NVIDIA session loaded");
+        snprintf(client->status, sizeof(client->status), i18n_text("Saved NVIDIA session loaded"));
     } else {
         client->auth_state = GFN_AUTH_LOGGED_OUT;
-        snprintf(client->status, sizeof(client->status), "Press X to sign in with NVIDIA");
+        snprintf(client->status, sizeof(client->status), i18n_text("Press X to sign in with NVIDIA"));
     }
 }
 
@@ -616,7 +617,7 @@ void gfn_tick(GfnClient *client)
     const int64_t now = (int64_t)time(NULL);
     if (now >= client->challenge_expires_at) {
         client->auth_state = GFN_AUTH_ERROR;
-        snprintf(client->status, sizeof(client->status), "Login code expired; press X to retry");
+        snprintf(client->status, sizeof(client->status), i18n_text("Login code expired; press X to retry"));
         return;
     }
     if (now < client->next_poll_at) return;
@@ -649,7 +650,7 @@ static bool fetch_catalog(GfnClient *client, const char *search_query, bool owne
     client->game_count = 0;
     client->catalog_total = 0;
     if (!gfn_has_session(client)) {
-        snprintf(client->status, sizeof(client->status), "Sign in before loading games");
+        snprintf(client->status, sizeof(client->status), i18n_text("Sign in before loading games"));
         return false;
     }
     if (!refresh_session(client)) {
@@ -677,7 +678,7 @@ static bool fetch_catalog(GfnClient *client, const char *search_query, bool owne
     } else if (http_request("GET", info_url, GFN_UA,
                      lcars_headers, ARRAY_SIZE(lcars_headers), NULL, 256 * 1024, &server_info)) {
         if (server_info.status == 401 || server_info.status == 403) {
-            snprintf(client->status, sizeof(client->status), "GFN rejected saved login (HTTP %ld)", server_info.status);
+            snprintf(client->status, sizeof(client->status), i18n_text("GFN rejected saved login (HTTP %ld)"), server_info.status);
             client->auth_state = GFN_AUTH_ERROR;
             http_response_free(&server_info);
             return false;
@@ -874,17 +875,17 @@ static bool fetch_catalog(GfnClient *client, const char *search_query, bool owne
     if (unpersonal)
         for (size_t i = 0; i < client->game_count; ++i) client->games[i].needs_paid = false;
     if (search_query) {
-        snprintf(client->status, sizeof(client->status), "Search %.50s: %lu results",
+        snprintf(client->status, sizeof(client->status), i18n_text("Search %.50s: %lu results"),
                  search_query, (unsigned long)client->game_count);
     } else if (!client->game_count && !provider_is_nvidia()) {
         GfnProvider provider;
         provider_active(&provider);
         snprintf(client->status, sizeof(client->status),
-                 "No games on %s for this account. NVIDIA account? Pick NVIDIA in Settings > Account and "
-                 "sign in again.", provider.name);
+                 i18n_text("No games on %s for this account. NVIDIA account? Pick NVIDIA in Settings > Account and "
+                 "sign in again."), provider.name);
         diagnostic_log("CATALOG", "empty library on partner %s", provider.code);
     } else {
-        snprintf(client->status, sizeof(client->status), "Loaded %lu owned games (server total %lu)",
+        snprintf(client->status, sizeof(client->status), i18n_text("Loaded %lu owned games (server total %lu)"),
                  (unsigned long)client->game_count, (unsigned long)client->catalog_total);
     }
     return true;
@@ -1022,8 +1023,8 @@ bool gfn_library_load(GfnClient *client)
     json_decref(root);
     library_remember(client);
     /* Steam Link's Y opens the PCs instead of refreshing. */
-    snprintf(client->status, sizeof(client->status), steam_link_selected() ? "Library: %lu games"
-             : "Library: %lu games (Y refreshes)", (unsigned long)client->game_count);
+    snprintf(client->status, sizeof(client->status), steam_link_selected() ? i18n_text("Library: %lu games")
+             : i18n_text("Library: %lu games (Y refreshes)"), (unsigned long)client->game_count);
     return true;
 }
 
@@ -1050,7 +1051,7 @@ bool gfn_connection_test(GfnClient *client)
         const unsigned ms = (unsigned)(osGetTime() - start);
         http_response_free(&response);
         if (!ok) {
-            snprintf(client->status, sizeof(client->status), "Connection check: NVIDIA unreachable");
+            snprintf(client->status, sizeof(client->status), i18n_text("Connection check: NVIDIA unreachable"));
             return false;
         }
         if (i > 0 && ms < best) best = ms;
@@ -1072,7 +1073,7 @@ bool gfn_connection_test(GfnClient *client)
     client->conn_failed = false;
     diagnostic_log("NET", "connection check bars=%u latency=%u ms download=%u kbps bytes=%lu",
                    client->conn_bars, client->conn_latency_ms, client->conn_kbps, (unsigned long)bytes);
-    snprintf(client->status, sizeof(client->status), "Connection: %u ms, %u.%u Mbps, Wi-Fi %u/3",
+    snprintf(client->status, sizeof(client->status), i18n_text("Connection: %u ms, %u.%u Mbps, Wi-Fi %u/3"),
              client->conn_latency_ms, client->conn_kbps / 1000, client->conn_kbps % 1000 / 100,
              client->conn_bars);
     return true;
@@ -1090,7 +1091,7 @@ bool gfn_fetch_library(GfnClient *client)
 bool gfn_search_catalog(GfnClient *client, const char *query)
 {
     if (!query || !query[0]) {
-        snprintf(client->status, sizeof(client->status), "Search text is empty");
+        snprintf(client->status, sizeof(client->status), i18n_text("Search text is empty"));
         return false;
     }
     if (steam_link_selected()) return steam_link_search(client, query);
@@ -1558,23 +1559,23 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
              * minutes later. */
             code = "limited";
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA is limiting new sessions right now (limited mode). It usually passes in a few "
-                     "minutes; try again soon (code %d).", status_code);
+                     i18n_text("NVIDIA is limiting new sessions right now (limited mode). It usually passes in a few "
+                     "minutes; try again soon (code %d)."), status_code);
         } else if (strstr(reason, "REGION_NOT_SUPPORTED")) {
             code = "region";
             char region[40];
             regions_last_used(region, sizeof(region));
             snprintf(client->status, sizeof(client->status),
-                     "The %.24s server isn't open to this account. Abroad? Pick a server in your home "
-                     "country in Settings > Network (code %d).", region[0] ? region : "chosen", status_code);
+                     i18n_text("The %.24s server isn't open to this account. Abroad? Pick a server in your home "
+                     "country in Settings > Network (code %d)."), region[0] ? region : "chosen", status_code);
         } else if (strstr(reason, "ENTITLEMENT")) {
             code = "entitlement";
             GfnProvider provider;
             provider_active(&provider);
             if (!provider_is_nvidia())
                 snprintf(client->status, sizeof(client->status),
-                         "This account has no %.20s access. For an NVIDIA account, pick NVIDIA in "
-                         "Settings > Account and sign in again (code %d).", provider.name, status_code);
+                         i18n_text("This account has no %.20s access. For an NVIDIA account, pick NVIDIA in "
+                         "Settings > Account and sign in again (code %d)."), provider.name, status_code);
             else {
                 /* Where NVIDIA runs GeForce NOW itself (beta.22 report
                  * DSZSUT, Spain) a partner is no answer: the account is. */
@@ -1584,35 +1585,35 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
                     char country[4];
                     providers_country(country, sizeof(country));
                     snprintf(client->status, sizeof(client->status),
-                             "This account can't stream in %.20s. If %.20s sold you GeForce NOW, pick it in "
-                             "Settings > Account and sign in again (code %d).", providers_country_name(country),
+                             i18n_text("This account can't stream in %.20s. If %.20s sold you GeForce NOW, pick it in "
+                             "Settings > Account and sign in again (code %d)."), providers_country_name(country),
                              local.name, status_code);
                 }
                 else
                     snprintf(client->status, sizeof(client->status),
-                             "NVIDIA says this account can't play this game. Steam, Epic and Ubisoft games "
-                             "need that store linked at play.geforcenow.com (no VPN) (code %d).", status_code);
+                             i18n_text("NVIDIA says this account can't play this game. Steam, Epic and Ubisoft games "
+                             "need that store linked at play.geforcenow.com (no VPN) (code %d)."), status_code);
             }
         } else if (strstr(reason, "NO_CAPACITY") || strstr(reason, "CAPACITY")) {
             code = "capacity";
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA has no free rigs for this right now. Try again in a few minutes (code %d).", status_code);
+                     i18n_text("NVIDIA has no free rigs for this right now. Try again in a few minutes (code %d)."), status_code);
         } else if (strstr(reason, "SESSION_LIMIT") || strstr(reason, "MAX_SESSION")) {
             code = "limit";
             snprintf(client->status, sizeof(client->status),
-                     "Another GeForce NOW session is running on this account. Close it and try again (code %d).",
+                     i18n_text("Another GeForce NOW session is running on this account. Close it and try again (code %d)."),
                      status_code);
         } else if (strstr(reason, "ABANDONED")) {
             code = "abandoned";
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA dropped this place in the queue. Press A to queue again (code %d).", status_code);
+                     i18n_text("NVIDIA dropped this place in the queue. Press A to queue again (code %d)."), status_code);
         } else if (strstr(reason, "MAINTENANCE")) {
             code = "maintenance";
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA has this game in maintenance right now. Try again later or play another game "
-                     "(code %d).", status_code);
+                     i18n_text("NVIDIA has this game in maintenance right now. Try again later or play another game "
+                     "(code %d)."), status_code);
         } else {
-            snprintf(client->status, sizeof(client->status), "%s: CloudMatch HTTP %ld code %d %.60s",
+            snprintf(client->status, sizeof(client->status), i18n_text("%s: CloudMatch HTTP %ld code %d %.60s"),
                      operation, response->status, status_code, reason);
             /* An answer with no wording of ours: the player saw raw codes. */
             diagnostic_flag("unmapped-reason", "%s http=%ld code=%d desc=%.80s", operation, response->status,
@@ -1628,7 +1629,7 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
         const char *description = "CloudMatch rejected request";
         json_t *description_value = json_is_object(request_status) ? json_object_get(request_status, "statusDescription") : NULL;
         if (json_is_string(description_value)) description = json_string_value(description_value);
-        snprintf(client->status, sizeof(client->status), "%s: code %d %.90s", operation, status_code, description);
+        snprintf(client->status, sizeof(client->status), i18n_text("%s: code %d %.90s"), operation, status_code, description);
         diagnostic_flag("no-session", "%s http=%ld code=%d %.80s", operation, response->status, status_code,
                         description);
         client->session_state = GFN_SESSION_ERROR;
@@ -1637,7 +1638,7 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
     }
     flexible_json_text(client->session_id, sizeof(client->session_id), json_object_get(session, "sessionId"));
     if (!client->session_id[0]) {
-        snprintf(client->status, sizeof(client->status), "%s: CloudMatch response has no session ID", operation);
+        snprintf(client->status, sizeof(client->status), i18n_text("%s: CloudMatch response has no session ID"), operation);
         diagnostic_flag("no-session", "%s: no sessionId (http=%ld)", operation, response->status);
         client->session_state = GFN_SESSION_ERROR;
         json_decref(root);
@@ -1707,18 +1708,18 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
         client->session_paused = true;
         client->session_state = GFN_SESSION_ERROR;
         snprintf(client->fail_code, sizeof(client->fail_code), "paused");
-        snprintf(client->status, sizeof(client->status), "NVIDIA paused this session (status %d)",
+        snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA paused this session (status %d)"),
                  client->session_status);
     } else if (client->session_status == 4 || client->session_status == 5 || client->session_status == 6) {
         client->session_state = GFN_SESSION_SETUP;
-        snprintf(client->status, sizeof(client->status), "Resuming your game...");
+        snprintf(client->status, sizeof(client->status), i18n_text("Resuming your game..."));
     } else if ((client->session_status == 2 || client->session_status == 3) && client->signaling_url[0]) {
         client->session_state = GFN_SESSION_READY;
         client->resuming_until = 0;
-        snprintf(client->status, sizeof(client->status), "Session ready; signaling endpoint received");
+        snprintf(client->status, sizeof(client->status), i18n_text("Session ready; signaling endpoint received"));
     } else if (resuming) {
         client->session_state = GFN_SESSION_SETUP;
-        snprintf(client->status, sizeof(client->status), "Resuming your game...");
+        snprintf(client->status, sizeof(client->status), i18n_text("Resuming your game..."));
     } else if (client->session_status >= 7) {
         /* Over (OpenNOW desktop: 7+ is "no longer resumable"). Beta.25 test:
          * an idle game came back as status 7 and Kasumi waited on it as if
@@ -1737,8 +1738,8 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
         /* errorCode 1 is a clean end, mostly the game closing (its own
          * Exit or Save and quit): NVIDIA ends the rig with it, as on PC. */
         snprintf(client->status, sizeof(client->status), !strcmp(reason, "1") ?
-                 "The game closed, so NVIDIA ended the cloud session. You're still signed in: press A to play again, or B to go back." :
-                 "The game session has ended. Press A to start it again, or B to go back.");
+                 i18n_text("The game closed, so NVIDIA ended the cloud session. You're still signed in: press A to play again, or B to go back.") :
+                 i18n_text("The game session has ended. Press A to start it again, or B to go back."));
         diagnostic_log("CLOUDMATCH", "%s: session over (status %d) errorCode=%s desc=%.60s unified=%lld",
                        operation, client->session_status, reason[0] ? reason : "-",
                        json_is_string(end_desc) ? json_string_value(end_desc) : "-",
@@ -1760,15 +1761,15 @@ static bool apply_session_response(GfnClient *client, HttpResponse *response, co
                (client->session_status == 0 && client->queue_best <= 0)) {
         client->session_state = GFN_SESSION_QUEUED;
         if (client->queue_position >= 0)
-            snprintf(client->status, sizeof(client->status), "GFN queue position: %d%s",
-                     client->queue_position, ad_required ? " (ad required)" : "");
+            snprintf(client->status, sizeof(client->status), i18n_text("GFN queue position: %d%s"),
+                     client->queue_position, ad_required ? i18n_text(" (ad required)") : "");
         else
-            snprintf(client->status, sizeof(client->status), "GFN queued; position not supplied%s",
-                     ad_required ? " (ad required)" : "");
+            snprintf(client->status, sizeof(client->status), i18n_text("GFN queued; position not supplied%s"),
+                     ad_required ? i18n_text(" (ad required)") : "");
     } else {
         client->session_state = GFN_SESSION_SETUP;
-        snprintf(client->status, sizeof(client->status), "%s: provisioning (status %d)%s",
-                 operation, client->session_status, ad_required ? ", ad required" : "");
+        snprintf(client->status, sizeof(client->status), i18n_text("%s: provisioning (status %d)%s"),
+                 operation, client->session_status, ad_required ? i18n_text(", ad required") : "");
     }
     client->next_session_poll_at = (int64_t)time(NULL) + 2;
     json_decref(root);
@@ -2140,7 +2141,7 @@ static bool cloudmatch_resume(GfnClient *client, const char *base, const char *a
     memset(client->signaling_url, 0, sizeof(client->signaling_url));
     memset(client->media_ip, 0, sizeof(client->media_ip));
     client->media_port = 0;
-    snprintf(client->status, sizeof(client->status), "Resuming your game...");
+    snprintf(client->status, sizeof(client->status), i18n_text("Resuming your game..."));
     return true;
 }
 
@@ -2186,11 +2187,11 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
     if (steam_link_selected()) return game && steam_link_start_session(client, game);
     if (xcloud_selected()) return game && xcloud_start_session(client, game);
     if (!game) {
-        snprintf(client->status, sizeof(client->status), "No game selected; X searches, Y loads library");
+        snprintf(client->status, sizeof(client->status), i18n_text("No game selected; X searches, Y loads library"));
         return false;
     }
     if (!gfn_has_session(client)) {
-        snprintf(client->status, sizeof(client->status), "Not signed in; press X to sign in again");
+        snprintf(client->status, sizeof(client->status), i18n_text("Not signed in; press X to sign in again"));
         return false;
     }
     if (!refresh_session(client)) {
@@ -2199,14 +2200,14 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
         return false;
     }
     if (gfn_session_active(client)) {
-        snprintf(client->status, sizeof(client->status), "Session already active; B stops it");
+        snprintf(client->status, sizeof(client->status), i18n_text("Session already active; B stops it"));
         return false;
     }
     reset_launch_state(client);
     regions_resolve(client->session_base_url, sizeof(client->session_base_url));
     char *body = build_session_body(game, client->session_device_id);
     if (!body) {
-        snprintf(client->status, sizeof(client->status), "Cannot build session request for appId %.40s", game->app_id);
+        snprintf(client->status, sizeof(client->status), i18n_text("Cannot build session request for appId %.40s"), game->app_id);
         client->session_state = GFN_SESSION_ERROR;
         return false;
     }
@@ -2218,7 +2219,7 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
     const int64_t now = (int64_t)time(NULL);
     if (now < g_launch_blocked_until) {
         snprintf(client->status, sizeof(client->status),
-                 "NVIDIA is limiting launch attempts. Try again in %lld s.", (long long)(g_launch_blocked_until - now));
+                 i18n_text("NVIDIA is limiting launch attempts. Try again in %lld s."), (long long)(g_launch_blocked_until - now));
         snprintf(client->fail_code, sizeof(client->fail_code), "429");
         client->session_state = GFN_SESSION_ERROR;
         client->limit_wait = client->limit_rate = true;
@@ -2245,12 +2246,12 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
         if (!sent || !cloudmatch_status_is_transient(response.status) || response.status == 429 || attempt == 3)
             break;
         http_response_free(&response);
-        snprintf(client->status, sizeof(client->status), "CloudMatch HTTP retry %d/3", attempt + 1);
+        snprintf(client->status, sizeof(client->status), i18n_text("CloudMatch HTTP retry %d/3"), attempt + 1);
         svcSleepThread((s64)attempt * 2000000000LL);
     }
     free(body);
     if (!sent) {
-        snprintf(client->status, sizeof(client->status), "Session create network: %.120s", response.error);
+        snprintf(client->status, sizeof(client->status), i18n_text("Session create network: %.120s"), response.error);
         snprintf(client->fail_code, sizeof(client->fail_code), "network");
         client->session_state = GFN_SESSION_ERROR;
         client->limit_wait = quiet;
@@ -2259,7 +2260,7 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
     if (response.status == 429) {
         g_launch_blocked_until = (int64_t)time(NULL) + 60;
         snprintf(client->status, sizeof(client->status),
-                 "NVIDIA is limiting launch attempts for a moment. Try again in a minute.");
+                 i18n_text("NVIDIA is limiting launch attempts for a moment. Try again in a minute."));
         snprintf(client->fail_code, sizeof(client->fail_code), "429");
         client->session_state = GFN_SESSION_ERROR;
         /* The UI waits and tries again by itself: in beta.22 a 429 ended the
@@ -2289,7 +2290,7 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
             char fresh[40];
             new_session_device_id(fresh);
             diagnostic_log("CLOUDMATCH", "per-device limit with nothing listed: new session device id, launching again");
-            snprintf(client->status, sizeof(client->status), "Getting a free session slot...");
+            snprintf(client->status, sizeof(client->status), i18n_text("Getting a free session slot..."));
             client->limit_quiet = quiet;
             const bool started = gfn_start_session(client, game);
             /* An unexpected refusal of the new id (not a limit, capacity or
@@ -2306,13 +2307,13 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
         client->conflict_found = named && !quiet;
         client->limit_wait = !client->conflict_found;
         snprintf(client->status, sizeof(client->status), client->conflict_found
-                 ? "Another GeForce NOW session is running on your account."
-                 : "NVIDIA is still closing your other session.");
+                 ? i18n_text("Another GeForce NOW session is running on your account.")
+                 : i18n_text("NVIDIA is still closing your other session."));
         return false;
     }
     if (cloudmatch_status_is_transient(response.status)) {
         snprintf(client->status, sizeof(client->status),
-                 "Create: CloudMatch HTTP %ld; press A to retry", response.status);
+                 i18n_text("Create: CloudMatch HTTP %ld; press A to retry"), response.status);
         snprintf(client->fail_code, sizeof(client->fail_code), "busy");
         client->session_state = GFN_SESSION_ERROR;
         http_response_free(&response);
@@ -2334,7 +2335,7 @@ bool gfn_end_conflict(GfnClient *client, const GfnGame *game)
     char rig[160];
     rig_base(conflict.host, rig, sizeof(rig));
     const CloudBases bases = cloud_bases(client, rig);
-    snprintf(client->status, sizeof(client->status), "Closing your other session...");
+    snprintf(client->status, sizeof(client->status), i18n_text("Closing your other session..."));
     bool stopped = cloudmatch_stop_anywhere(&bases, conflict.id, headers, count);
     if (!stopped && g_legacy_client_id[0])
         stopped = cloudmatch_stop_as(client, &bases, conflict.id, g_legacy_client_id);
@@ -2376,8 +2377,8 @@ bool gfn_claim_conflict(GfnClient *client)
         client->next_session_poll_at = 0;
         if (client->session_status >= 2 && client->session_status <= 5 &&
             !cloudmatch_resume(client, bases.bases[i], conflict.app_id, false)) {
-            snprintf(client->status, sizeof(client->status), "NVIDIA would not hand that session over. "
-                     "End it instead, or close it where it runs.");
+            snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA would not hand that session over. "
+                     "End it instead, or close it where it runs."));
             snprintf(client->fail_code, sizeof(client->fail_code), "claim");
             client->session_state = GFN_SESSION_ERROR;
             return false;
@@ -2396,7 +2397,7 @@ bool gfn_claim_conflict(GfnClient *client)
     memset(client->session_id, 0, sizeof(client->session_id));
     client->session_state = GFN_SESSION_ERROR;
     client->limit_wait = true;
-    snprintf(client->status, sizeof(client->status), "NVIDIA is still closing your other session.");
+    snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA is still closing your other session."));
     snprintf(client->fail_code, sizeof(client->fail_code), "limit");
     diagnostic_log("CLOUDMATCH", "claim: session not reachable; waiting for NVIDIA to free the slot");
     return false;
@@ -2415,7 +2416,7 @@ bool gfn_recover_session(GfnClient *client, const GfnGame *game)
     snprintf(url, sizeof(url), "%s/v2/session/%s", session_control(client), client->session_id);
     HttpResponse response;
     if (!http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response)) {
-        snprintf(client->status, sizeof(client->status), "Reconnect: no connection to NVIDIA yet");
+        snprintf(client->status, sizeof(client->status), i18n_text("Reconnect: no connection to NVIDIA yet"));
         diagnostic_log("CLOUDMATCH", "recover: no connection");
         return false;
     }
@@ -2423,7 +2424,7 @@ bool gfn_recover_session(GfnClient *client, const GfnGame *game)
     if (http == 404 || http == 410) {
         http_response_free(&response);
         diagnostic_log("CLOUDMATCH", "recover: session gone http=%ld", http);
-        snprintf(client->status, sizeof(client->status), "NVIDIA ended this session. Press A to start the game again.");
+        snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA ended this session. Press A to start the game again."));
         snprintf(client->fail_code, sizeof(client->fail_code), "gone");
         client->session_state = GFN_SESSION_ERROR;
         return false;
@@ -2462,8 +2463,8 @@ bool gfn_recover_session(GfnClient *client, const GfnGame *game)
         const char *base = rig_base(client->server_ip, rig, sizeof(rig)) ? rig : session_control(client);
         if (!cloudmatch_resume(client, base, app_id, false) && (base == session_control(client) ||
             !cloudmatch_resume(client, session_control(client), app_id, false))) {
-            snprintf(client->status, sizeof(client->status), "NVIDIA would not resume this session. "
-                     "Press A to start the game again.");
+            snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA would not resume this session. "
+                     "Press A to start the game again."));
             snprintf(client->fail_code, sizeof(client->fail_code), "resume");
             client->session_state = GFN_SESSION_ERROR;
             return false;
@@ -2522,7 +2523,7 @@ void gfn_session_tick(GfnClient *client)
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
     if (!http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response)) {
-        snprintf(client->status, sizeof(client->status), "Session poll network: %.124s", response.error);
+        snprintf(client->status, sizeof(client->status), i18n_text("Session poll network: %.124s"), response.error);
         diagnostic_log("CLOUDMATCH", "poll transport failure; session retained");
         return;
     }
@@ -2552,7 +2553,7 @@ void gfn_session_tick(GfnClient *client)
         if (strstr(reason, "PATCHING")) {
             if (!client->poll_failures) cloudmatch_log_response("poll-patching", &response);
             client->poll_failures = 0;
-            snprintf(client->status, sizeof(client->status), "NVIDIA is updating this game on the rig; waiting...");
+            snprintf(client->status, sizeof(client->status), i18n_text("NVIDIA is updating this game on the rig; waiting..."));
             client->next_session_poll_at = now + 3;
             http_response_free(&response);
             return;
@@ -2566,7 +2567,7 @@ void gfn_session_tick(GfnClient *client)
          * 30 s on the flat 2 s interval. */
         if (client->poll_failures > 12) {
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA's servers stopped answering for this session (HTTP %ld%s%.60s). Press A to try again.",
+                     i18n_text("NVIDIA's servers stopped answering for this session (HTTP %ld%s%.60s). Press A to try again."),
                      response.status, reason[0] ? ", " : "", reason);
             diagnostic_log("CLOUDMATCH", "poll gave up after %u errors in %llds", client->poll_failures,
                            (long long)(now - client->poll_fail_since));
@@ -2581,7 +2582,7 @@ void gfn_session_tick(GfnClient *client)
             unsigned backoff = 2u << (client->poll_failures - 1 < 3 ? client->poll_failures - 1 : 3);
             if (backoff > 15) backoff = 15;
             snprintf(client->status, sizeof(client->status),
-                     "NVIDIA's server is busy (HTTP %ld); still trying...", response.status);
+                     i18n_text("NVIDIA's server is busy (HTTP %ld); still trying..."), response.status);
             client->next_session_poll_at = now + backoff;
         }
         http_response_free(&response);
@@ -2629,7 +2630,7 @@ bool gfn_stop_session(GfnClient *client)
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
     if (!http_request("DELETE", url, GFN_UA, headers, count, NULL, 256 * 1024, &response)) {
-        snprintf(client->status, sizeof(client->status), "Session stop network: %.124s", response.error);
+        snprintf(client->status, sizeof(client->status), i18n_text("Session stop network: %.124s"), response.error);
         return false;
     }
     long status = response.status;
@@ -2655,7 +2656,7 @@ bool gfn_stop_session(GfnClient *client)
     const bool ok = (status >= 200 && status < 300) || status == 404;
     diagnostic_log("CLOUDMATCH", "stop session: http=%ld (control %s)", status,
                    client->session_control_url[0] ? "server" : "base");
-    snprintf(client->status, sizeof(client->status), ok ? "Cloud session stopped" : "Session stop HTTP %ld", status);
+    snprintf(client->status, sizeof(client->status), ok ? i18n_text("Cloud session stopped") : i18n_text("Session stop HTTP %ld"), status);
     if (ok) {
         memset(client->session_id, 0, sizeof(client->session_id));
         client->session_state = GFN_SESSION_IDLE;
@@ -2764,11 +2765,11 @@ bool gfn_resume_check(GfnClient *client)
         active_clear();
         memset(client->session_id, 0, sizeof(client->session_id));
         client->session_state = GFN_SESSION_IDLE;
-        snprintf(client->status, sizeof(client->status), "Library ready");
+        snprintf(client->status, sizeof(client->status), i18n_text("Library ready"));
         return false;
     }
     client->resume_found = true;
-    snprintf(client->status, sizeof(client->status), "Your game is still running");
+    snprintf(client->status, sizeof(client->status), i18n_text("Your game is still running"));
     return true;
 }
 
@@ -2794,8 +2795,8 @@ void gfn_client_switch_service(GfnClient *client)
         gfn_library_load(client);
     } else {
         client->auth_state = GFN_AUTH_LOGGED_OUT;
-        snprintf(client->status, sizeof(client->status), steam_link_selected() ? "Press X to pair with your PC"
-                 : xcloud_selected() ? "Press X to sign in with Microsoft" : "Press X to sign in with NVIDIA");
+        snprintf(client->status, sizeof(client->status), steam_link_selected() ? i18n_text("Press X to pair with your PC")
+                 : xcloud_selected() ? i18n_text("Press X to sign in with Microsoft") : i18n_text("Press X to sign in with NVIDIA"));
     }
     diagnostic_log("AUTH", "service now %s, %s",
                    steam_link_selected() ? "Steam Link" : xcloud_selected() ? "Xbox" : "GeForce NOW",
@@ -2813,7 +2814,7 @@ void gfn_sign_out(GfnClient *client)
             /* Another paired PC took its place. */
             client->auth_state = GFN_AUTH_LOGGED_IN;
             gfn_fetch_library(client);
-            snprintf(client->status, sizeof(client->status), "PC forgotten; now using %.60s", steam_link_host_name());
+            snprintf(client->status, sizeof(client->status), i18n_text("PC forgotten; now using %.60s"), steam_link_host_name());
             return;
         }
     } else if (xcloud_selected()) {
@@ -2832,5 +2833,5 @@ void gfn_sign_out(GfnClient *client)
     client->token_expires_at = client->client_token_expires_at = 0;
     client->game_count = client->catalog_total = 0;
     client->auth_state = GFN_AUTH_LOGGED_OUT;
-    snprintf(client->status, sizeof(client->status), "Signed out; saved login removed");
+    snprintf(client->status, sizeof(client->status), i18n_text("Signed out; saved login removed"));
 }

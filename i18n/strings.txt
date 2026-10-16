@@ -1,0 +1,1323 @@
+GEFORCE NOW
+XBOX CLOUD
+STEAM LINK
+GeForce NOW
+Your PC games from Steam, Epic and more, running on NVIDIA's servers.
+An NVIDIA account (free or paid).
+SIGN IN WITH NVIDIA
+Xbox Cloud Gaming
+Game Pass games, and free ones like Fortnite, from Microsoft's servers. Beta.
+A Microsoft account; most games need Game Pass Ultimate.
+SIGN IN WITH MICROSOFT
+Steam Link
+Your own PC: play whatever Steam on it can run, over your Wi-Fi.
+A PC with Steam on, on the same Wi-Fi as the 3DS.
+PAIR WITH YOUR PC
+CONTROLS
+PICTURE
+SOUND & LOOK
+NETWORK
+SYSTEM
+ACCOUNT & UPDATES
+Buttons, sticks, camera, gyro, mouse
+Screen mode, bitrate, sharpness, colour
+Volume, music, voice, sounds, theme
+Connection check, type, server
+Lid, guide, screenshots, reports
+Updates, provider, sign out
+Button layout
+Triggers
+Button names
+Button mapping
+Microphone
+Stick deadzone
+Mouse mode at start
+Stream stats
+Fast input
+Screen mode
+Bitrate
+Server sharpening
+Gyro aim
+Sharpness
+Colour
+Touch camera
+Touch C-stick size
+3D slider
+Frame rate
+Gyro speed
+Account
+Camera stick speed
+Invert camera
+Theme
+Stream volume
+Audio in menus
+Closing the lid
+Connection check
+Getting started
+Connection type
+Server
+Send diagnostic report
+Share problem reports
+Share performance stats
+Kasumi Discord
+Screenshots
+HOME Menu theme
+Menu music
+Voice
+Sound effects
+Software update
+Check automatically
+Update channel
+GeForce NOW provider
+Cloud service
+Language
+STEAM
+Steam
+EPIC
+Epic Games
+EPIC_GAMES_STORE
+EA_APP
+EA app
+ORIGIN
+UBISOFT
+Ubisoft
+UPLAY
+UBISOFT_CONNECT
+BATTLENET
+Battle.net
+BATTLE_NET
+XBOX
+Xbox
+MICROSOFT
+MICROSOFT_STORE
+NV_BUNDLE
+UNKNOWN
+Own launcher
+NONE
+ROCKSTAR
+Rockstar
+WARGAMING
+Wargaming
+Always
+While aiming
+Off
+Position
+Letters
+PlayStation
+On
+Custom
+Default
+ZL / ZR
+Small
+Large
+Medium
+Genshin
+Never
+On (beta)
+Wide 800
+Classic 400
+Adaptive
+Steady 1 Mbps
+Steady 1.2 Mbps
+Steady 1.5 Mbps
+Sharp
+Low
+High
+Natural
+Vivid
+Extra vivid
+Slow
+Fast
+Fastest
+Normal
+Up-down
+Both
+Stick
+Trackpad
+Zoom
+60 fps (beta)
+30 fps
+Muted
+Keep playing
+Sleep
+Pause
+Run test
+%u ms · %u.%u Mbps
+Weak / hotspot
+Standard
+NVIDIA picks
+Auto · %s
+Auto (lowest ping)
+Open
+Download
+Scan
+None yet
+%u saved
+Quiet
+Send
+Unavailable
+Up to date
+Restart to finish
+Dev (your PC)
+Beta
+Stable
+Sign out
+Signed out
+Xbox Cloud (beta)
+NVIDIA (default)
+Your button mapping (below) decides every button, so this layout is not used.
+Buttons match their place on the pad: bottom is A, right is B, like an Xbox controller. 3DS A sends B.
+The printed letters match: 3DS A sends A, 3DS B sends B. A and B sit swapped compared with an Xbox pad.
+Buttons match their place on the pad: bottom is Cross, right is Circle. Plays like a PlayStation controller.
+The printed letters match: 3DS A sends A. Cross and Circle end up swapped compared with a PlayStation pad.
+Voice chat in games: tap MIC on the lower screen to talk, again to mute (starts muted). Use headphones, or your team hears the game through the mic. Next game.
+Talk in games with voice chat, using the 3DS microphone. Off: nothing is ever recorded.
+Kasumi shows Xbox buttons: A, B, LB, RT, Menu. Most PC games on GeForce NOW show these too.
+Kasumi shows PlayStation buttons: Cross, Circle, L1, R2, Options.
+Your own map for every game: press A to change it. A game's own mapping (game page > X > Options) goes first.
+Choose what each 3DS button sends, for every game: two buttons at once, turbo, toggle, or a stick push.
+The big L and R buttons act as the LT / RT triggers; ZL and ZR become LB / RB.
+ZL and ZR are the LT / RT triggers; L and R are the LB / RB bumpers.
+The big L and R buttons act as the L2 / R2 triggers; ZL and ZR become L1 / R1.
+ZL and ZR are the L2 / R2 triggers; L and R are the L1 / R1 bumpers.
+How far a stick moves before the game notices. Raise it if a character drifts on its own.
+Start Genshin Impact in mouse and keyboard mode so you can click through its PC login screen. Tap MOUSE in game to go back to controller mode.
+Show frame rate, bitrate, ping and resent packets on the lower screen while playing.
+Beta. Sends controller input on a channel that never waits for lost packets. If buttons stop responding in game, turn it off.
+Uses the top screen's 800-pixel mode: twice the detail across, sharper text.
+The normal 400-column top screen. Use only if Wide misbehaves.
+About 1.3 Mbps: a clean, detailed picture on good home Wi-Fi. The default. Next launch.
+About 1.8-2 Mbps: the sharpest picture. Needs strong Wi-Fi (3 bars, near the router). Next launch.
+About 1 Mbps: smoothest on weak Wi-Fi or a phone hotspot, a little softer. Next launch.
+A fixed rate. If the stats show RESENT/S climbing, pick a lower one. Next launch.
+Needs Screen mode: Wide 800. 60 frames a second for smoother motion.
+Smoother motion and quicker controls. Most games keep up; a very heavy one can hitch now and then (Kasumi says so), and 30 suits it better. Next launch.
+30 frames a second: the most detail in every frame. Next launch.
+A short push turns at full speed: quick, for small thumbs or fast games.
+A long push for full speed: finer control when aiming slowly.
+How far you push the touch C-stick for full speed. Medium suits most games.
+The 3D slider does nothing in games. Slide it to choose zoom or a button.
+In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.
+In a game, the 3D slider past halfway holds %s until you slide it back down.
+No C-STICK button in games: the lower screen keeps its stats and buttons.
+In a game, tap C-STICK by PS. Touch and push, like the C-Stick: hold it out to keep turning. Double-tap for R3.
+In a game, tap C-STICK by PS, then drag to turn the camera; it stops when your finger does. Double-tap for R3.
+Needs Screen mode: Wide 800. Sharpens edges and text on the console, at no cost to the stream.
+The picture exactly as it arrives.
+Strong sharpening on the console: crispest text, but blocky spots in fast scenes stand out more.
+Sharpens edges and small text on the console, at no cost to the stream or the frame rate.
+Needs Screen mode: Wide 800. Richer colour and contrast for the 3DS screen.
+Colours exactly as the game sends them.
+A little more colour and contrast, so games look less washed out on the 3DS screen.
+Strong colour and contrast. Fun for colourful games; skin and skies can look overdone.
+NVIDIA sharpens before compressing, which spends scarce bitrate on edges: more blocking and pulsing. Sharpness above does it on the console for free. Next launch.
+Recommended. The bitrate goes to the picture itself; use Sharpness above to sharpen on the console instead. Next launch.
+Tilt and turn the console to aim, like a Switch or Steam Deck. Adds to the C-Stick; moves the mouse in mouse mode.
+Turning the console always moves the camera. Great for shooters; hold the console still when you don't aim.
+Gyro only works while the aim trigger (ZL, or L when triggers are swapped) is held.
+How fast turning the console moves the camera. Start at Medium and lower it if aiming overshoots.
+The C-Stick turns the camera at most 70 % as fast. For precise aiming.
+The C-Stick as it is: a full push turns the camera at full speed.
+A lighter push on the C-Stick turns the camera at full speed.
+Full camera speed with a light push. For games that turn slowly.
+The C-Stick moves the camera the usual way.
+Pushing the C-Stick up looks down, like a flight stick. Gyro aim is not inverted.
+Both directions of the C-Stick are reversed. Gyro aim is not inverted.
+The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
+The language of Kasumi's menus. Game titles and store names stay as they are.
+A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to /Themes; install it with Anemone3DS.
+No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the Homebrew Launcher, then restart Kasumi.
+Game audio volume on this console, on top of the 3DS volume slider.
+Game audio goes quiet while the stream menu or controls sheet is open.
+Game audio keeps playing while the stream menu is open.
+For far-away Wi-Fi or a phone hotspot: a steadier 0.6-1 Mbps picture, a longer wait for lost packets and a bigger buffer. Softer image, a little more delay. Next launch.
+For home Wi-Fi near the router: the sharpest picture and lowest delay. Next launch.
+Kasumi pings every GeForce NOW server and uses the fastest, measured again on each new Wi-Fi network (like a phone hotspot).
+NVIDIA chooses from your internet address. On mobile data that can be a far-away server.
+Always use this server. Your ping and queue depend on it; run Connection check to see ping to each one.
+Walk through the basics again: signing in, controls, picture and extras.
+When something goes wrong (a crash, freeze or failed stream), Kasumi sends its log to the developer on its own, at most once per run. No login or passwords.
+Kasumi never sends anything on its own. Turn on to send the log automatically when something goes wrong, which helps fix bugs faster.
+After each launch and session, Kasumi sends a few numbers: did the game start, queue time, ping, smoothness, lost frames. No log text, no addresses, no account.
+Turn on to send a few numbers after each launch and session (did the game start, ping, smoothness). It shows what to improve for real players.
+Tsumugi welcomes you back when Kasumi opens and sees you off when a game starts.
+No voice lines. Turn on for Tsumugi's welcome and send-off.
+Soft koto, wood and water sounds in the menus. In a game, only the stream menu and screenshots make a sound.
+Silent menus. The \"your game is ready\" chime still plays when a queue ends.
+Look through the screenshots you took in games (stream menu > Screenshot). Press A to open; L and R browse, X deletes.
+Chat with other players, get help and hear about new versions first. Scan with your phone, or visit discord.gg/K9Jy3t7YHE
+Having a problem? Send this run's and the last run's log to Kasumi's developer and get a code to share. Only when you choose; nothing is sent otherwise.
+See what's new and install the latest Kasumi from GitHub. Your login, library and settings stay.
+Kasumi looks for a new version every few hours, only in the menus, never while you play.
+Kasumi only looks for updates when you open Software update.
+Beta: get test versions first. They may have rough edges.
+Stable: only finished releases.
+Closing the lid turns the screens off; the game and its sound keep running.
+Closing the lid sleeps the console to save battery. On opening it, Kasumi reconnects to the same rig.
+Closing the lid turns the screens and sound off but stays connected: open it and you are straight back in.
+Forget the paired PC. Pair again to stream from it; your cloud logins stay.
+Remove the saved Microsoft (Xbox) login from this console's SD card. The NVIDIA one stays.
+Remove the saved NVIDIA login from this console's SD card. An Xbox one stays.
+GeForce NOW, Xbox Cloud Gaming (Game Pass, and free games like Fortnite), or Steam Link: play from your own PC running Steam, on the same Wi-Fi. Each keeps its own login. Xbox and Steam Link are experimental.
+Signed in with %s. To use %s, sign out below and sign in again.
+Most accounts are NVIDIA's. Here GeForce NOW is also sold by %.30s: if your subscription is from %.30s, pick it and sign in again. Beta.
+Most accounts are NVIDIA's. In some countries (Japan, Korea, Taiwan, the Middle East...) GeForce NOW is sold by a local partner: if yours is, pick it, then sign in. Beta.
+UPDATE
+Continue: %s
+MAINTENANCE
+BETA
+KASUMI
+YOUR GAMES, ON YOUR 3DS
+PAIRED
+SIGNED IN
+Streaming from %.60s
+your PC
+HOME
+Choose where to play
+Choose
+Enter
+START
+Exit
+Continue
+You need: %s
+Set up
+Home
+SELECT
+Settings
+Try again
+PC address
+SIGN IN WITH XBOX
+Steam asks for a code on
+On your phone or computer, open
+Type it in the Authorize Device window
+Waiting for approval
+Code expires in %ld:%02ld
+New code
+Cancel
+synced just now
+synced %ld min ago
+synced %ld h ago
+synced %ld days ago
+From %s  ·  800x480 wide  ·  %u fps
+Xbox Cloud  ·  800x480 wide  ·  60 fps
+RECENT
+SEARCH  \"%s\"
+%lu / %lu%s%s
+No games here yet
+Try a different search.
+Press Y to load your library, or X to search.
+GeForce NOW in %s is %s's: sign out in Settings > Account and pick %s.
+Signed in with NVIDIA
+No favourites yet
+Open a game and press Y to add it here.
+Nothing played on Kasumi yet
+Games you play show up here, newest first.
+NOT IN LIBRARY
+PAID MEMBERSHIP ONLY
+Browse
+Search
+Close
+Library
+In the queue
+Preparing your rig
+Connecting
+Starting the stream
+Waiting for an Xbox
+Preparing the Xbox
+Waiting for the PC
+Starting on your PC
+Connecting to your PC
+SESSION ENDED
+Play again
+Leave
+SESSION PROBLEM
+Retry
+Reconnecting
+Paused with the lid closed; reconnecting when you open it.
+Waiting for Wi-Fi to come back; your game keeps running.
+The connection dropped. Attempt %u of 3; your game keeps running.
+About %d min to go
+About a minute to go
+Your rig should be ready any moment
+Waiting for a free Xbox
+Your place in NVIDIA's queue
+Waiting for a free rig
+QUEUE
+SIGNAL
+STREAM
+Loading...
+Delete
+Back
+SCREENSHOTS
+DELETE
+BACK
+SETTINGS
+Save & back
+Change
+Section
+Sections
+HELP IMPROVE KASUMI?
+Share diagnostics with the developer to find bugs and make streaming smoother.
+Problem reports: the log, after a crash or failed stream
+Performance stats: ping and smoothness after each session
+Never your login · change it in Settings > System
+Share
+No thanks
+Confirm
+Resume
+End it
+Try now
+Stop
+NVIDIA
+%lu h %02lu m
+%lu min
+Taking it off the HOME Menu...
+Getting the game's art...
+Drawing the icon and banner...
+Building the shortcut...
+Installing on the HOME Menu  %u%%
+Done
+HOME MENU SHORTCUT
+Removing
+Drawing...
+BUILD
+INSTALL
+Keep Kasumi open: this takes a few seconds.
+Added to your HOME Menu
+Press HOME: it is at the end of your icons, wrapped as a present until you open it once. It starts Kasumi and launches %.60s.
+Press HOME to find it. Tip: refresh your library (Y) and make it again to get the game's own banner art.
+Removed from your HOME Menu
+Add it again any time from this page.
+Couldn't make the shortcut
+Please keep Kasumi open until it's done. Closing it now can leave a broken icon behind.
+NOT ADDED
+REMOVED
+ADDED TO THE HOME MENU
+TRY AGAIN
+CLOSE
+Press HOME to see it. Opening it starts this game for you.
+Played %s on Kasumi
+Played briefly on Kasumi
+Not played on Kasumi yet
+%lu session%s%s
+%lu sessions%s%s
+  ·  last 
+Its own options (X to change)
+Your usual settings
+Play
+Favourite
+Options
+Steady 1
+Steady 1.2
+Steady 1.5
+Not tested
+%u ms  ·  %u.%u Mbps  ·  %u/3
+Default (%s)
+Measures Wi-Fi, latency and speed to NVIDIA, and pings every server.
+Weak link: set Connection type to Weak / hotspot.
+High latency: expect some input lag; Weak / hotspot may help.
+Strong connection: Bitrate Sharp should run cleanly for the most detail.
+Good connection: Standard with Adaptive should run smoothly.
+GAME OPTIONS
+DONE
+Connection
+Picture detail for this game. Default follows Settings.
+How fast the C-Stick turns the camera in this game.
+Reverse the C-Stick in this game. Gyro is not inverted.
+Turn the camera on the lower screen in this game.
+Aim by turning the console, in this game only.
+How fast turning the console moves the camera here.
+3DS A sends the pad's bottom button, or the one printed A.
+Move any 3DS button to any controller button. A to edit.
+BUTTON MAPPING
+Every game (a game's own mapping goes first)
+TURBO
+TOGGLE
+ANY BUTTON
+Pick
+CIRCLE PAD
+C-STICK
+Row
+PRESS ANY 3DS BUTTON TO PICK IT
+SENDS
+AND AT THE SAME TIME
+Nothing more
+Turbo: 10 presses a second
+Toggle: press once to hold
+Circle Pad: button and value  ·  C-Stick: row
+RESET
+CANCEL
+SAVE
+PLAY
+Your PC
+LAUNCH FROM  (LEFT / RIGHT)
+LAUNCH FROM
+PLAYS ON
+SAVED
+FAVOURITE
+OPTIONS
+ON THE HOME MENU  ·  REMOVE
++ ADD TO HOME MENU
+INSTALLING THE SHORTCUT...
+DRAWING THE SHORTCUT...
+No release notes.
+Checking GitHub for updates
+Downloading
+Checking the download
+Installing - keep the console on
+Update installed
+Update didn't finish
+A new version is ready
+Kasumi is up to date
+SOFTWARE UPDATE
+INSTALLED
+NEW BETA
+WHAT'S NEW  ·  %s
+Checking GitHub for a newer Kasumi...
+Could not check for updates
+Version %s  ·  checked just now
+Version %s  ·  checked %ld min ago
+Install
+Later
+Check again
+DOWNLOAD
+VERIFY
+%.1f of %.1f MB
+Restart to use %s.
+Close Kasumi and open it again to use %s.
+Your login, library and settings stay as they are.
+INSTALL %s
+RESTART KASUMI
+EXIT KASUMI
+PLEASE WAIT
+CHECK AGAIN
+LATER
+WHAT'S NEW
+Kasumi %s
+Kasumi was updated
+CONTINUE
+JOIN THE KASUMI DISCORD
+New versions first, help from other players, and a say in what Kasumi gets next.
+discord.gg/K9Jy3t7YHE
+Also in Settings > System > Kasumi Discord
+SCAN WITH YOUR PHONE
+WELCOME TO KASUMI
+Play on the New 3DS from GeForce NOW, Xbox Cloud Gaming, or your own PC with Steam Link. The game runs elsewhere; the 3DS shows the picture and sends your buttons.
+Next you pick a service on the hub. B always brings you back to it.
+SIGN IN
+Cloud services show a short code to enter on your phone or computer; no password is typed on the 3DS. Steam Link shows a code to type into Steam on your PC.
+Logins and paired PCs stay only on this console's SD card.
+The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 and Home / PS are on the lower screen.
+Hold START + SELECT during play for the stream menu.
+PICTURE & WI-FI
+Stay close to your router (3 bars). For cloud games, Adaptive is the default; Steady 1 Mbps helps if the picture stutters. ZOOM crops for small text.
+Settings > Network > Connection check tests your Wi-Fi.
+EXTRAS
+Gyro aiming, screenshots, zoom zones, themes, favourites and options for each game. Open a game from the library to see them.
+Settings > System > Getting started shows this guide again.
+Next
+Skip
+GETTING STARTED
+SKIP
+NEXT
+Signed in; session %s
+Paired with %.60s
+Kasumi game hub
+Welcome! Where are your games?
+Most Xbox games stream at a size the 3DS can't show yet. Back when they do.
+Xbox Cloud
+EXIT
+Your 3DS clock says %s. Set the date and time in System Settings first, or the sign-in fails.
+Turn the PC on and start Steam. Kasumi finds
+it and shows a code to type into Steam there.
+The stream stays on your Wi-Fi.
+Sign-in happens on your phone or computer:
+no password is typed on this console.
+Go to the PC named above.
+Open the address shown above.
+Steam shows Authorize Device.
+Sign in to your Microsoft account.
+Sign in to your NVIDIA account.
+Enter the code. Kasumi continues
+on its own.
+The pairing stays on this console's SD card; the stream never leaves your Wi-Fi. Kasumi is unofficial, not made by Valve.
+Your login stays on this console's SD card only. Kasumi is unofficial, not made by Microsoft.
+Your login stays on this console's SD card only. Kasumi is unofficial, not made by NVIDIA.
+NEW CODE
+Your PCs: pick the one to stream from
+IN USE - A RELOADS ITS GAMES
+STREAM FROM THIS PC
+Up to four PCs; pair another one below.
+PAIR ANOTHER PC
+FORGET THIS PC
+No game selected
+Load your library or search
+OPEN GAME
+SHOW ALL GAMES
+LOAD LIBRARY
+LIBRARY
+REFRESH
+SEARCH
+HOLD L TO AIM
+HOLD ZL TO AIM
+SMOOTH
+SHARP
+3DS
+PLAYSTATION
+L  %s     ZL  %s     R  %s     ZR  %s
+SIGN OUT
+Cloud session
+WI-FI
+EST. WAIT
+~%d min
+~1 min
+Soon
+Weak Wi-Fi: move closer to the router.
+RETRY
+LEAVE
+DRAG TO MOVE THE VIEW
+MOUSE & KEYBOARD
+Drag here to move, tap to click
+C-Stick moves, A clicks, KEYS types
+Tap MOUSE again for controller mode
+POSITION LAYOUT
+LETTER LAYOUT
+MBPS
+PING MS
+RESENT/S
+STREAM MENU
+LAYOUT: POS
+LAYOUT: ABC
+GYRO: ON
+GYRO: AIM
+GYRO: OFF
+SAVE ZONE
+CLEAR ZONES
+RESUME
+SCREENSHOT
+SOUND: OFF
+SOUND: ON
+DISCONNECT
+CIRCLE
+Left stick
+Right stick + gyro
+Right stick
+ZL ZR
+LB / RB
+LT / RT triggers
+L2 / R2 triggers
+Menu
+View
+Share / View
+TOUCH
+LS / RS / Xbox · middle: both
+L3 / R3 / PS · middle: both
+START+SELECT
+Hold for the stream menu
+Your own button mapping is in use
+Gyro aim: %s  ·  change it in the stream menu
+Connection unstable - waiting for video
+MOUSE
+Hold START + SELECT for the menu
+MIC ON
+MIC OFF
+%u FPS
+%.1f MBPS
+%d MS
+%u RESENT
+PUSH TO LOOK
+DRAG TO LOOK
+DOUBLE-TAP  RS
+DOUBLE-TAP  R3
+LS+RS
+HIDE
+LS + RS
+GYRO
+ZONE %d
+KEYS
+ZOOM
+MENU
+WELCOME BACK
+Paused %u min · still connected
+Paused %u s · still connected
+PLAY ANYWAY
+QUIT GAME
+TRY NOW
+END IT
+STOP
+SEND
+SHARE
+END GAME
+NO THANKS
+ac:u init 0x%08lX
+soc:u init 0x%08lX
+Saving screenshot...
+Screenshot failed
+Still working on the last request
+Requesting a sign-in code from NVIDIA...
+Requesting a sign-in code from Microsoft...
+Looking for your PC on this Wi-Fi...
+Your PC's IPv4 address
+Find PC
+Asking that address for Steam...
+Loading your GeForce NOW library...
+Loading your Xbox cloud games...
+Loading what your PC can stream...
+Refreshing your library...
+Search GeForce NOW games
+Search your Xbox cloud games
+Search the games played on your PC
+Searching the GeForce NOW catalog...
+Searching...
+Choppy here last time: using Weak / hotspot mode
+%.50s needs a Performance or Ultimate membership. NVIDIA says this account can't play it, so it will likely be refused.
+NEEDS A PAID MEMBERSHIP
+One moment - launching again too fast makes NVIDIA refuse for a minute
+Starting %.60s on %.40s...
+Asking Xbox Cloud Gaming for a console...
+Creating your cloud session...
+Closing the cloud session...
+Reconnecting to the cloud rig...
+Restarting your cloud session...
+Settings could not be saved to SD
+Checking for updates...
+OK - Kasumi will remind you when the next version is out
+Finish your game first - updates never run during a session
+Couldn't save to the SD card: check it isn't full or locked
+Finish what's running first, then switch
+SIGN OUT?
+This 3DS will forget your PC. Pair it again to stream from it.
+The saved Microsoft (Xbox) login will be deleted from the SD card. Your NVIDIA login stays.
+The saved NVIDIA login will be deleted from the SD card.
+Checking your connection to NVIDIA...
+Downloading the Kasumi HOME Menu theme...
+No screenshots yet: in a game, open the stream menu and pick Screenshot
+Diagnostic reports are not available in this build
+SEND A REPORT?
+Sends this run's and the last run's diagnostic log, your settings and any recent crash dump to Kasumi's developer. No login or passwords; IP addresses shortened. Kept 30 days.
+The microphone could not start
+No game was open on the PC; only the stream was closed
+Couldn't reach the PC to close the game
+Thank you! Change it anytime in Settings > System
+Nothing will be sent. Change it anytime in Settings > System
+Taking over your running game...
+Closing your other session...
+Just tried - wait a few seconds before trying again
+Sending diagnostic report...
+The screenshot could not be deleted
+No screenshots left
+You're in %s, where GeForce NOW is run by %s. Pick NVIDIA only if you signed up on nvidia.com.
+You're in %s, where GeForce NOW is also sold by %s. Pick the one you signed up with.
+WHERE'S YOUR ACCOUNT FROM?
+Signed in
+Not signed in
+Paused for maintenance
+PC: %.40s
+No PC paired
+Xbox Cloud Gaming is paused for maintenance
+EXIT KASUMI?
+Return to the HOME Menu.
+Switching to %.60s...
+This 3DS forgets %.60s and streams from %.60s instead. Pair it again to stream from it.
+This 3DS forgets %.60s. Pair it again to stream from it.
+FORGET THIS PC?
+This game uses its own Bitrate (game page, X > Options)
+Button mapping saved for every game
+Every game uses the normal layout
+Button mapping saved for this game
+This game uses the normal mapping
+Still making the last shortcut
+Shortcuts aren't available for Steam Link yet
+Shortcuts need Kasumi installed as a CIA (with FBI), not the .3dsx
+REMOVE THE SHORTCUT?
+Takes this game's shortcut off the HOME Menu. You can add it again any time.
+Couldn't start making the shortcut.
+Almost there: keep Kasumi open
+Added to favourites
+Removed from favourites
+DELETE THIS SCREENSHOT?
+It is removed from the SD card for good.
+Zoom zone %u saved - ZOOM now cycles your zones
+All %d zones are used - clear them first
+That view is already a zone
+Zoom zones cleared for this game
+Zoom in with ZOOM and drag to a spot, then save it here
+This game has its own buttons (game page > X > Options)
+Your button mapping is in use (Settings > Controls)
+Disconnect leaves the game running on %.40s. Quit closes it there.
+LEAVE THE GAME?
+Mouse & keyboard mode: drag to move the mouse, tap or A to click
+Controller mode: buttons and sticks act as a gamepad
+Mic muted
+Mic on: your team can hear you
+High ping: try a closer Server, or Weak / hotspot (Settings > Network)
+Choppy? Try Weak / hotspot in Settings > Network
+connection dropped, reconnecting
+resumed without reconnecting
+Screenshot saved: %s
+Screenshot could not be saved to the SD card
+Choppy connection? Try Settings > Network > Connection type: Weak / hotspot
+HOME/applet
+Welcome back - reconnecting to your rig
+About 5 minutes left: free sessions end after one hour
+About 1 minute left in this free session
+Video froze - reconnecting
+Connection lost - checking your session
+the lid closed
+Wi-Fi off
+Connection lost - reconnecting
+probe start (build 
+): %u resolutions, game filter \"%s\"
+server offer attributes:
+probe finished
+request %ux%u%s%s (%s)
+ sharp
+request %ux%u -> NVIDIA sends %ux%u refs=%u after %llu s
+  45 s: %u IDRs, %u keyframe requests, %u AUs, %u kbps
+  45 s: %u fps sent, %u frames decoded, decode avg %llu us max %u us, repeated %u, skipped %u, reconnects %u, now %ux%u
+request %ux%u -> launch failed: %s
+request %ux%u -> no video after 10 min (%s)
+Mouse & keyboard mode for the login. Tap MOUSE for controller mode
+WebRTC: 
+dark=%d kbps=%u pli=%u errors=%u state=%d status=%d game=\"%.40s\" msg=\"%.100s\"
+No sound: this 3DS's sound firmware is missing. Run DSP1 once, then restart Kasumi
+No sound on this 3DS: run DSP1 once (see Settings > Sound & Look)
+Sign in to Kasumi first, then open the shortcut again
+Connection failed - trying again
+Your free hour is over. Press A to start the game again (you may queue again).
+NVIDIA is limiting new sessions for a few minutes (limited mode). Kasumi tries again by itself: next try in %u:%02u.
+NVIDIA asked Kasumi to slow down after several launches. Trying again in %u:%02u by itself.
+A session from an older Kasumi (or another GeForce NOW app) is still open. Only NVIDIA can close it now. Retrying in %u:%02u; B stops, try later.
+NVIDIA limits how often one console can start games (free accounts most). It usually clears in 2-5 min and Kasumi keeps trying: next try in %u:%02u.
+another game
+%.90s is already running on your account. Resume it here?
+RESUME YOUR GAME?
+SESSION IN USE
+waiting for NVIDIA to free the session slot
+ALMOST THERE
+LAUNCH FAILED
+NVIDIA kept refusing launches for 15 minutes. Wait a little, then try again.
+NVIDIA didn't free your session slot in 15 minutes. Close GeForce NOW on your other devices (or wait a little), then try again.
+NVIDIA IS BUSY
+NVIDIA stayed in limited mode for 15 minutes. Try again a little later.
+%.30s isn't open to your account - Server is now Auto
+Trying again on Auto...
+Your GeForce NOW library is empty, so NVIDIA won't start games yet. On a phone or PC, sign in at play.geforcenow.com, accept the terms and link Steam or Epic, then try again.
+%.40s isn't in your GeForce NOW library. Add it at play.geforcenow.com (and own it on its store), refresh your library here, then try again.
+Heavy game for 60 fps on the 3DS: 30 fps will feel smoother (Settings > Picture)
+Trying again...
+Cancelled
+COULDN'T RESUME
+Theme saved to /Themes: install it with Anemone3DS
+%.90s is still running on your rig. Jump back in, or end it?
+Your game
+The installer didn't finish.
+Diagnostic report sent · %s
+REPORT SENT
+Share this code on GitHub or in the Kasumi Discord so the developer can find your report.
+%.110s. Check the Wi-Fi, then send it again.
+REPORT NOT SENT
+Kasumi %s is available - Settings > Updates
+NEW 3DS REQUIRED
+Kasumi needs a New 3DS, New 3DS XL or New 2DS XL for its video decoder.
+STARTUP FAILED
+Input packet self-test failed
+Starting %.90s...
+Could not start the network worker thread.
+Checking for a game that's still running...
+net=%u track=%u render=%u other=%u
+q61ddeJrVt7O90Nl-P-N7I36yctih4Ml6FyXLrb6j-U
+%s: HTTP %ld
+Authorization: Bearer %s
+Accept: application/json
+Token request: %.130s
+Login response has no access token; X to sign in again
+saved to SD
+save failed
+Waiting for browser sign-in...
+NVIDIA asked to slow polling
+NVIDIA's login server is busy (HTTP %ld). Try again in a moment.
+Token HTTP %ld: %.80s
+Can't reach NVIDIA's login server right now. Check the Wi-Fi, then try again.
+Your NVIDIA login has expired. Press X to sign in again.
+grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Aclient_token&client_token=%s&client_id=%s&sub=%s
+; trying OAuth refresh
+grant_type=refresh_token&refresh_token=%s&client_id=%s
+Press X to pair with your PC
+Saved Xbox login loaded
+Press X to sign in with Microsoft
+Saved NVIDIA session loaded
+Press X to sign in with NVIDIA
+client_id=%s&scope=openid%%20consent%%20email%%20tk_client%%20age&device_id=%s&display_name=Kasumi-3DS&idp_id=%s
+x-device-id: %s
+Login code expired; press X to retry
+grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&device_code=%s&client_id=%s
+Sign in before loading games
+Authorization: GFNJWT %s
+nv-client-id: ec7e38d4-03af-4b58-b131-cfb0495903ab
+nv-client-type: BROWSER
+nv-client-version: 2.0.80.173
+nv-client-streamer: WEBRTC
+nv-device-os: WINDOWS
+nv-device-type: DESKTOP
+GFN-PC
+GFN rejected saved login (HTTP %ld)
+items{id title images{GAME_BOX_ART KEY_ART TV_BANNER HERO_IMAGE} 
+variants{id appStore gfn{library{status selected lastPlayedDate}}} 
+gfn{playabilityState minimumMembershipTierLabel}}
+pageInfo{hasNextPage endCursor totalCount}
+query GetLibraryApps($vpcId:String!,$locale:String!,$sortString:String!,$fetchCount:Int!,$cursor:String!,$filters:AppFilterFields!){apps(vpcId:$vpcId,language:$locale,orderBy:$sortString,first:$fetchCount,after:$cursor,filters:$filters){
+query GetSearchCatalogApps($vpcId:String!,$locale:String!,$sortString:String!,$fetchCount:Int!,$cursor:String!,$searchString:String!,$filters:AppFilterFields!){apps(vpcId:$vpcId,language:$locale,orderBy:$sortString,first:$fetchCount,after:$cursor,searchQuery:$searchString,filters:$filters){
+variants.gfn.library.lastPlayedDate:DESC,computedValues.libraryAddedDate:DESC,sortName:ASC
+itemMetadata.relevance:DESC,sortName:ASC
+GAME_BOX_ART
+KEY_ART
+TV_BANNER
+HERO_IMAGE
+Search %.50s: %lu results
+No games on %s for this account. NVIDIA account? Pick NVIDIA in Settings > Account and sign in again.
+Loaded %lu owned games (server total %lu)
+Library: %lu games
+Library: %lu games (Y refreshes)
+Connection check: NVIDIA unreachable
+Connection: %u ms, %u.%u Mbps, Wi-Fi %u/3
+Search text is empty
+hdr10PlusGamingData
+%s=%.*s ext=%.*s
+%s[status=%d ours=%d sameGame=%d place=%lld rig=%s id=%.8s]
+media=none
+NVIDIA is limiting new sessions right now (limited mode). It usually passes in a few minutes; try again soon (code %d).
+The %.24s server isn't open to this account. Abroad? Pick a server in your home country in Settings > Network (code %d).
+This account has no %.20s access. For an NVIDIA account, pick NVIDIA in Settings > Account and sign in again (code %d).
+This account can't stream in %.20s. If %.20s sold you GeForce NOW, pick it in Settings > Account and sign in again (code %d).
+NVIDIA says this account can't play this game. Steam, Epic and Ubisoft games need that store linked at play.geforcenow.com (no VPN) (code %d).
+NVIDIA has no free rigs for this right now. Try again in a few minutes (code %d).
+Another GeForce NOW session is running on this account. Close it and try again (code %d).
+NVIDIA dropped this place in the queue. Press A to queue again (code %d).
+NVIDIA has this game in maintenance right now. Try again later or play another game (code %d).
+%s: CloudMatch HTTP %ld code %d %.60s
+CloudMatch rejected request
+%s: code %d %.90s
+%s: CloudMatch response has no session ID
+NVIDIA paused this session (status %d)
+Resuming your game...
+Session ready; signaling endpoint received
+The game closed, so NVIDIA ended the cloud session. You're still signed in: press A to play again, or B to go back.
+The game session has ended. Press A to start it again, or B to go back.
+GFN queue position: %d%s
+ (ad required)
+GFN queued; position not supplied%s
+%s: provisioning (status %d)%s
+, ad required
+nv-client-id: %s
+nv-browser-type: CHROME
+nv-client-streamer: NVIDIA-CLASSIC
+nv-client-type: NATIVE
+nv-client-version: 2.0.87.131
+nv-device-make: UNKNOWN
+nv-device-model: UNKNOWN
+Connection: close
+%s/v2/session/%s?keyboardLayout=en-US_qwerty&languageCode=en_US
+No game selected; X searches, Y loads library
+Not signed in; press X to sign in again
+Session already active; B stops it
+Cannot build session request for appId %.40s
+%s/v2/session?keyboardLayout=en-US_qwerty&languageCode=en_US
+NVIDIA is limiting launch attempts. Try again in %lld s.
+CloudMatch HTTP retry %d/3
+Session create network: %.120s
+NVIDIA is limiting launch attempts for a moment. Try again in a minute.
+Getting a free session slot...
+Another GeForce NOW session is running on your account.
+NVIDIA is still closing your other session.
+Create: CloudMatch HTTP %ld; press A to retry
+Create
+Claim
+NVIDIA would not hand that session over. End it instead, or close it where it runs.
+Reconnect: no connection to NVIDIA yet
+NVIDIA ended this session. Press A to start the game again.
+Recover
+NVIDIA would not resume this session. Press A to start the game again.
+Ad
+Session poll network: %.124s
+Poll
+NVIDIA is updating this game on the rig; waiting...
+NVIDIA's servers stopped answering for this session (HTTP %ld%s%.60s). Press A to try again.
+NVIDIA's server is busy (HTTP %ld); still trying...
+Session stop network: %.124s
+Cloud session stopped
+Session stop HTTP %ld
+Library ready
+Your game is still running
+signed in
+signed out
+PC forgotten; now using %.60s
+Signed out; saved login removed
+xboxlive.signin%20openid%20profile%20offline_access
+Chrome/130.0.0.0 Safari/537.36
+Can't reach Microsoft's sign-in (%.80s)
+client_id=%s&grant_type=refresh_token&scope=%s&refresh_token=%s
+Your Microsoft sign-in has expired. Press X to sign in again.
+Can't reach Xbox Live (%.80s)
+Xbox Live refused the sign-in (HTTP %ld)
+RelyingParty
+This Microsoft account has no Xbox profile yet. Sign in once on xbox.com to make one, then try again.
+A child account needs a parent to allow cloud gaming first.
+Cache-Control: no-store, must-revalidate, no-cache
+Can't reach Xbox Cloud Gaming (%.80s)
+Xbox Cloud Gaming isn't available for this account or country.
+Contacting Microsoft sign-in...
+client_id=
+Your 3DS thinks it is %s, so the secure sign-in fails. Set the date and time in System Settings, then try again.
+Couldn't reach Microsoft's sign-in (%.60s). Check Wi-Fi.
+Microsoft sign-in: HTTP %ld
+Microsoft sign-in response incomplete
+Signing in to Xbox: open the link on a phone or PC and enter the code
+Sign-in code expired; press X to get a new one
+grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&client_id=%s&device_code=%s
+Waiting for the Microsoft sign-in...
+The sign-in was declined. Press X to try again.
+Microsoft sign-in failed (%.40s)
+Signed in to Xbox Cloud Gaming; %s
+x-gssv-client: XboxComBrowser
+Xbox Cloud Gaming unreachable (%.80s)
+calling-app-name: Xbox Cloud Gaming Web
+calling-app-version: 26.1.97
+&hydration=RemoteLowJade0
+/v2/titles?mr=500%s%s
+Xbox game list: HTTP %ld
+Library: %lu Xbox cloud games (Y refreshes)
+%lu games match \"%.40s\"
+V3;WebrtcTransport.dll
+en-US
+POST
+Xbox couldn't start %.40s (HTTP %ld%s%.60s)
+client_id=%s&grant_type=refresh_token&refresh_token=%s
+Xbox Cloud Gaming ended the session.
+The Xbox session is gone. Try again.
+Waiting for a free Xbox (about %u min)...
+Waiting for a free Xbox...
+The Xbox didn't finish starting. Try again in a moment.
+Starting the Xbox...
+Connecting your account to the Xbox...
+The Xbox didn't accept the sign-in. Try again.
+Xbox ready; connecting the stream...
+Xbox Cloud Gaming couldn't start the game%s%.110s
+The Xbox session ended. Start the game again.
+Xbox session ended
+no answer
+Xbox stream setup failed: %.100s
+Xbox stream setup: HTTP %ld
+Xbox stream setup timed out
+Setting up the Xbox stream...
+Couldn't prepare the stream (WebRTC)
+Couldn't send the stream offer
+The Xbox refused the stream offer (HTTP %ld)
+The Xbox sent no stream answer
+Couldn't send the network candidates
+a=candidate:%*s %*u %*s %*u %63s
+The Xbox sent no usable address
+Connecting to the Xbox...
+Kasumi (New 3DS)
+Found %.40s at %s
+This 3DS isn't connected to Wi-Fi. Connect it, then try again.
+\"%.20s\" isn't a PC address. It looks like 192.168.1.20.
+Looking for a PC running Steam on this Wi-Fi...
+Nothing with Steam answered at %s. Check the address and that Steam is running there.
+No other PC with Steam found. Press X to type its address.
+No PC with Steam answered on this Wi-Fi. Start Steam on your PC, or press X to type its address.
+Couldn't prepare the pairing. Press X to try again.
+On %.40s, Steam asks for a code: type %s there
+The code typed on the PC didn't match; nothing changed.
+The pairing timed out; nothing changed.
+The other PC didn't pair; nothing changed.
+The code typed on the PC didn't match. Press X to get a new one.
+The pairing timed out. Press X to try again.
+The pairing was declined on the PC. Press X to try again.
+Steam refused the pairing (%s). Press X to try again.
+Pair with your PC first (press X)
+Steam Big Picture
+PC desktop
+Steam game %llu
+%s: Big Picture, the desktop and %u game played here
+%s: Big Picture, the desktop and %u games played here
+%lu match \"%.40s\"
+Pair with your PC first (Settings > Account).
+%.40s isn't answering. Is it on, with Steam running? If its address changed: Y, then X to type it.
+Asking %.40s to start streaming...
+Connecting to %.40s...
+Stream ended; the PC keeps running
+The stream isn't ready
+Connecting to your PC...
+otherPackets=%u; this 3DS %s mask %s
+ and 255.255.255.255
+not logged in
+in progress
+timed out
+Kasumi
+Streaming started.
+This PC no longer knows this 3DS. Press Y in the library (your PCs) and pair it again.
+The PC's screen is locked. Unlock it, then try again.
+Steam couldn't start streaming.
+The PC is busy streaming to another device.
+Streaming was canceled on the PC.
+Steam needs its streaming drivers installed on the PC.
+Remote Play is turned off in Steam on the PC (Settings > Remote Play).
+The PC is broadcasting. Stop the broadcast first.
+SteamVR is running on the PC. Close it first.
+The PC asks for a PIN to stream. Remove it in Steam > Settings > Remote Play.
+Steam couldn't set up the stream.
+Steam is set to Invisible on the PC. Go online, then try again.
+Steam couldn't launch the game on the PC.
+The PC's answer couldn't be decrypted. Pair this 3DS again.
+The PC didn't answer. Is Steam running, on the same Wi-Fi?
+Connecting to the PC...
+Couldn't compute the session token
+Signing in to the stream...
+The PC refused the stream's sign-in. Pair this 3DS again.
+The PC can't stream H.264 video.
+Couldn't send the stream settings
+Streaming from your PC
+Steam can't capture the PC screen. Check screen-sharing permissions.
+Connected; setting up the stream...
+The PC ended the stream.
+The PC didn't answer the stream connection.
+The stream didn't start (Steam stopped answering during setup).
+Lost the connection to the PC.
+-3DS/
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+Dev server not reachable at %s (%s)
+Dev server answered HTTP %ld
+dev build %s
+A build from your PC.
+The dev server has no %s build
+Could not reach GitHub (%s)
+GitHub is rate limiting checks; try again later
+GitHub answered HTTP %ld
+Kasumi.3dsx
+Kasumi.cia
+Release %s has no %s with checksums
+Battery too low: charge the console first
+Not enough SD card space (%llu MB free)
+Could not open the system installer (am)
+Installer refused to start (0x%08lX)
+Install write failed (0x%08lX); the old version is untouched
+Install could not finish (0x%08lX)
+Could not tell where Kasumi.3dsx is; update it by hand
+Could not write %s
+SD card write failed
+Could not replace Kasumi.3dsx
+Check for updates first
+Could not download the release checksums
+The release checksums do not list %s
+Download failed (HTTP %ld)
+Download is damaged (checksum mismatch); nothing was installed
+m=video 
+a=rtpmap:%d H264/90000
+a=rtpmap:%d opus/48000
+a=group:BUNDLE 
+a=group:BUNDLE %s
+m=video 9 UDP/TLS/RTP/SAVPF %d
+m=audio 9 UDP/TLS/RTP/SAVPF 111
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+m=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=0\r\na=ssrc:6 cname:kasumi-mic\r\na=sendonly\r\na=mid:%s\r\na=rtcp-mux
+a=fmtp:%d level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+a=rtcp-fb:%d%.980s
+a=ice-ufrag:
+a=ice-pwd:
+a=fingerprint:sha-256 
+v=0\no=SdpTest test_id_13 14 IN IPv4 127.0.0.1\ns=-\nt=0 0\na=general.icePassword:%s\na=general.iceUserNameFragment:%s\na=general.dtlsFingerprint:%s\nm=video 0 RTP/AVP\na=msid:fbc-video-0\na=vqos.fec.rateDropWindow:10\na=vqos.fec.minRequiredFecPackets:2\na=vqos.drc.minRequiredBitrateCheckEnabled:1\na=vqos.fec.repairMinPercent:6\na=vqos.fec.repairPercent:8\na=vqos.fec.repairMaxPercent:30\na=vqos.dynamicStreamingMode:%u\na=vqos.bllFec.enable:0\na=vqos.drc.enable:%u\n%sa=bwe.useOwdCongestionControl:1\na=video.enableRtpNack:1\na=vqos.bw.txRxLag.minFeedbackTxDeltaMs:200\na=vqos.drc.bitrateIirFilterFactor:18\na=video.packetSize:1140\na=video.rtpNackQueueLength:1024\na=video.rtpNackQueueMaxPackets:512\na=video.rtpNackMaxPacketCount:25\na=packetPacing.numGroups:%u\na=packetPacing.minNumPacketsPerGroup:4\na=packetPacing.minNumPacketsFrame:4\na=packetPacing.maxDelayUs:%u\na=video.mapRtpTimestampsToFrames:1\na=video.clientViewportWd:%u\na=video.clientViewportHt:%u\na=video.maxFPS:%u\na=video.maxNumReferenceFrames:%u\n
+a=video.initialBitrateKbps:%u\na=video.initialPeakBitrateKbps:%u\na=vqos.bw.maximumBitrateKbps:%u\na=vqos.bw.minimumBitrateKbps:%u\na=vqos.bw.peakBitrateKbps:%u\na=vqos.bw.serverPeakBitrateKbps:%u\na=vqos.bw.enableBandwidthEstimation:1\na=vqos.bw.disableBitrateLimit:0\na=video.encoderCscMode:3\na=video.dynamicRangeMode:0\na=video.bitDepth:8\na=video.scalingFeature1:0\na=video.prefilterParams.prefilterMode:%u\na=video.prefilterParams.prefilterModel:0\na=video.prefilterParams.denoiseLevel:0\na=video.prefilterParams.sharpnessLevel:%u\nm=audio 0 RTP/AVP\na=msid:audio\nm=mic 0 RTP/AVP\na=msid:mic\na=rtpmap:0 PCMU/8000\nm=application 0 RTP/AVP\na=msid:input_1\na=ri.partialReliableThresholdMs:16\na=ri.hidDeviceMask:4294967295\na=ri.enablePartiallyReliableTransferGamepad:15\na=ri.enablePartiallyReliableTransferHid:4294967295\n
+a=vqos.dfc.enable:0\na=vqos.dfc.adjustResAndFps:0\na=vqos.resControl.cpmRtc.enable:0\na=vqos.resControl.cpmRtc.featureMask:0\na=vqos.resControl.cpmRtc.minResolutionPercent:100\na=vqos.resControl.cpmRtc.resolutionChangeHoldonMs:999999\n
+This game only streams in 720p, which the 3DS can't show yet. Fortnite works.
+This game streams at %ux%u, which is too big for the 3DS.
+Video arrived; %.140s
+The 3DS video decoder stopped responding. Close Kasumi and open it again.
+no 720p frame in 10 s
+The 3DS couldn't decode this game's 720p picture.
+No picture from this game after 10 s.
+Input ready protocol v%d
+WebRTC data channel open; input handshake
+WebRTC ICE/DTLS/SRTP connected
+ICE connected; DTLS handshake
+WebRTC transport %s
+WebRTC %s
+pollReadyAvg/Max=%llu/%lluus readAvg/Max=%llu/%lluus slowReads(>2ms)=%u lockWaitMax=%lluus
+ (system default: every larger size was refused)
+a=candidate:9911 1 UDP 16777215 %s %d typ host
+Connecting to the Xbox
+Video %ux%u from the PC
+Couldn't open the stream to the PC
+c=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:%s\r\na=ice-pwd:%s\r\na=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n
+c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s
+level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\nm=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\na=fmtp:102 %s\r\na=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n
+Could not create/send WebRTC answer
+a=general.serverBundlePort:
+libpeer/SRTP initialization failed
+Answer send failed: %.130s
+Answer sent; ICE local %u/%u
+candidate:%63s %u %15s %u %127s %u typ %31s
+Input ready protocol v2 fallback
+NVIDIA removed signaling peer
+NVIDIA signaling error (not transport)
+NVIDIA sent BYE; offer=%lu bytes
+ICE candidate buffer limit
+NVIDIA ended this session (HTTP %d). Press A to start the game again.
+PHONE
+SHIFT
+SPACE
+ENTER
+TYPE ON YOUR PHONE
+The phone keyboard could not start. Check that the 3DS is on Wi-Fi, then try again.
+Put your phone on the same Wi-Fi as the 3DS.
+Scan the code with the phone's camera.
+Type there: it goes straight into the game.
+PHONE CONNECTED
+WAITING FOR YOUR PHONE
+NOT SENT
+CONNECTED
+CONNECTING
+Space
+No free shortcut slots left
+Kasumi shortcut
+Couldn't draw the shortcut's picture (unknown pixel order)
+The shortcut template is missing from this build
+Not enough video memory to draw the shortcut
+Could not open the system installer
+The installer refused to start (0x%08lX)
+Writing the shortcut failed (0x%08lX)
+The shortcut could not be installed (0x%08lX)
+The shortcut could not be removed (0x%08lX)
+has wide art
+no wide art in the library yet
+Shortcut removed from the HOME Menu
+Couldn't make the shortcut: %.70s
+Shortcut added: find %.60s on the HOME Menu
+KSHORTC1
+shortcut template missing
+shortcut template cut short
+NCCH
+shortcut template has no NCCH
+shortcut template has a RomFS
+shortcut template layout
+shortcut template ExeFS
+SMDH
+CBMD
+shortcut banner template
+shortcut banner layout
+CGFX
+shortcut banner model
+CWAV
+shortcut banner sound
+out of memory
+shortcut template has no icon or banner
+shortcut template signature type
+shortcut template has %u contents
+DOWN
+LEFT
+RIGHT
+Left stick up
+Left stick down
+Left stick left
+Left stick right
+Right stick up
+Right stick down
+Right stick left
+Right stick right
+LS up
+LS down
+LS left
+LS right
+RS up
+RS down
+RS left
+RS right
+Nothing
+Cross
+Circle
+Square
+Triangle
+PS button
+D-Pad up
+D-Pad down
+D-Pad left
+D-Pad right
+None
+Up
+Down
+Left
+Right
+Left stick click
+Right stick click
+Xbox button
+Turbo
+Toggle
+Jan
+Feb
+Mar
+Apr
+May
+Jun
+Jul
+Aug
+Sep
+Oct
+Nov
+Dec
+Couldn't download the HOME Menu theme: %.100s
+Couldn't save the theme to the SD card.
+The theme download didn't work. Try again later.
+Sign-in cancelled
+Pinging GeForce NOW servers...
+Connection: %u ms, %u.%u Mbps; fastest server %s %d ms
+ (smaller)
+ (smallest)
+Out of memory
+Could not compress the report
+Reports are not set up in this build
+dns=%u connect=%u tls=%u total=%u ms, %llu sent%s%.80s
+No connection: %.70s
+Too many reports from this network: try again in an hour
+The report service answered HTTP %ld
+DSP unavailable: playing without sound
+audio linearAlloc failed
+Xbox Cloud Gaming (beta)
+au (KDDI, Japan)
+Cloud.GG (Australia)
+Taiwan Mobile (Taiwan)
+StarHub (Singapore)
+GFN Korea
+rain (South Africa)
+Digevo (Latin America)
+Australia
+Japan
+Korea
+Taiwan
+Singapore
+Malaysia
+Indonesia
+Thailand
+the Philippines
+Vietnam
+Chile
+Argentina
+Peru
+Colombia
+Uruguay
+Ecuador
+South Africa
+Armenia
+Turkey
+Saudi Arabia
+the UAE
+Kuwait
+Bahrain
+Qatar
+Oman
+Jordan
+Iraq
+Israel
+India
+your country

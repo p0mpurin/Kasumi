@@ -1,4 +1,5 @@
 #include "report.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <dirent.h>
@@ -455,7 +456,7 @@ bool report_send(const char *trigger)
         if (!sent) {
             const bool cancelled = !strcmp(response.error, "Cancelled");
             char message[96];
-            snprintf(message, sizeof(message), "No connection: %.70s", response.error);
+            snprintf(message, sizeof(message), i18n_text("No connection: %.70s"), response.error);
             http_response_free(&response);
             if (cancelled) return fail("Cancelled");
             fail(message);
@@ -476,7 +477,7 @@ bool report_send(const char *trigger)
         json_decref(reply);
         if (status == 429) return fail("Too many reports from this network: try again in an hour");
         char message[64];
-        snprintf(message, sizeof(message), "The report service answered HTTP %ld", status);
+        snprintf(message, sizeof(message), i18n_text("The report service answered HTTP %ld"), status);
         fail(message);
         /* Too large or a server hiccup: lighter may go through. Anything
          * else would be refused again. */

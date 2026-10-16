@@ -1,4 +1,5 @@
 #include "provider.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <jansson.h>
@@ -295,11 +296,11 @@ const char *providers_country_name(const char *code)
         { "JO", "Jordan" }, { "IQ", "Iraq" }, { "IL", "Israel" }, { "IN", "India" },
     };
     for (size_t i = 0; code && i < sizeof(names) / sizeof(names[0]); ++i)
-        if (!strcasecmp(code, names[i].code)) return names[i].name;
+        if (!strcasecmp(code, names[i].code)) return i18n_text(names[i].name);
     /* A code we have no name for reads as itself ("EG"); anything that is
      * not two letters is not shown at all. */
     return code && strlen(code) == 2 && isalpha((unsigned char)code[0]) && isalpha((unsigned char)code[1])
-        ? code : "your country";
+        ? code : i18n_text("your country");
 }
 
 bool providers_partner_here(GfnProvider *partner, bool *only)

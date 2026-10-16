@@ -1,4 +1,5 @@
 #include "webrtc_transport.h"
+#include "i18n.h"
 #include "stream_profile.h"
 #include "nvst_signal.h"
 #include "mvd_video.h"
@@ -515,10 +516,10 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
                 diagnostic_flag("xcloud-720p", "the game stayed at %ux%u", source_width, source_height);
                 if (decode_width <= 1280 && decode_height <= 720)
                     snprintf(t->status, sizeof(t->status),
-                             "This game only streams in 720p, which the 3DS can't show yet. Fortnite works.");
+                             i18n_text("This game only streams in 720p, which the 3DS can't show yet. Fortnite works."));
                 else
                     snprintf(t->status, sizeof(t->status),
-                             "This game streams at %ux%u, which is too big for the 3DS.",
+                             i18n_text("This game streams at %ux%u, which is too big for the 3DS."),
                              source_width, source_height);
                 t->no_reconnect = true;
                 t->state = WEBRTC_FAILED;
@@ -584,13 +585,13 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
             t->decoder_failed_width = decode_width;
             t->decoder_failed_height = decode_height;
             t->decoder_failed_at = now;
-            snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
+            snprintf(t->status, sizeof(t->status), i18n_text("Video arrived; %.140s"), mvd_video_status());
             /* MVD stopped accepting any setup after ~20 rebuilds in one run
              * (report E9BPVX): only restarting Kasumi brought it back. */
             if (++t->decoder_init_failures == 3) {
                 diagnostic_flag("mvd-broken", "decoder setup failed 3 times in a row (%s)", mvd_video_status());
                 snprintf(t->status, sizeof(t->status),
-                         "The 3DS video decoder stopped responding. Close Kasumi and open it again.");
+                         i18n_text("The 3DS video decoder stopped responding. Close Kasumi and open it again."));
                 /* Reconnecting can't help: say so on the error screen. */
                 t->no_reconnect = true;
                 t->state = WEBRTC_FAILED;
@@ -609,7 +610,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     /* Steam's pictures are rarely whole macroblocks (800x450). */
     if (t->steam) mvd_video_set_visible(source_width, source_height);
     if (!mvd_video_submit(packet->data, packet->size))
-        snprintf(t->status, sizeof(t->status), "Video arrived; %.140s", mvd_video_status());
+        snprintf(t->status, sizeof(t->status), i18n_text("Video arrived; %.140s"), mvd_video_status());
     /* Say how a 720p start failed rather than stay black. */
     if (decode_720p && !t->no_reconnect) {
         const bool refused = mvd_video_failed();
@@ -617,8 +618,8 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
             diagnostic_flag("xcloud-720p", "%s (%s)", refused ? "decoder refused 720p" :
                             "no 720p frame in 10 s", mvd_video_status());
             snprintf(t->status, sizeof(t->status), "%s",
-                     refused ? "The 3DS couldn't decode this game's 720p picture." :
-                               "No picture from this game after 10 s.");
+                     refused ? i18n_text("The 3DS couldn't decode this game's 720p picture.") :
+                               i18n_text("No picture from this game after 10 s."));
             t->no_reconnect = true;
             t->state = WEBRTC_FAILED;
         }
@@ -665,7 +666,7 @@ static void on_data(char *message, size_t length, void *userdata, uint16_t sid)
             int version = first == 526 && length >= 4 ? bytes[2] | (bytes[3] << 8) : first;
             t->input_protocol_version = version < 2 ? 2 : version;
             t->input_ready = true;
-            snprintf(t->status, sizeof(t->status), "Input ready protocol v%d", t->input_protocol_version);
+            snprintf(t->status, sizeof(t->status), i18n_text("Input ready protocol v%d"), t->input_protocol_version);
         }
     }
 }
@@ -675,7 +676,7 @@ static void on_data_open(void *userdata)
     WebRtcTransport *t = userdata;
     t->data_open = true;
     t->data_opened_at = osGetTime();
-    snprintf(t->status, sizeof(t->status), "WebRTC data channel open; input handshake");
+    snprintf(t->status, sizeof(t->status), i18n_text("WebRTC data channel open; input handshake"));
     diagnostic_log("INPUT", "data channel open");
 }
 
@@ -696,20 +697,20 @@ static void on_state(PeerConnectionState state, void *userdata)
     if (state == PEER_CONNECTION_COMPLETED) {
         t->state = WEBRTC_CONNECTED;
         t->connected_at = osGetTime();
-        snprintf(t->status, sizeof(t->status), "WebRTC ICE/DTLS/SRTP connected");
+        snprintf(t->status, sizeof(t->status), i18n_text("WebRTC ICE/DTLS/SRTP connected"));
         request_video_keyframe(t, "stream_start");
     } else if (state == PEER_CONNECTION_CONNECTED) {
         t->state = WEBRTC_CHECKING;
-        snprintf(t->status, sizeof(t->status), "ICE connected; DTLS handshake");
+        snprintf(t->status, sizeof(t->status), i18n_text("ICE connected; DTLS handshake"));
     } else if (state == PEER_CONNECTION_FAILED || state == PEER_CONNECTION_DISCONNECTED ||
                (state == PEER_CONNECTION_CLOSED && t->state == WEBRTC_CONNECTED)) {
         /* A DTLS close_notify from the rig closes a working stream. Beta.27
          * report SAFA4K counted it as "connecting" and never reconnected. */
         t->state = WEBRTC_FAILED;
-        snprintf(t->status, sizeof(t->status), "WebRTC transport %s", peer_connection_state_to_string(state));
+        snprintf(t->status, sizeof(t->status), i18n_text("WebRTC transport %s"), peer_connection_state_to_string(state));
     } else {
         t->state = WEBRTC_CHECKING;
-        snprintf(t->status, sizeof(t->status), "WebRTC %s", peer_connection_state_to_string(state));
+        snprintf(t->status, sizeof(t->status), i18n_text("WebRTC %s"), peer_connection_state_to_string(state));
     }
 }
 
@@ -915,7 +916,7 @@ static bool start_xcloud(WebRtcTransport *t, NvstSignal *signal)
     t->answer_sent_at = osGetTime();
     diagnostic_log("WEBRTC", "xcloud answer applied (%lu bytes), %u remote candidates",
                    (unsigned long)signal->offer_size, signal->remote_ice_count);
-    snprintf(t->status, sizeof(t->status), "Connecting to the Xbox");
+    snprintf(t->status, sizeof(t->status), i18n_text("Connecting to the Xbox"));
     media_thread_start(t);
     return true;
 }
@@ -925,7 +926,7 @@ static bool start_xcloud(WebRtcTransport *t, NvstSignal *signal)
 static void steam_video_start(void *user, unsigned width, unsigned height)
 {
     WebRtcTransport *t = user;
-    snprintf(t->status, sizeof(t->status), "Video %ux%u from the PC", width, height);
+    snprintf(t->status, sizeof(t->status), i18n_text("Video %ux%u from the PC"), width, height);
 }
 
 static void steam_video(void *user, const uint8_t *data, size_t size, bool keyframe)
@@ -975,12 +976,12 @@ static bool start_steam(WebRtcTransport *t, NvstSignal *signal)
     if (!t->peer) {
         t->steam = false;
         t->state = WEBRTC_FAILED;
-        snprintf(t->status, sizeof(t->status), "Couldn't open the stream to the PC");
+        snprintf(t->status, sizeof(t->status), i18n_text("Couldn't open the stream to the PC"));
         return false;
     }
     t->state = WEBRTC_ANSWER_SENT;
     t->answer_sent_at = osGetTime();
-    snprintf(t->status, sizeof(t->status), "Connecting to your PC");
+    snprintf(t->status, sizeof(t->status), i18n_text("Connecting to your PC"));
     media_thread_start(t);
     return true;
 }
@@ -1183,7 +1184,7 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
                    (unsigned long)signal->offer_size,
                    (unsigned long)signal->offer_nvst_size);
     if (!g_peer_runtime && peer_init() != 0) {
-        snprintf(t->status, sizeof(t->status), "libpeer/SRTP initialization failed"); t->state = WEBRTC_FAILED; return false;
+        snprintf(t->status, sizeof(t->status), i18n_text("libpeer/SRTP initialization failed")); t->state = WEBRTC_FAILED; return false;
     }
     g_peer_runtime = true;
     peer_connection_set_diagnostics_enabled(1);
@@ -1222,7 +1223,7 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
     bool sent = answer && nvst && nvst_signal_send_answer(signal, answer, nvst);
     free(nvst); free(answer);
     if (!sent) {
-        snprintf(failure, sizeof(failure), "Answer send failed: %.130s", signal->status);
+        snprintf(failure, sizeof(failure), i18n_text("Answer send failed: %.130s"), signal->status);
         goto fail;
     }
     free(offer);
@@ -1236,7 +1237,7 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
     diagnostic_log("ICE", "answer sent local_trickle=%u/%u",
                    t->sent_local_candidates, t->local_candidates);
     add_manual_media_candidate(t);
-    snprintf(t->status, sizeof(t->status), "Answer sent; ICE local %u/%u",
+    snprintf(t->status, sizeof(t->status), i18n_text("Answer sent; ICE local %u/%u"),
              t->sent_local_candidates, t->local_candidates);
     media_thread_start(t);
     return true;
@@ -1398,7 +1399,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
     if (t->data_open && !t->input_ready && now_input - t->data_opened_at >= 1500) {
         t->input_ready = true;
         t->input_protocol_version = 2;
-        snprintf(t->status, sizeof(t->status), "Input ready protocol v2 fallback");
+        snprintf(t->status, sizeof(t->status), i18n_text("Input ready protocol v2 fallback"));
     }
     if (!t->input_ready) return;
     if (now_input - t->last_input_heartbeat_at >= 2000) {

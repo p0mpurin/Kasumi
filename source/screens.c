@@ -563,7 +563,7 @@ static const char *setting_value(const App *app, int setting)
         static char result[48];
         const GfnClient *c = app->client;
         if (!c->conn_tested_at) return "Run test";
-        snprintf(result, sizeof(result), "%u ms · %u.%u Mbps", c->conn_latency_ms,
+        snprintf(result, sizeof(result), i18n_text("%u ms · %u.%u Mbps"), c->conn_latency_ms,
                  c->conn_kbps / 1000, c->conn_kbps % 1000 / 100);
         return result;
     }
@@ -576,9 +576,9 @@ static const char *setting_value(const App *app, int setting)
         if (index == 0) {
             const int best = regions_fastest();
             if (best >= 0 && regions_get((unsigned)best, &region))
-                snprintf(text, sizeof(text), "Auto · %s", region.name);
+                snprintf(text, sizeof(text), i18n_text("Auto · %s"), region.name);
             else
-                snprintf(text, sizeof(text), "Auto (lowest ping)");
+                snprintf(text, sizeof(text), i18n_text("Auto (lowest ping)"));
             return text;
         }
         if (!regions_get(index - 2, &region)) return s->server;
@@ -593,7 +593,7 @@ static const char *setting_value(const App *app, int setting)
         static char text[24];
         const unsigned n = gallery_saved_count();
         if (!n) return "None yet";
-        snprintf(text, sizeof(text), "%u saved", n);
+        snprintf(text, sizeof(text), i18n_text("%u saved"), n);
         return text;
     }
     case SETTING_MUSIC:
@@ -607,8 +607,8 @@ static const char *setting_value(const App *app, int setting)
         static char text[48];
         const UpdateInfo info = updater_info();
         if (info.state == UPDATE_AVAILABLE) snprintf(text, sizeof(text), "%s ready", info.latest);
-        else if (info.state == UPDATE_UP_TO_DATE) snprintf(text, sizeof(text), "Up to date");
-        else if (info.state == UPDATE_INSTALLED) snprintf(text, sizeof(text), "Restart to finish");
+        else if (info.state == UPDATE_UP_TO_DATE) snprintf(text, sizeof(text), i18n_text("Up to date"));
+        else if (info.state == UPDATE_INSTALLED) snprintf(text, sizeof(text), i18n_text("Restart to finish"));
         else snprintf(text, sizeof(text), "v%s", APP_VERSION);
         return text;
     }
@@ -621,7 +621,7 @@ static const char *setting_value(const App *app, int setting)
         static char text[56];
         GfnProvider p;
         if (!s->provider[0]) {
-            snprintf(text, sizeof(text), "NVIDIA (default)");
+            snprintf(text, sizeof(text), i18n_text("NVIDIA (default)"));
         } else if (providers_find(s->provider, &p)) {
             snprintf(text, sizeof(text), "%s", p.name);
         } else {
@@ -700,7 +700,7 @@ static const char *setting_description(const App *app, int setting)
         static char text[140];
         if (s->slider == 0) return "The 3D slider does nothing in games. Slide it to choose zoom or a button.";
         if (s->slider == 1) return "In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.";
-        snprintf(text, sizeof(text), "In a game, the 3D slider past halfway holds %s until you slide it back down.",
+        snprintf(text, sizeof(text), i18n_text("In a game, the 3D slider past halfway holds %s until you slide it back down."),
                  gfn_output_name(gfn_slider_choice_output(s->slider)));
         return text;
     }
@@ -836,14 +836,14 @@ static const char *setting_description(const App *app, int setting)
         provider_active(&active);
         if (!s->provider[0] || !providers_find(s->provider, &chosen)) provider_nvidia(&chosen);
         if (gfn_has_session(app->client) && strcmp(active.code, chosen.code)) {
-            snprintf(text, sizeof(text), "Signed in with %s. To use %s, sign out below and sign in again.",
+            snprintf(text, sizeof(text), i18n_text("Signed in with %s. To use %s, sign out below and sign in again."),
                      active.name, chosen.name);
             return text;
         }
         providers_recommended(&local);
         if (strcmp(local.code, PROVIDER_NVIDIA)) {
-            snprintf(text, sizeof(text), "Most accounts are NVIDIA's. Here GeForce NOW is also sold by %.30s: "
-                     "if your subscription is from %.30s, pick it and sign in again. Beta.", local.name, local.name);
+            snprintf(text, sizeof(text), i18n_text("Most accounts are NVIDIA's. Here GeForce NOW is also sold by %.30s: "
+                     "if your subscription is from %.30s, pick it and sign in again. Beta."), local.name, local.name);
             return text;
         }
         return "Most accounts are NVIDIA's. In some countries (Japan, Korea, Taiwan, the Middle East...) "
@@ -1213,7 +1213,7 @@ static void draw_service_card(const App *app, int s, UiRect r, float alpha, floa
         ui_circle(tx + 3.0f * k, base - 7.0f * k, 2.5f * k, ui_with_alpha(ready ? light : UI_TEXT_FAINT, a8));
         const GfnGame *last = s == app->hub_index ? hub_last_game(app) : NULL;
         char status[128];
-        if (last) snprintf(status, sizeof(status), "Continue: %s", last->title);
+        if (last) snprintf(status, sizeof(status), i18n_text("Continue: %s"), last->title);
         ui_text_fit(tx + 10.0f * k, base - 14.0f * k, 11.0f * k, ui_with_alpha(ready ? UI_TEXT : UI_TEXT_DIM, a8),
                     UI_ALIGN_LEFT, room - 10.0f * k, last ? status : app->service_status[s]);
         /* The seal: the service's kanji, stamped in its colour. */
@@ -1373,8 +1373,8 @@ static void celebrate(const App *app)
     g_celebrate_at = osGetTime();
     g_celebrate_service = s;
     if (s == SERVICE_STEAM)
-        snprintf(g_celebrate_text, sizeof(g_celebrate_text), "Streaming from %.60s",
-                 steam_link_host_name()[0] ? steam_link_host_name() : "your PC");
+        snprintf(g_celebrate_text, sizeof(g_celebrate_text), i18n_text("Streaming from %.60s"),
+                 steam_link_host_name()[0] ? steam_link_host_name() : i18n_text("your PC"));
     else
         snprintf(g_celebrate_text, sizeof(g_celebrate_text), "%s is ready. Your games are on their way.",
                  SERVICE_INFO[s].name);
@@ -1632,7 +1632,7 @@ static void draw_signin_top(const App *app)
         ui_text_wrap(200, 191, 11, UI_KIN, UI_ALIGN_CENTER, 330, 2, 13, client->status);
     } else {
         char needs[96];
-        snprintf(needs, sizeof(needs), "You need: %s", SERVICE_INFO[s].needs);
+        snprintf(needs, sizeof(needs), i18n_text("You need: %s"), SERVICE_INFO[s].needs);
         ui_text_wrap(200, 194, 11, ui_with_alpha(light, a8), UI_ALIGN_CENTER, 360, 2, 13, needs);
     }
     static const char *const hints[] = { "A", "Set up", "B", "Home", "SELECT", "Settings", NULL };
@@ -1767,10 +1767,10 @@ static void library_age(const GfnClient *client, char *out, size_t size)
     out[0] = '\0';
     if (!client->library_saved_at) return;
     const long age = (long)((int64_t)time(NULL) - client->library_saved_at);
-    if (age < 120) snprintf(out, size, "synced just now");
-    else if (age < 7200) snprintf(out, size, "synced %ld min ago", age / 60);
-    else if (age < 172800) snprintf(out, size, "synced %ld h ago", age / 3600);
-    else snprintf(out, size, "synced %ld days ago", age / 86400);
+    if (age < 120) snprintf(out, size, i18n_text("synced just now"));
+    else if (age < 7200) snprintf(out, size, i18n_text("synced %ld min ago"), age / 60);
+    else if (age < 172800) snprintf(out, size, i18n_text("synced %ld h ago"), age / 3600);
+    else snprintf(out, size, i18n_text("synced %ld days ago"), age / 86400);
 }
 
 /* How a game will be streamed, for the library card and the game page. */
@@ -1779,11 +1779,11 @@ static const char *stream_line(const App *app)
     static char line[96];
     switch (app_service(app)) {
     case SERVICE_STEAM:
-        snprintf(line, sizeof(line), "From %s  ·  800x480 wide  ·  %u fps",
-                 steam_link_host_name()[0] ? steam_link_host_name() : "your PC", stream_profile_fps());
+        snprintf(line, sizeof(line), i18n_text("From %s  ·  800x480 wide  ·  %u fps"),
+                 steam_link_host_name()[0] ? steam_link_host_name() : i18n_text("your PC"), stream_profile_fps());
         return line;
     case SERVICE_XBOX:
-        snprintf(line, sizeof(line), "Xbox Cloud  ·  800x480 wide  ·  60 fps");
+        snprintf(line, sizeof(line), i18n_text("Xbox Cloud  ·  800x480 wide  ·  60 fps"));
         return line;
     default:
         return stream_profile_name();
@@ -1855,7 +1855,7 @@ static void draw_library_top(const App *app, bool entering)
     ui_label(35, 30, 11, light, UI_ALIGN_LEFT, SERVICE_TABS[s]);
     if (searching) {
         char query[96];
-        snprintf(query, sizeof(query), "SEARCH  \"%s\"", app->search_text);
+        snprintf(query, sizeof(query), i18n_text("SEARCH  \"%s\""), app->search_text);
         ui_text_fit(386, 30, 11, UI_TEXT_DIM, UI_ALIGN_RIGHT, 200, query);
     } else if (app->client->game_count) {
         draw_library_tabs(app, light);
@@ -1864,7 +1864,7 @@ static void draw_library_top(const App *app, bool entering)
     if (focused && !app->service_loading) {
         char counter[64], age[32] = "";
         library_age(app->client, age, sizeof(age));
-        snprintf(counter, sizeof(counter), "%lu / %lu%s%s", (unsigned long)(app->selected + 1), (unsigned long)count,
+        snprintf(counter, sizeof(counter), i18n_text("%lu / %lu%s%s"), (unsigned long)(app->selected + 1), (unsigned long)count,
                  age[0] ? "  ·  " : "", age);
         const float counter_w = ui_text_width(counter, 10);
         ui_text(386, 50, 10, UI_TEXT_FAINT, UI_ALIGN_RIGHT, counter);
@@ -1890,7 +1890,7 @@ static void draw_library_top(const App *app, bool entering)
             only) {
             char country[4];
             providers_country(country, sizeof(country));
-            snprintf(wrong, sizeof(wrong), "GeForce NOW in %s is %s's: sign out in Settings > Account and pick %s.",
+            snprintf(wrong, sizeof(wrong), i18n_text("GeForce NOW in %s is %s's: sign out in Settings > Account and pick %s."),
                      providers_country_name(country), partner.name, partner.name);
             title = "Signed in with NVIDIA";
             hint = wrong;
@@ -1975,7 +1975,7 @@ static void draw_library_top(const App *app, bool entering)
         char line[160];
         /* Paid-only on a free account: NVIDIA refuses it after the queue. */
         const bool paid = app_service(app) == SERVICE_GFN && focused->needs_paid;
-        snprintf(line, sizeof(line), "%s  ·  %s", missing ? "NOT IN LIBRARY" : paid ? "PAID MEMBERSHIP ONLY"
+        snprintf(line, sizeof(line), "%s  ·  %s", missing ? i18n_text("NOT IN LIBRARY") : paid ? i18n_text("PAID MEMBERSHIP ONLY")
                  : store_label(focused->store), stream_line(app));
         ui_text_fit(200, 200, 11, missing || paid ? UI_KIN : UI_TEXT_DIM, UI_ALIGN_CENTER, 370, line);
     }
@@ -2098,17 +2098,17 @@ static void draw_session_top(const App *app)
     if (reconnecting) {
         if (app->waiting_wifi)
             snprintf(detail, sizeof(detail), "%s", app->lid_paused
-                     ? "Paused with the lid closed; reconnecting when you open it."
-                     : "Waiting for Wi-Fi to come back; your game keeps running.");
+                     ? i18n_text("Paused with the lid closed; reconnecting when you open it.")
+                     : i18n_text("Waiting for Wi-Fi to come back; your game keeps running."));
         else
-            snprintf(detail, sizeof(detail), "The connection dropped. Attempt %u of 3; your game keeps running.",
+            snprintf(detail, sizeof(detail), i18n_text("The connection dropped. Attempt %u of 3; your game keeps running."),
                      app->reconnect_attempt);
     } else if (stage == 0) {
-        if (app->queue_eta > 90) snprintf(detail, sizeof(detail), "About %d min to go", (app->queue_eta + 30) / 60);
-        else if (app->queue_eta > 0) snprintf(detail, sizeof(detail), "About a minute to go");
-        else if (app->queue_eta == 0) snprintf(detail, sizeof(detail), "Your rig should be ready any moment");
-        else snprintf(detail, sizeof(detail), "%s", app_service(app) == SERVICE_XBOX ? "Waiting for a free Xbox"
-                      : client->queue_position > 0 ? "Your place in NVIDIA's queue" : "Waiting for a free rig");
+        if (app->queue_eta > 90) snprintf(detail, sizeof(detail), i18n_text("About %d min to go"), (app->queue_eta + 30) / 60);
+        else if (app->queue_eta > 0) snprintf(detail, sizeof(detail), i18n_text("About a minute to go"));
+        else if (app->queue_eta == 0) snprintf(detail, sizeof(detail), i18n_text("Your rig should be ready any moment"));
+        else snprintf(detail, sizeof(detail), "%s", app_service(app) == SERVICE_XBOX ? i18n_text("Waiting for a free Xbox")
+                      : client->queue_position > 0 ? i18n_text("Your place in NVIDIA's queue") : i18n_text("Waiting for a free rig"));
     } else if (stage >= 2) {
         snprintf(detail, sizeof(detail), "%s", app->transport->peer ? app->transport->status : app->signal->status);
     }
@@ -2381,9 +2381,9 @@ static const char *details_store(const App *app, const GfnGame *game)
 
 static void format_played(char *out, size_t size, uint32_t seconds)
 {
-    if (seconds >= 3600) snprintf(out, size, "%lu h %02lu m", (unsigned long)(seconds / 3600),
+    if (seconds >= 3600) snprintf(out, size, i18n_text("%lu h %02lu m"), (unsigned long)(seconds / 3600),
                                   (unsigned long)(seconds / 60 % 60));
-    else snprintf(out, size, "%lu min", (unsigned long)(seconds / 60));
+    else snprintf(out, size, i18n_text("%lu min"), (unsigned long)(seconds / 60));
 }
 
 /* ---- HOME Menu shortcut sheet ----------------------------------------------- */
@@ -2405,7 +2405,7 @@ static const char *shortcut_step_text(void)
     case SHORTCUT_STEP_DRAW: return "Drawing the icon and banner...";
     case SHORTCUT_STEP_BUILD: return "Building the shortcut...";
     case SHORTCUT_STEP_INSTALL:
-        snprintf(text, sizeof(text), "Installing on the HOME Menu  %u%%", shortcut_progress() / 10);
+        snprintf(text, sizeof(text), i18n_text("Installing on the HOME Menu  %u%%"), shortcut_progress() / 10);
         return text;
     case SHORTCUT_STEP_DONE: return "Done";
     }
@@ -2462,11 +2462,11 @@ static void draw_shortcut_top(const App *app, const GfnGame *game)
         ui_text(200, y - 4, 14, UI_ACCENT, UI_ALIGN_CENTER, "Added to your HOME Menu");
         char text[200];
         if (shortcut_used_wide_art() || game->wide_url[0])
-            snprintf(text, sizeof(text), "Press HOME: it is at the end of your icons, wrapped as a present until "
-                     "you open it once. It starts Kasumi and launches %.60s.", game->title);
+            snprintf(text, sizeof(text), i18n_text("Press HOME: it is at the end of your icons, wrapped as a present until "
+                     "you open it once. It starts Kasumi and launches %.60s."), game->title);
         else
-            snprintf(text, sizeof(text), "Press HOME to find it. Tip: refresh your library (Y) and make it again "
-                     "to get the game's own banner art.");
+            snprintf(text, sizeof(text), i18n_text("Press HOME to find it. Tip: refresh your library (Y) and make it again "
+                     "to get the game's own banner art."));
         ui_text_wrap(200, y + 14, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 360, 2, 14, text);
     } else if (sheet == SHORTCUT_SHEET_REMOVED) {
         ui_text(200, y - 4, 14, UI_TEXT, UI_ALIGN_CENTER, "Removed from your HOME Menu");
@@ -2556,9 +2556,9 @@ static void draw_details_top(const App *app)
     char line[96], value[48];
     if (played && history.seconds) {
         format_played(value, sizeof(value), history.seconds);
-        snprintf(line, sizeof(line), "Played %s on Kasumi", value);
+        snprintf(line, sizeof(line), i18n_text("Played %s on Kasumi"), value);
     } else {
-        snprintf(line, sizeof(line), "%s", played ? "Played briefly on Kasumi" : "Not played on Kasumi yet");
+        snprintf(line, sizeof(line), "%s", played ? i18n_text("Played briefly on Kasumi") : i18n_text("Not played on Kasumi yet"));
     }
     ui_text_fit(x, y, 15, UI_TEXT, UI_ALIGN_LEFT, w, line);
     y += 20;
@@ -2569,8 +2569,9 @@ static void draw_details_top(const App *app)
             const struct tm *t = gmtime(&at);
             if (t) strftime(when, sizeof(when), "%d %b", t);
         }
-        snprintf(line, sizeof(line), "%lu session%s%s%s", (unsigned long)history.sessions,
-                 history.sessions == 1 ? "" : "s", when[0] ? "  ·  last " : "", when);
+        /* One message per plural form: other languages don't add an s. */
+        snprintf(line, sizeof(line), i18n_text(history.sessions == 1 ? "%lu session%s%s" : "%lu sessions%s%s"),
+                 (unsigned long)history.sessions, when[0] ? i18n_text("  ·  last ") : "", when);
         ui_text_fit(x, y, 15, UI_TEXT_DIM, UI_ALIGN_LEFT, w, line);
         y += 20;
     }
@@ -2613,13 +2614,13 @@ static const char *option_value(const App *app, const GamePrefs *prefs, int row,
     case OPTION_MAPPING: return prefs->has_map ? "Custom" : "Default";
     case OPTION_CONNECTION:
         if (!c->conn_tested_at) return "Not tested";
-        snprintf(buffer, size, "%u ms  ·  %u.%u Mbps  ·  %u/3", c->conn_latency_ms, c->conn_kbps / 1000,
+        snprintf(buffer, size, i18n_text("%u ms  ·  %u.%u Mbps  ·  %u/3"), c->conn_latency_ms, c->conn_kbps / 1000,
                  c->conn_kbps % 1000 / 100, c->conn_bars);
         return buffer;
     }
     if (!names) return "";
     if (own >= 0) return names[(unsigned)own % count];
-    snprintf(buffer, size, "Default (%s)", names[global % count]);
+    snprintf(buffer, size, i18n_text("Default (%s)"), names[global % count]);
     return buffer;
 }
 
@@ -2983,7 +2984,7 @@ static void draw_update_top(const App *app)
         ui_text_fit(right.x + right.w / 2, right.y + 20, 13, UI_TEXT, UI_ALIGN_CENTER, right.w - 8, info.latest);
         ui_triangle(194, 74, 194, 86, 204, 80, UI_ACCENT);
         char heading[64];
-        snprintf(heading, sizeof(heading), "WHAT'S NEW  ·  %s", info.published[0] ? info.published : info.latest);
+        snprintf(heading, sizeof(heading), i18n_text("WHAT'S NEW  ·  %s"), info.published[0] ? info.published : info.latest);
         ui_label(40, 106, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, heading);
         const UiRect notes = { 36, 120, 328, 94 };
         draw_notes(notes, info.notes, app->notes_scroll);
@@ -3003,8 +3004,8 @@ static void draw_update_top(const App *app)
         char detail[160];
         if (ok && info.checked_at) {
             const long age = (long)((int64_t)time(NULL) - info.checked_at);
-            if (age < 120) snprintf(detail, sizeof(detail), "Version %s  ·  checked just now", APP_VERSION);
-            else snprintf(detail, sizeof(detail), "Version %s  ·  checked %ld min ago", APP_VERSION, age / 60);
+            if (age < 120) snprintf(detail, sizeof(detail), i18n_text("Version %s  ·  checked just now"), APP_VERSION);
+            else snprintf(detail, sizeof(detail), i18n_text("Version %s  ·  checked %ld min ago"), APP_VERSION, age / 60);
         } else {
             snprintf(detail, sizeof(detail), "%s", ok ? APP_VERSION : info.error);
         }
@@ -3045,31 +3046,31 @@ static void draw_update_bottom(const App *app)
     }
     char detail[160] = "";
     if (info.state == UPDATE_DOWNLOADING && info.size_bytes)
-        snprintf(detail, sizeof(detail), "%.1f of %.1f MB", info.progress / 1000.0f * info.size_bytes / 1048576.0f,
+        snprintf(detail, sizeof(detail), i18n_text("%.1f of %.1f MB"), info.progress / 1000.0f * info.size_bytes / 1048576.0f,
                  info.size_bytes / 1048576.0f);
     else if (info.state == UPDATE_AVAILABLE && info.size_bytes)
         snprintf(detail, sizeof(detail), "%s  ·  %.1f MB  ·  %s", info.latest, info.size_bytes / 1048576.0f,
                  updater_is_3dsx() ? ".3dsx" : "CIA");
     else if (info.state == UPDATE_INSTALLED)
-        snprintf(detail, sizeof(detail), updater_can_relaunch() ? "Restart to use %s." : "Close Kasumi and open it again to use %s.",
+        snprintf(detail, sizeof(detail), updater_can_relaunch() ? i18n_text("Restart to use %s.") : i18n_text("Close Kasumi and open it again to use %s."),
                  info.latest);
     else if (info.state == UPDATE_FAILED)
         snprintf(detail, sizeof(detail), "%s", info.error);
     else if (info.state == UPDATE_INSTALLING)
-        snprintf(detail, sizeof(detail), "Your login, library and settings stay as they are.");
+        snprintf(detail, sizeof(detail), i18n_text("Your login, library and settings stay as they are."));
     ui_text_wrap(160, 112, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 290, 2, 14, detail);
 
     const bool working = info.state == UPDATE_DOWNLOADING || info.state == UPDATE_VERIFYING ||
                          info.state == UPDATE_INSTALLING || info.state == UPDATE_CHECKING;
     char label[48];
     const char *jp = "確認";
-    if (info.state == UPDATE_AVAILABLE) { snprintf(label, sizeof(label), "INSTALL %s", info.latest); jp = "インストール"; }
+    if (info.state == UPDATE_AVAILABLE) { snprintf(label, sizeof(label), i18n_text("INSTALL %s"), info.latest); jp = "インストール"; }
     else if (info.state == UPDATE_INSTALLED) {
-        snprintf(label, sizeof(label), "%s", updater_can_relaunch() ? "RESTART KASUMI" : "EXIT KASUMI");
+        snprintf(label, sizeof(label), "%s", updater_can_relaunch() ? i18n_text("RESTART KASUMI") : i18n_text("EXIT KASUMI"));
         jp = "再起動";
-    } else if (info.state == UPDATE_FAILED) { snprintf(label, sizeof(label), "TRY AGAIN"); jp = "再試行"; }
-    else if (working) { snprintf(label, sizeof(label), "PLEASE WAIT"); jp = "処理中"; }
-    else snprintf(label, sizeof(label), "CHECK AGAIN");
+    } else if (info.state == UPDATE_FAILED) { snprintf(label, sizeof(label), i18n_text("TRY AGAIN")); jp = "再試行"; }
+    else if (working) { snprintf(label, sizeof(label), i18n_text("PLEASE WAIT")); jp = "処理中"; }
+    else snprintf(label, sizeof(label), i18n_text("CHECK AGAIN"));
     ui_button(UPD_PRIMARY, label, jp, working ? UI_BUTTON_NORMAL : UI_BUTTON_PRIMARY, pressed(app, UPD_PRIMARY));
     if (!working) {
         if (info.state == UPDATE_AVAILABLE)
@@ -3083,7 +3084,7 @@ static void draw_whats_new_top(const App *app)
 {
     draw_title(200, 31, "新機能", "WHAT'S NEW");
     char heading[64];
-    snprintf(heading, sizeof(heading), "Kasumi %s", app->whats_new_version);
+    snprintf(heading, sizeof(heading), i18n_text("Kasumi %s"), app->whats_new_version);
     ui_text(200, 62, 15, UI_TEXT, UI_ALIGN_CENTER, heading);
     const UiRect notes = { 30, 86, 340, 126 };
     draw_notes(notes, app->whats_new_notes, app->notes_scroll);
@@ -3180,6 +3181,15 @@ static void draw_guide_bottom(const App *app)
               pressed(app, GUIDE_NEXT));
 }
 
+/* Was this status line written from this message (in the chosen language)?
+ * Compares the text before the first value. */
+static bool status_from(const char *status, const char *english_format)
+{
+    const char *format = i18n_text(english_format);
+    const size_t n = strcspn(format, "%");
+    return n > 0 && !strncmp(status, format, n);
+}
+
 void screens_draw_top(const App *app)
 {
     static int previous_view = -1;
@@ -3188,7 +3198,8 @@ void screens_draw_top(const App *app)
     const bool entering = p < 1.0f;
     /* Signed in or paired just now: celebrate it. */
     if (previous_view == VIEW_LOGIN && app->view == VIEW_LIBRARY && gfn_has_session(app->client) &&
-        (!strncmp(app->client->status, "Signed in", 9) || !strncmp(app->client->status, "Paired with", 11)))
+        (status_from(app->client->status, "Signed in; session %s") ||
+         status_from(app->client->status, "Paired with %.60s")))
         celebrate(app);
     previous_view = (int)app->view;
     /* Behind everything: the hub's art, or the service's. */
@@ -3355,8 +3366,8 @@ static void draw_signin_bottom(const App *app)
     if (s != SERVICE_STEAM && http_clock_wrong(date, sizeof(date))) {
         /* Sign-in would fail with no code shown: say why first. */
         char text[160];
-        snprintf(text, sizeof(text), "Your 3DS clock says %s. Set the date and time in System Settings "
-                 "first, or the sign-in fails.", date);
+        snprintf(text, sizeof(text), i18n_text("Your 3DS clock says %s. Set the date and time in System Settings "
+                 "first, or the sign-in fails."), date);
         ui_text_wrap(160, 40, 11, UI_KIN, UI_ALIGN_CENTER, 292, 3, 14, text);
     } else if (s == SERVICE_STEAM) {
         ui_text(160, 40, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Turn the PC on and start Steam. Kasumi finds");
@@ -3981,10 +3992,10 @@ static void draw_look_stats(const App *app)
     }
     /* Four readings across, amber when one is a problem. */
     char values[4][16];
-    snprintf(values[0], sizeof(values[0]), "%u FPS", app->fps);
-    snprintf(values[1], sizeof(values[1]), "%.1f MBPS", t->video_kbps / 1000.0f);
-    snprintf(values[2], sizeof(values[2]), "%d MS", t->rtt_ms);
-    snprintf(values[3], sizeof(values[3]), "%u RESENT", app->resent_per_second);
+    snprintf(values[0], sizeof(values[0]), i18n_text("%u FPS"), app->fps);
+    snprintf(values[1], sizeof(values[1]), i18n_text("%.1f MBPS"), t->video_kbps / 1000.0f);
+    snprintf(values[2], sizeof(values[2]), i18n_text("%d MS"), t->rtt_ms);
+    snprintf(values[3], sizeof(values[3]), i18n_text("%u RESENT"), app->resent_per_second);
     const bool warn[4] = { app->fps > 0 && app->fps < 24, false, t->rtt_ms > 80, app->resent_per_second > 2 };
     const float cell = r.w / 4;
     for (int i = 0; i < 4; ++i) {
@@ -4163,7 +4174,7 @@ static void draw_stream_bottom(const App *app, float overlay_p)
 
     char zoom[16];
     const unsigned level = mvd_video_zoom_level();
-    if (app->zone_index >= 0 && level) snprintf(zoom, sizeof(zoom), "ZONE %d", app->zone_index + 1);
+    if (app->zone_index >= 0 && level) snprintf(zoom, sizeof(zoom), i18n_text("ZONE %d"), app->zone_index + 1);
     else snprintf(zoom, sizeof(zoom), "%s", level == 3 ? "2.0x" : level == 2 ? "1.5x" : level == 1 ? "1.2x" : "拡大");
     const char *labels[4] = { "KEYS", "MOUSE", "ZOOM", "MENU" };
     const char *jp[4] = { "キー", "マウス", zoom, "メニュー" };
@@ -4202,9 +4213,9 @@ static void draw_welcome_back(const App *app)
     ui_label(160, p.y + 67, 11, ui_with_alpha(UI_TEXT, alpha), UI_ALIGN_CENTER, "WELCOME BACK");
     char away[48];
     if (app->welcome_away_s >= 90)
-        snprintf(away, sizeof(away), "Paused %u min · still connected", (app->welcome_away_s + 30) / 60);
+        snprintf(away, sizeof(away), i18n_text("Paused %u min · still connected"), (app->welcome_away_s + 30) / 60);
     else
-        snprintf(away, sizeof(away), "Paused %u s · still connected", app->welcome_away_s);
+        snprintf(away, sizeof(away), i18n_text("Paused %u s · still connected"), app->welcome_away_s);
     ui_text(160, p.y + 83, 11, ui_with_alpha(UI_TEXT_DIM, alpha), UI_ALIGN_CENTER, away);
     ui_offset(0.0f, 0.0f);
 }

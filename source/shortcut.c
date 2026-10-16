@@ -1,4 +1,5 @@
 #include "shortcut.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -259,7 +260,7 @@ bool shortcut_request(const GfnGame *game, unsigned variant)
     g_title_id = pick_title_id(map(), game->app_id);
     unlock();
     if (!g_title_id) {
-        snprintf(g_result, sizeof(g_result), "No free shortcut slots left");
+        snprintf(g_result, sizeof(g_result), i18n_text("No free shortcut slots left"));
         return false;
     }
     diagnostic_log("SHORTCUT", "making %016llX for %.60s", (unsigned long long)g_title_id, game->title);
@@ -627,7 +628,7 @@ void shortcut_frame(void)
 static bool install(const u8 *data, size_t size, u64 title_id)
 {
     if (R_FAILED(amInit())) {
-        snprintf(g_result, sizeof(g_result), "Could not open the system installer");
+        snprintf(g_result, sizeof(g_result), i18n_text("Could not open the system installer"));
         return false;
     }
     /* Remaking one: the old copy goes first. */
@@ -638,7 +639,7 @@ static bool install(const u8 *data, size_t size, u64 title_id)
     Result rc = AM_StartCiaInstall(MEDIATYPE_SD, &cia);
     if (R_FAILED(rc)) {
         amExit();
-        snprintf(g_result, sizeof(g_result), "The installer refused to start (0x%08lX)", (unsigned long)rc);
+        snprintf(g_result, sizeof(g_result), i18n_text("The installer refused to start (0x%08lX)"), (unsigned long)rc);
         return false;
     }
     const size_t chunk = 64 * 1024;
@@ -649,7 +650,7 @@ static bool install(const u8 *data, size_t size, u64 title_id)
         if (R_FAILED(rc) || written != n) {
             AM_CancelCIAInstall(cia);
             amExit();
-            snprintf(g_result, sizeof(g_result), "Writing the shortcut failed (0x%08lX)", (unsigned long)rc);
+            snprintf(g_result, sizeof(g_result), i18n_text("Writing the shortcut failed (0x%08lX)"), (unsigned long)rc);
             return false;
         }
         g_progress = (unsigned)((offset + n) * 1000 / size);
@@ -657,7 +658,7 @@ static bool install(const u8 *data, size_t size, u64 title_id)
     rc = AM_FinishCiaInstall(cia);
     amExit();
     if (R_FAILED(rc)) {
-        snprintf(g_result, sizeof(g_result), "The shortcut could not be installed (0x%08lX)", (unsigned long)rc);
+        snprintf(g_result, sizeof(g_result), i18n_text("The shortcut could not be installed (0x%08lX)"), (unsigned long)rc);
         return false;
     }
     return true;
@@ -666,7 +667,7 @@ static bool install(const u8 *data, size_t size, u64 title_id)
 static bool remove_title(u64 title_id)
 {
     if (R_FAILED(amInit())) {
-        snprintf(g_result, sizeof(g_result), "Could not open the system installer");
+        snprintf(g_result, sizeof(g_result), i18n_text("Could not open the system installer"));
         return false;
     }
     u64 id = title_id;
@@ -677,7 +678,7 @@ static bool remove_title(u64 title_id)
     if (R_SUCCEEDED(rc)) AM_DeleteTicket(title_id);
     amExit();
     if (R_FAILED(rc)) {
-        snprintf(g_result, sizeof(g_result), "The shortcut could not be removed (0x%08lX)", (unsigned long)rc);
+        snprintf(g_result, sizeof(g_result), i18n_text("The shortcut could not be removed (0x%08lX)"), (unsigned long)rc);
         return false;
     }
     return true;
@@ -781,7 +782,7 @@ bool shortcut_work(void)
             json_object_del(map(), key);
             save_map();
             unlock();
-            snprintf(g_result, sizeof(g_result), "Shortcut removed from the HOME Menu");
+            snprintf(g_result, sizeof(g_result), i18n_text("Shortcut removed from the HOME Menu"));
         }
         diagnostic_log("SHORTCUT", "remove %s: %s", key, ok ? "done" : g_result);
         return ok;
@@ -793,7 +794,7 @@ bool shortcut_work(void)
     u8 *cia = shortcut_cia_build(g_title_id, g_smdh, g_banner, &size, error, sizeof(error));
     if (!cia) {
         diagnostic_flag("shortcut-build", "%s", error);
-        snprintf(g_result, sizeof(g_result), "Couldn't make the shortcut: %.70s", error);
+        snprintf(g_result, sizeof(g_result), i18n_text("Couldn't make the shortcut: %.70s"), error);
         return false;
     }
     g_step = SHORTCUT_STEP_INSTALL;
@@ -805,7 +806,7 @@ bool shortcut_work(void)
         json_object_set_new(map(), key, game_json(&g_game, g_variant));
         save_map();
         unlock();
-        snprintf(g_result, sizeof(g_result), "Shortcut added: find %.60s on the HOME Menu", g_game.title);
+        snprintf(g_result, sizeof(g_result), i18n_text("Shortcut added: find %.60s on the HOME Menu"), g_game.title);
     } else {
         diagnostic_flag("shortcut-install", "%s", g_result);
     }

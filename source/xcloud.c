@@ -1,4 +1,5 @@
 #include "xcloud.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <jansson.h>
@@ -156,7 +157,7 @@ static bool token_form(GfnClient *c, const char *form, const char **error_code, 
     *error_code = "";
     *status = 0;
     if (!http_request("POST", XC_TOKEN_URL, XC_UA, headers, ARRAY_SIZE(headers), form, 256 * 1024, &r)) {
-        snprintf(c->status, sizeof(c->status), "Can't reach Microsoft's sign-in (%.80s)", r.error);
+        snprintf(c->status, sizeof(c->status), i18n_text("Can't reach Microsoft's sign-in (%.80s)"), r.error);
         return false;
     }
     *status = r.status;
@@ -203,7 +204,7 @@ static bool msa_access(GfnClient *c)
     diagnostic_log("XCLOUD", "microsoft refresh http=%ld %s%s", status, ok ? "ok" : "failed ", ok ? "" : code);
     if (!ok && (status == 400 || status == 401)) {
         c->auth_state = GFN_AUTH_ERROR;
-        snprintf(c->status, sizeof(c->status), "Your Microsoft sign-in has expired. Press X to sign in again.");
+        snprintf(c->status, sizeof(c->status), i18n_text("Your Microsoft sign-in has expired. Press X to sign in again."));
     }
     return ok;
 }
@@ -225,14 +226,14 @@ static bool xsts_gssv(GfnClient *c, char *out, size_t size)
                                    g_xbl_headers, ARRAY_SIZE(g_xbl_headers), body, 256 * 1024, &r);
     free(body);
     if (!sent) {
-        snprintf(c->status, sizeof(c->status), "Can't reach Xbox Live (%.80s)", r.error);
+        snprintf(c->status, sizeof(c->status), i18n_text("Can't reach Xbox Live (%.80s)"), r.error);
         return false;
     }
     json_t *root = response_json(&r);
     const char *user = json_string_value(json_object_get(root, "Token"));
     diagnostic_log("XCLOUD", "user token http=%ld %s", r.status, user ? "ok" : "missing");
     if (r.status != 200 || !user) {
-        snprintf(c->status, sizeof(c->status), "Xbox Live refused the sign-in (HTTP %ld)", r.status);
+        snprintf(c->status, sizeof(c->status), i18n_text("Xbox Live refused the sign-in (HTTP %ld)"), r.status);
         json_decref(root);
         http_response_free(&r);
         return false;
@@ -248,7 +249,7 @@ static bool xsts_gssv(GfnClient *c, char *out, size_t size)
                                     g_xbl_headers, ARRAY_SIZE(g_xbl_headers), text, 256 * 1024, &r);
     free(text);
     if (!sent2) {
-        snprintf(c->status, sizeof(c->status), "Can't reach Xbox Live (%.80s)", r.error);
+        snprintf(c->status, sizeof(c->status), i18n_text("Can't reach Xbox Live (%.80s)"), r.error);
         return false;
     }
     root = response_json(&r);
@@ -259,12 +260,12 @@ static bool xsts_gssv(GfnClient *c, char *out, size_t size)
     bool ok = r.status == 200 && xsts && strlen(xsts) < size;
     if (ok) snprintf(out, size, "%s", xsts);
     else if (xerr == 2148916233LL)
-        snprintf(c->status, sizeof(c->status), "This Microsoft account has no Xbox profile yet. Sign in once on "
-                 "xbox.com to make one, then try again.");
+        snprintf(c->status, sizeof(c->status), i18n_text("This Microsoft account has no Xbox profile yet. Sign in once on "
+                 "xbox.com to make one, then try again."));
     else if (xerr == 2148916238LL)
-        snprintf(c->status, sizeof(c->status), "A child account needs a parent to allow cloud gaming first.");
+        snprintf(c->status, sizeof(c->status), i18n_text("A child account needs a parent to allow cloud gaming first."));
     else
-        snprintf(c->status, sizeof(c->status), "Xbox Live refused the sign-in (HTTP %ld)", r.status);
+        snprintf(c->status, sizeof(c->status), i18n_text("Xbox Live refused the sign-in (HTTP %ld)"), r.status);
     json_decref(root);
     http_response_free(&r);
     return ok;
@@ -294,7 +295,7 @@ static bool streaming_token(GfnClient *c)
         const bool sent = http_request("POST", url, XC_UA, headers, ARRAY_SIZE(headers), text, 512 * 1024, &r);
         free(text);
         if (!sent) {
-            snprintf(c->status, sizeof(c->status), "Can't reach Xbox Cloud Gaming (%.80s)", r.error);
+            snprintf(c->status, sizeof(c->status), i18n_text("Can't reach Xbox Cloud Gaming (%.80s)"), r.error);
             return false;
         }
         json_t *root = response_json(&r);
@@ -338,7 +339,7 @@ static bool streaming_token(GfnClient *c)
         json_decref(root);
         http_response_free(&r);
     }
-    snprintf(c->status, sizeof(c->status), "Xbox Cloud Gaming isn't available for this account or country.");
+    snprintf(c->status, sizeof(c->status), i18n_text("Xbox Cloud Gaming isn't available for this account or country."));
     return false;
 }
 
@@ -349,22 +350,22 @@ bool xcloud_begin_login(GfnClient *c)
     };
     xcloud_sign_out();
     provider_xbox(&c->login_provider);
-    snprintf(c->status, sizeof(c->status), "Contacting Microsoft sign-in...");
+    snprintf(c->status, sizeof(c->status), i18n_text("Contacting Microsoft sign-in..."));
     HttpResponse r;
     if (!http_request("POST", "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode", XC_UA,
                       headers, ARRAY_SIZE(headers), "client_id=" XC_CLIENT_ID "&scope=" XC_SCOPE, 64 * 1024, &r)) {
         char date[16];
         if (http_clock_wrong(date, sizeof(date)))
-            snprintf(c->status, sizeof(c->status), "Your 3DS thinks it is %s, so the secure sign-in fails. Set the "
-                     "date and time in System Settings, then try again.", date);
+            snprintf(c->status, sizeof(c->status), i18n_text("Your 3DS thinks it is %s, so the secure sign-in fails. Set the "
+                     "date and time in System Settings, then try again."), date);
         else
-            snprintf(c->status, sizeof(c->status), "Couldn't reach Microsoft's sign-in (%.60s). Check Wi-Fi.", r.error);
+            snprintf(c->status, sizeof(c->status), i18n_text("Couldn't reach Microsoft's sign-in (%.60s). Check Wi-Fi."), r.error);
         c->auth_state = GFN_AUTH_ERROR;
         return false;
     }
     json_t *root = response_json(&r);
     if (r.status != 200 || !root) {
-        snprintf(c->status, sizeof(c->status), "Microsoft sign-in: HTTP %ld", r.status);
+        snprintf(c->status, sizeof(c->status), i18n_text("Microsoft sign-in: HTTP %ld"), r.status);
         json_decref(root);
         http_response_free(&r);
         c->auth_state = GFN_AUTH_ERROR;
@@ -383,12 +384,12 @@ bool xcloud_begin_login(GfnClient *c)
     json_decref(root);
     http_response_free(&r);
     if (!c->device_code[0] || !c->user_code[0] || !c->verification_uri[0]) {
-        snprintf(c->status, sizeof(c->status), "Microsoft sign-in response incomplete");
+        snprintf(c->status, sizeof(c->status), i18n_text("Microsoft sign-in response incomplete"));
         c->auth_state = GFN_AUTH_ERROR;
         return false;
     }
     c->auth_state = GFN_AUTH_WAITING;
-    snprintf(c->status, sizeof(c->status), "Signing in to Xbox: open the link on a phone or PC and enter the code");
+    snprintf(c->status, sizeof(c->status), i18n_text("Signing in to Xbox: open the link on a phone or PC and enter the code"));
     diagnostic_log("XCLOUD", "device code issued, lasts %llds", (long long)(c->challenge_expires_at - now));
     return true;
 }
@@ -399,7 +400,7 @@ void xcloud_login_tick(GfnClient *c)
     const int64_t now = (int64_t)time(NULL);
     if (now >= c->challenge_expires_at) {
         c->auth_state = GFN_AUTH_ERROR;
-        snprintf(c->status, sizeof(c->status), "Sign-in code expired; press X to get a new one");
+        snprintf(c->status, sizeof(c->status), i18n_text("Sign-in code expired; press X to get a new one"));
         return;
     }
     if (now < c->next_poll_at) return;
@@ -421,14 +422,14 @@ void xcloud_login_tick(GfnClient *c)
     free(form);
     if (!ok) {
         if (!strcmp(code, "authorization_pending")) {
-            snprintf(c->status, sizeof(c->status), "Waiting for the Microsoft sign-in...");
+            snprintf(c->status, sizeof(c->status), i18n_text("Waiting for the Microsoft sign-in..."));
         } else if (!strcmp(code, "slow_down")) {
             c->poll_interval += 5;
         } else if (status) {
             diagnostic_log("XCLOUD", "sign-in poll http=%ld error=%s", status, code);
             c->auth_state = GFN_AUTH_ERROR;
             snprintf(c->status, sizeof(c->status), !strcmp(code, "authorization_declined")
-                     ? "The sign-in was declined. Press X to try again." : "Microsoft sign-in failed (%.40s)", code);
+                     ? i18n_text("The sign-in was declined. Press X to try again.") : i18n_text("Microsoft sign-in failed (%.40s)"), code);
         }
         return;
     }
@@ -440,7 +441,7 @@ void xcloud_login_tick(GfnClient *c)
     c->auth_state = GFN_AUTH_LOGGED_IN;
     c->user_id[0] = '\0';
     const bool saved = login_save(c);
-    snprintf(c->status, sizeof(c->status), "Signed in to Xbox Cloud Gaming; %s", saved ? "saved to SD" : "save failed");
+    snprintf(c->status, sizeof(c->status), i18n_text("Signed in to Xbox Cloud Gaming; %s"), saved ? i18n_text("saved to SD") : i18n_text("save failed"));
 }
 
 bool xcloud_keep_login(GfnClient *c)
@@ -478,7 +479,7 @@ static bool gs_request(GfnClient *c, const char *method, const char *path, const
         "Content-Type: application/json"
     };
     const bool sent = http_request(method, url, XC_UA, headers, ARRAY_SIZE(headers), body, XC_RESPONSE_MAX, r);
-    if (!sent) snprintf(c->status, sizeof(c->status), "Xbox Cloud Gaming unreachable (%.80s)", r->error);
+    if (!sent) snprintf(c->status, sizeof(c->status), i18n_text("Xbox Cloud Gaming unreachable (%.80s)"), r->error);
     return sent;
 }
 
@@ -557,7 +558,7 @@ static void fill_names(GfnClient *c, XcTitle *titles, size_t count)
 bool xcloud_fetch_library(GfnClient *c)
 {
     if (!xcloud_keep_login(c)) return false;
-    snprintf(c->status, sizeof(c->status), "Loading your Xbox cloud games...");
+    snprintf(c->status, sizeof(c->status), i18n_text("Loading your Xbox cloud games..."));
     XcTitle *titles = calloc(GFN_MAX_GAMES, sizeof(XcTitle));
     if (!titles) return false;
     size_t count = 0, seen = 0;
@@ -574,7 +575,7 @@ bool xcloud_fetch_library(GfnClient *c)
         }
         json_t *root = r.status == 200 ? response_json(&r) : NULL;
         if (!root) {
-            snprintf(c->status, sizeof(c->status), "Xbox game list: HTTP %ld", r.status);
+            snprintf(c->status, sizeof(c->status), i18n_text("Xbox game list: HTTP %ld"), r.status);
             http_response_free(&r);
             free(titles);
             return false;
@@ -613,7 +614,7 @@ bool xcloud_fetch_library(GfnClient *c)
     c->catalog_total = c->game_count;
     diagnostic_log("XCLOUD", "library %lu playable of %lu cloud games (%s)", (unsigned long)c->game_count,
                    (unsigned long)seen, g.offering);
-    snprintf(c->status, sizeof(c->status), "Library: %lu Xbox cloud games (Y refreshes)",
+    snprintf(c->status, sizeof(c->status), i18n_text("Library: %lu Xbox cloud games (Y refreshes)"),
              (unsigned long)c->game_count);
     return true;
 }
@@ -636,7 +637,7 @@ bool xcloud_search(GfnClient *c, const char *query)
         ++kept;
     }
     c->game_count = kept;
-    snprintf(c->status, sizeof(c->status), "%lu games match \"%.40s\"", (unsigned long)kept, query);
+    snprintf(c->status, sizeof(c->status), i18n_text("%lu games match \"%.40s\""), (unsigned long)kept, query);
     return true;
 }
 
@@ -692,7 +693,7 @@ bool xcloud_start_session(GfnClient *c, const GfnGame *game)
     if ((r.status != 200 && r.status != 202) || !path || strlen(path) >= sizeof(c->session_id)) {
         char why[120];
         error_text(&r, why, sizeof(why));
-        snprintf(c->status, sizeof(c->status), "Xbox couldn't start %.40s (HTTP %ld%s%.60s)", game->title, r.status,
+        snprintf(c->status, sizeof(c->status), i18n_text("Xbox couldn't start %.40s (HTTP %ld%s%.60s)"), game->title, r.status,
                  why[0] ? ", " : "", why);
         snprintf(c->fail_code, sizeof(c->fail_code), r.status == 403 ? "entitlement" : "create");
         diagnostic_log("XCLOUD", "play refused: %.120s", why);
@@ -714,7 +715,7 @@ bool xcloud_start_session(GfnClient *c, const GfnGame *game)
     g.started_at = osGetTime();
     g.provisioning_at = 0;
     g.wait_seconds = 0;
-    snprintf(c->status, sizeof(c->status), "Asking Xbox Cloud Gaming for a console...");
+    snprintf(c->status, sizeof(c->status), i18n_text("Asking Xbox Cloud Gaming for a console..."));
     return true;
 }
 
@@ -834,33 +835,33 @@ void xcloud_session_tick(GfnClient *c)
         c->session_state = GFN_SESSION_QUEUED;
         if (changed) g.wait_seconds = wait_estimate(c);
         if (g.wait_seconds >= 60)
-            snprintf(c->status, sizeof(c->status), "Waiting for a free Xbox (about %u min)...",
+            snprintf(c->status, sizeof(c->status), i18n_text("Waiting for a free Xbox (about %u min)..."),
                      (g.wait_seconds + 30) / 60);
         else
-            snprintf(c->status, sizeof(c->status), "Waiting for a free Xbox...");
+            snprintf(c->status, sizeof(c->status), i18n_text("Waiting for a free Xbox..."));
     } else if (g.provisioning_at && now - g.provisioning_at > XC_PROVISION_LIMIT_MS) {
         /* Seen as "Provisioning" or "ReadyToConnect" for minutes. */
         session_failed(c, "The Xbox didn't finish starting. Try again in a moment.", "slow-start");
     } else if (!strcmp(state, "Provisioning")) {
         c->session_state = GFN_SESSION_SETUP;
         if (!g.provisioning_at) g.provisioning_at = now;
-        snprintf(c->status, sizeof(c->status), "Starting the Xbox...");
+        snprintf(c->status, sizeof(c->status), i18n_text("Starting the Xbox..."));
     } else if (!strcmp(state, "ReadyToConnect")) {
         if (!g.provisioning_at) g.provisioning_at = now;
         if (!g.connect_sent) {
-            snprintf(c->status, sizeof(c->status), "Connecting your account to the Xbox...");
+            snprintf(c->status, sizeof(c->status), i18n_text("Connecting your account to the Xbox..."));
             g.connect_sent = connect_session(c);
             if (!g.connect_sent) session_failed(c, "The Xbox didn't accept the sign-in. Try again.", "connect");
         }
     } else if (!strcmp(state, "Provisioned")) {
         c->session_state = GFN_SESSION_READY;
         g.next_keepalive_at = now + 30000;
-        snprintf(c->status, sizeof(c->status), "Xbox ready; connecting the stream...");
+        snprintf(c->status, sizeof(c->status), i18n_text("Xbox ready; connecting the stream..."));
     } else if (!strcmp(state, "Failed")) {
         char why[120];
         error_text(&r, why, sizeof(why));
         char text[160];
-        snprintf(text, sizeof(text), "Xbox Cloud Gaming couldn't start the game%s%.110s", why[0] ? ": " : ".", why);
+        snprintf(text, sizeof(text), i18n_text("Xbox Cloud Gaming couldn't start the game%s%.110s"), why[0] ? ": " : ".", why);
         session_failed(c, text, "failed");
     }
     json_decref(root);
@@ -912,7 +913,7 @@ bool xcloud_stop_session(GfnClient *c)
     if (ok) {
         memset(c->session_id, 0, sizeof(c->session_id));
         c->session_state = GFN_SESSION_IDLE;
-        snprintf(c->status, sizeof(c->status), "Xbox session ended");
+        snprintf(c->status, sizeof(c->status), i18n_text("Xbox session ended"));
     }
     return ok;
 }
@@ -936,8 +937,8 @@ static json_t *poll_exchange(GfnClient *c, const char *path, unsigned timeout_ms
                 char why[120] = "";
                 json_t *details = json_object_get(root, "errorDetails");
                 const char *message = json_string_value(json_object_get(details, "message"));
-                snprintf(why, sizeof(why), "%s", message ? message : "no answer");
-                snprintf(c->status, sizeof(c->status), "Xbox stream setup failed: %.100s", why);
+                snprintf(why, sizeof(why), "%s", message ? message : i18n_text("no answer"));
+                snprintf(c->status, sizeof(c->status), i18n_text("Xbox stream setup failed: %.100s"), why);
             }
             json_decref(root);
             return exchange;
@@ -945,12 +946,12 @@ static json_t *poll_exchange(GfnClient *c, const char *path, unsigned timeout_ms
         const long status = r.status;
         http_response_free(&r);
         if (status != 204) {
-            snprintf(c->status, sizeof(c->status), "Xbox stream setup: HTTP %ld", status);
+            snprintf(c->status, sizeof(c->status), i18n_text("Xbox stream setup: HTTP %ld"), status);
             return NULL;
         }
         svcSleepThread(400000000LL);
     }
-    snprintf(c->status, sizeof(c->status), "Xbox stream setup timed out");
+    snprintf(c->status, sizeof(c->status), i18n_text("Xbox stream setup timed out"));
     return NULL;
 }
 
@@ -987,7 +988,7 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     s->xcloud = true;
     s->started_ms = osGetTime();
     s->state = NVST_SIGNAL_WAITING;
-    snprintf(s->status, sizeof(s->status), "Setting up the Xbox stream...");
+    snprintf(s->status, sizeof(s->status), i18n_text("Setting up the Xbox stream..."));
     /* gs_request reports into a client; keep the worker's copy untouched. */
     static GfnClient scratch;
     memcpy(scratch.access_token, client->access_token, sizeof(scratch.access_token));
@@ -1024,7 +1025,7 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     if (offer_status < 200 || offer_status >= 300) {
         free(offer);
         char why[64];
-        snprintf(why, sizeof(why), "The Xbox refused the stream offer (HTTP %ld)", offer_status);
+        snprintf(why, sizeof(why), i18n_text("The Xbox refused the stream offer (HTTP %ld)"), offer_status);
         return signal_fail(s, peer, why);
     }
     json_t *answer = poll_exchange(&scratch, path, 20000);
@@ -1087,6 +1088,6 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     if (!s->remote_ice_count || !s->offer_sdp) return signal_fail(s, peer, "The Xbox sent no usable address");
     s->xcloud_peer = peer;
     s->state = NVST_SIGNAL_OFFER;
-    snprintf(s->status, sizeof(s->status), "Connecting to the Xbox...");
+    snprintf(s->status, sizeof(s->status), i18n_text("Connecting to the Xbox..."));
     return true;
 }

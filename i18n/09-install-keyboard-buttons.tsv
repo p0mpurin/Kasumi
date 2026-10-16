@@ -1,0 +1,112 @@
+# en	ja	fr	de	es	it	pt
+Could not open the system installer (am)	本体のインストーラーを開けませんでした（am）	Impossible d'ouvrir l'installateur système (am)	Systeminstallation konnte nicht geöffnet werden (am)	No se pudo abrir el instalador del sistema (am)	Impossibile aprire l'installer di sistema (am)	Não foi possível abrir o instalador do sistema (am)
+Installer refused to start (0x%08lX)	インストーラーが開始を拒否しました（0x%08lX）	L'installateur a refusé de démarrer (0x%08lX)	Installation verweigerte den Start (0x%08lX)	El instalador no quiso empezar (0x%08lX)	L'installer si è rifiutato di partire (0x%08lX)	O instalador se recusou a iniciar (0x%08lX)
+Install write failed (0x%08lX); the old version is untouched	インストールの書き込みに失敗しました（0x%08lX）。古いバージョンはそのままです	Échec de l'écriture (0x%08lX) ; l'ancienne version est intacte	Schreiben fehlgeschlagen (0x%08lX); die alte Version ist unverändert	Falló la escritura (0x%08lX); la versión anterior sigue intacta	Scrittura non riuscita (0x%08lX); la vecchia versione è intatta	Falha ao gravar (0x%08lX); a versão antiga continua intacta
+Install could not finish (0x%08lX)	インストールを完了できませんでした（0x%08lX）	L'installation n'a pas pu finir (0x%08lX)	Installation konnte nicht abgeschlossen werden (0x%08lX)	La instalación no pudo terminar (0x%08lX)	L'installazione non è riuscita a finire (0x%08lX)	A instalação não conseguiu terminar (0x%08lX)
+Could not tell where Kasumi.3dsx is; update it by hand	Kasumi.3dsx の場所がわかりません。手動で更新してください	Emplacement de Kasumi.3dsx inconnu ; mettez-le à jour à la main	Ort von Kasumi.3dsx unbekannt; aktualisiere es von Hand	No se sabe dónde está Kasumi.3dsx; actualízalo a mano	Posizione di Kasumi.3dsx sconosciuta; aggiornalo a mano	Não foi possível saber onde está o Kasumi.3dsx; atualize manualmente
+Could not write %s	%s を書き込めませんでした	Impossible d'écrire %s	%s konnte nicht geschrieben werden	No se pudo escribir %s	Impossibile scrivere %s	Não foi possível gravar %s
+SD card write failed	SD カードへの書き込みに失敗しました	Échec de l'écriture sur la carte SD	Schreiben auf die SD-Karte fehlgeschlagen	Falló la escritura en la SD	Scrittura sulla SD non riuscita	Falha ao gravar no SD
+Could not replace Kasumi.3dsx	Kasumi.3dsx を置き換えられませんでした	Impossible de remplacer Kasumi.3dsx	Kasumi.3dsx konnte nicht ersetzt werden	No se pudo reemplazar Kasumi.3dsx	Impossibile sostituire Kasumi.3dsx	Não foi possível substituir o Kasumi.3dsx
+Check for updates first	先に更新を確認してください	Recherchez d'abord les mises à jour	Prüfe zuerst auf Updates	Busca actualizaciones primero	Cerca prima gli aggiornamenti	Verifique atualizações primeiro
+Could not download the release checksums	リリースのチェックサムをダウンロードできませんでした	Impossible de télécharger les sommes de contrôle	Prüfsummen der Version konnten nicht geladen werden	No se pudieron descargar las sumas de comprobación	Impossibile scaricare i checksum della release	Não foi possível baixar os checksums da versão
+The release checksums do not list %s	リリースのチェックサムに %s がありません	Les sommes de contrôle ne listent pas %s	Die Prüfsummen enthalten %s nicht	Las sumas de comprobación no incluyen %s	I checksum della release non elencano %s	Os checksums da versão não listam %s
+Download failed (HTTP %ld)	ダウンロードに失敗しました（HTTP %ld）	Échec du téléchargement (HTTP %ld)	Download fehlgeschlagen (HTTP %ld)	Falló la descarga (HTTP %ld)	Download non riuscito (HTTP %ld)	Falha no download (HTTP %ld)
+Download is damaged (checksum mismatch); nothing was installed	ダウンロードが破損しています（チェックサム不一致）。何もインストールしていません	Le téléchargement est endommagé (somme de contrôle incorrecte) ; rien n'a été installé	Der Download ist beschädigt (Prüfsumme falsch); nichts wurde installiert	La descarga está dañada (suma incorrecta); no se instaló nada	Il download è danneggiato (checksum errato); non è stato installato nulla	O download está corrompido (checksum diferente); nada foi instalado
+This game only streams in 720p, which the 3DS can't show yet. Fortnite works.	このゲームは 720p でしか配信されず、3DS ではまだ表示できません。Fortnite は遊べます。	Ce jeu n'est diffusé qu'en 720p, que la 3DS ne sait pas encore afficher. Fortnite fonctionne.	Dieses Spiel streamt nur in 720p, was der 3DS noch nicht zeigen kann. Fortnite funktioniert.	Este juego solo se emite en 720p, que la 3DS aún no muestra. Fortnite funciona.	Questo gioco trasmette solo in 720p, che il 3DS non mostra ancora. Fortnite funziona.	Este jogo só transmite em 720p, que o 3DS ainda não mostra. O Fortnite funciona.
+This game streams at %ux%u, which is too big for the 3DS.	このゲームは %ux%u で配信され、3DS には大きすぎます。	Ce jeu est diffusé en %ux%u, trop grand pour la 3DS.	Dieses Spiel streamt in %ux%u, zu groß für den 3DS.	Este juego se emite a %ux%u, demasiado grande para la 3DS.	Questo gioco trasmette a %ux%u, troppo grande per il 3DS.	Este jogo transmite em %ux%u, grande demais para o 3DS.
+Video arrived; %.140s	映像が届きました。%.140s	Vidéo reçue ; %.140s	Bild empfangen; %.140s	Vídeo recibido; %.140s	Video arrivato; %.140s	Vídeo recebido; %.140s
+The 3DS video decoder stopped responding. Close Kasumi and open it again.	3DS の映像デコーダーが応答しなくなりました。Kasumi を閉じて開き直してください。	Le décodeur vidéo de la 3DS ne répond plus. Fermez Kasumi et rouvrez-le.	Der Videodecoder des 3DS reagiert nicht mehr. Schließ Kasumi und öffne es erneut.	El decodificador de vídeo de la 3DS dejó de responder. Cierra Kasumi y ábrelo otra vez.	Il decoder video del 3DS non risponde più. Chiudi Kasumi e riaprilo.	O decodificador de vídeo do 3DS parou de responder. Feche o Kasumi e abra de novo.
+The 3DS couldn't decode this game's 720p picture.	3DS がこのゲームの 720p 映像をデコードできませんでした。	La 3DS n'a pas pu décoder l'image 720p de ce jeu.	Der 3DS konnte das 720p-Bild dieses Spiels nicht dekodieren.	La 3DS no pudo decodificar la imagen 720p de este juego.	Il 3DS non è riuscito a decodificare l'immagine 720p di questo gioco.	O 3DS não conseguiu decodificar a imagem 720p deste jogo.
+No picture from this game after 10 s.	10 秒たってもこのゲームの映像が届きません。	Aucune image de ce jeu après 10 s.	Nach 10 s kein Bild von diesem Spiel.	Sin imagen de este juego tras 10 s.	Nessuna immagine da questo gioco dopo 10 s.	Nenhuma imagem deste jogo após 10 s.
+Connecting to the Xbox	Xbox に接続中	Connexion à la Xbox	Verbinde mit der Xbox	Conectando con la Xbox	Connessione alla Xbox	Conectando ao Xbox
+Video %ux%u from the PC	PC からの映像 %ux%u	Vidéo %ux%u depuis le PC	Bild %ux%u vom PC	Vídeo %ux%u desde el PC	Video %ux%u dal PC	Vídeo %ux%u do PC
+Couldn't open the stream to the PC	PC へのストリームを開けませんでした	Impossible d'ouvrir le flux vers le PC	Stream zum PC konnte nicht geöffnet werden	No se pudo abrir el stream con el PC	Impossibile aprire lo stream verso il PC	Não foi possível abrir o stream com o PC
+NVIDIA ended this session (HTTP %d). Press A to start the game again.	NVIDIA がこのセッションを終了しました（HTTP %d）。A でゲームを再開します。	NVIDIA a terminé cette session (HTTP %d). Appuyez sur A pour relancer le jeu.	NVIDIA hat diese Sitzung beendet (HTTP %d). Drück A, um das Spiel neu zu starten.	NVIDIA terminó esta sesión (HTTP %d). Pulsa A para volver a empezar el juego.	NVIDIA ha terminato questa sessione (HTTP %d). Premi A per riavviare il gioco.	A NVIDIA encerrou esta sessão (HTTP %d). Aperte A para iniciar o jogo de novo.
+PHONE	スマホ	TÉLÉPHONE	HANDY	MÓVIL	TELEFONO	CELULAR
+SPACE	スペース	ESPACE	LEERTASTE	ESPACIO	SPAZIO	ESPAÇO
+ENTER	決定	ENTRÉE	EINGABE	INTRO	INVIO	ENTER
+TYPE ON YOUR PHONE	スマホで入力	TAPEZ SUR VOTRE TÉLÉPHONE	AUF DEM HANDY TIPPEN	ESCRIBE EN TU MÓVIL	SCRIVI SUL TELEFONO	DIGITE NO CELULAR
+The phone keyboard could not start. Check that the 3DS is on Wi-Fi, then try again.	スマホキーボードを開始できませんでした。3DS が Wi-Fi に接続しているか確認してから再試行してください。	Le clavier du téléphone n'a pas pu démarrer. Vérifiez que la 3DS est sur le Wi-Fi, puis réessayez.	Die Handy-Tastatur konnte nicht starten. Prüfe, ob der 3DS im WLAN ist, und versuch es erneut.	El teclado del móvil no pudo iniciarse. Comprueba que la 3DS esté en la Wi-Fi y vuelve a intentarlo.	La tastiera del telefono non è partita. Controlla che il 3DS sia sulla Wi-Fi, poi riprova.	O teclado do celular não iniciou. Verifique se o 3DS está no Wi-Fi e tente de novo.
+Put your phone on the same Wi-Fi as the 3DS.	スマホを 3DS と同じ Wi-Fi につないでください。	Connectez votre téléphone au même Wi-Fi que la 3DS.	Verbinde dein Handy mit demselben WLAN wie den 3DS.	Conecta el móvil a la misma Wi-Fi que la 3DS.	Collega il telefono alla stessa Wi-Fi del 3DS.	Conecte o celular no mesmo Wi-Fi do 3DS.
+Scan the code with the phone's camera.	スマホのカメラでコードを読み取ってください。	Scannez le code avec l'appareil photo du téléphone.	Scanne den Code mit der Handykamera.	Escanea el código con la cámara del móvil.	Scansiona il codice con la fotocamera del telefono.	Escaneie o código com a câmera do celular.
+Type there: it goes straight into the game.	そこで入力すると、そのままゲームに入ります。	Tapez là-bas : le texte va directement dans le jeu.	Tipp dort: Es geht direkt ins Spiel.	Escribe allí: va directo al juego.	Scrivi lì: va direttamente nel gioco.	Digite lá: vai direto para o jogo.
+PHONE CONNECTED	スマホ接続済み	TÉLÉPHONE CONNECTÉ	HANDY VERBUNDEN	MÓVIL CONECTADO	TELEFONO CONNESSO	CELULAR CONECTADO
+WAITING FOR YOUR PHONE	スマホを待っています	EN ATTENTE DU TÉLÉPHONE	WARTE AUF DEIN HANDY	ESPERANDO TU MÓVIL	IN ATTESA DEL TELEFONO	AGUARDANDO O CELULAR
+NOT SENT	未送信	NON ENVOYÉ	NICHT GESENDET	NO ENVIADO	NON INVIATO	NÃO ENVIADO
+CONNECTED	接続済み	CONNECTÉ	VERBUNDEN	CONECTADO	CONNESSO	CONECTADO
+CONNECTING	接続中	CONNEXION	VERBINDE	CONECTANDO	CONNESSIONE	CONECTANDO
+Space	スペース	Espace	Leertaste	Espacio	Spazio	Espaço
+No free shortcut slots left	ショートカットの空きがありません	Plus de place libre pour un raccourci	Keine freien Plätze für Verknüpfungen mehr	No quedan huecos para accesos directos	Nessuno slot libero per le scorciatoie	Não há mais espaço para atalhos
+Couldn't draw the shortcut's picture (unknown pixel order)	ショートカットの画像を作れませんでした（不明なピクセル順）	Impossible de dessiner l'image du raccourci (ordre de pixels inconnu)	Bild der Verknüpfung konnte nicht gezeichnet werden (unbekannte Pixelreihenfolge)	No se pudo dibujar la imagen del acceso directo (orden de píxeles desconocido)	Impossibile disegnare l'immagine della scorciatoia (ordine pixel sconosciuto)	Não foi possível desenhar a imagem do atalho (ordem de pixels desconhecida)
+The shortcut template is missing from this build	このビルドにはショートカットのテンプレートがありません	Le modèle de raccourci manque dans cette version	Die Verknüpfungsvorlage fehlt in diesem Build	Falta la plantilla de acceso directo en esta versión	Il modello della scorciatoia manca in questa build	O modelo de atalho está faltando nesta build
+Not enough video memory to draw the shortcut	ショートカットを作るためのビデオメモリが足りません	Pas assez de mémoire vidéo pour dessiner le raccourci	Nicht genug Videospeicher für die Verknüpfung	No hay memoria de vídeo suficiente para el acceso directo	Memoria video insufficiente per la scorciatoia	Memória de vídeo insuficiente para desenhar o atalho
+Could not open the system installer	本体のインストーラーを開けませんでした	Impossible d'ouvrir l'installateur système	Systeminstallation konnte nicht geöffnet werden	No se pudo abrir el instalador del sistema	Impossibile aprire l'installer di sistema	Não foi possível abrir o instalador do sistema
+The installer refused to start (0x%08lX)	インストーラーが開始を拒否しました（0x%08lX）	L'installateur a refusé de démarrer (0x%08lX)	Die Installation verweigerte den Start (0x%08lX)	El instalador no quiso empezar (0x%08lX)	L'installer si è rifiutato di partire (0x%08lX)	O instalador se recusou a iniciar (0x%08lX)
+Writing the shortcut failed (0x%08lX)	ショートカットの書き込みに失敗しました（0x%08lX）	Échec de l'écriture du raccourci (0x%08lX)	Schreiben der Verknüpfung fehlgeschlagen (0x%08lX)	Falló la escritura del acceso directo (0x%08lX)	Scrittura della scorciatoia non riuscita (0x%08lX)	Falha ao gravar o atalho (0x%08lX)
+The shortcut could not be installed (0x%08lX)	ショートカットをインストールできませんでした（0x%08lX）	Le raccourci n'a pas pu être installé (0x%08lX)	Die Verknüpfung konnte nicht installiert werden (0x%08lX)	No se pudo instalar el acceso directo (0x%08lX)	Impossibile installare la scorciatoia (0x%08lX)	Não foi possível instalar o atalho (0x%08lX)
+The shortcut could not be removed (0x%08lX)	ショートカットを削除できませんでした（0x%08lX）	Le raccourci n'a pas pu être retiré (0x%08lX)	Die Verknüpfung konnte nicht entfernt werden (0x%08lX)	No se pudo quitar el acceso directo (0x%08lX)	Impossibile rimuovere la scorciatoia (0x%08lX)	Não foi possível remover o atalho (0x%08lX)
+Shortcut removed from the HOME Menu	HOME メニューからショートカットを削除しました	Raccourci retiré du menu HOME	Verknüpfung aus dem HOME-Menü entfernt	Acceso directo quitado del menú HOME	Scorciatoia rimossa dal menu HOME	Atalho removido do menu HOME
+Couldn't make the shortcut: %.70s	ショートカットを作れませんでした：%.70s	Impossible de créer le raccourci : %.70s	Verknüpfung konnte nicht erstellt werden: %.70s	No se pudo crear el acceso directo: %.70s	Impossibile creare la scorciatoia: %.70s	Não foi possível criar o atalho: %.70s
+Shortcut added: find %.60s on the HOME Menu	ショートカットを追加しました：HOME メニューで %.60s を探してください	Raccourci ajouté : trouvez %.60s dans le menu HOME	Verknüpfung hinzugefügt: Finde %.60s im HOME-Menü	Acceso directo añadido: busca %.60s en el menú HOME	Scorciatoia aggiunta: trova %.60s nel menu HOME	Atalho adicionado: procure %.60s no menu HOME
+out of memory	メモリ不足	mémoire insuffisante	zu wenig Speicher	sin memoria	memoria esaurita	memória insuficiente
+DOWN	下	BAS	UNTEN	ABAJO	GIÙ	BAIXO
+LEFT	左	GAUCHE	LINKS	IZQUIERDA	SINISTRA	ESQUERDA
+RIGHT	右	DROITE	RECHTS	DERECHA	DESTRA	DIREITA
+Left stick up	左スティック上	Stick gauche haut	Linker Stick oben	Stick izq. arriba	Stick sinistro su	Analógico esq. cima
+Left stick down	左スティック下	Stick gauche bas	Linker Stick unten	Stick izq. abajo	Stick sinistro giù	Analógico esq. baixo
+Left stick left	左スティック左	Stick gauche gauche	Linker Stick links	Stick izq. izquierda	Stick sinistro sinistra	Analógico esq. esquerda
+Left stick right	左スティック右	Stick gauche droite	Linker Stick rechts	Stick izq. derecha	Stick sinistro destra	Analógico esq. direita
+Right stick up	右スティック上	Stick droit haut	Rechter Stick oben	Stick der. arriba	Stick destro su	Analógico dir. cima
+Right stick down	右スティック下	Stick droit bas	Rechter Stick unten	Stick der. abajo	Stick destro giù	Analógico dir. baixo
+Right stick left	右スティック左	Stick droit gauche	Rechter Stick links	Stick der. izquierda	Stick destro sinistra	Analógico dir. esquerda
+Right stick right	右スティック右	Stick droit droite	Rechter Stick rechts	Stick der. derecha	Stick destro destra	Analógico dir. direita
+LS up	LS 上	LS haut	LS oben	LS arriba	LS su	LS cima
+LS down	LS 下	LS bas	LS unten	LS abajo	LS giù	LS baixo
+LS left	LS 左	LS gauche	LS links	LS izquierda	LS sinistra	LS esquerda
+LS right	LS 右	LS droite	LS rechts	LS derecha	LS destra	LS direita
+RS up	RS 上	RS haut	RS oben	RS arriba	RS su	RS cima
+RS down	RS 下	RS bas	RS unten	RS abajo	RS giù	RS baixo
+RS left	RS 左	RS gauche	RS links	RS izquierda	RS sinistra	RS esquerda
+RS right	RS 右	RS droite	RS rechts	RS derecha	RS destra	RS direita
+Nothing	なし	Rien	Nichts	Nada	Niente	Nada
+Cross	×	Croix	Kreuz	Equis	Croce	X
+Circle	○	Rond	Kreis	Círculo	Cerchio	Círculo
+Square	□	Carré	Viereck	Cuadrado	Quadrato	Quadrado
+Triangle	△	Triangle	Dreieck	Triángulo	Triangolo	Triângulo
+PS button	PS ボタン	Bouton PS	PS-Taste	Botón PS	Tasto PS	Botão PS
+D-Pad up	十字キー上	Croix haut	Steuerkreuz oben	Cruceta arriba	Croce direzionale su	Direcional cima
+D-Pad down	十字キー下	Croix bas	Steuerkreuz unten	Cruceta abajo	Croce direzionale giù	Direcional baixo
+D-Pad left	十字キー左	Croix gauche	Steuerkreuz links	Cruceta izquierda	Croce direzionale sinistra	Direcional esquerda
+D-Pad right	十字キー右	Croix droite	Steuerkreuz rechts	Cruceta derecha	Croce direzionale destra	Direcional direita
+None	なし	Aucun	Keine	Ninguno	Nessuno	Nenhum
+Up	上	Haut	Oben	Arriba	Su	Cima
+Down	下	Bas	Unten	Abajo	Giù	Baixo
+Left	左	Gauche	Links	Izquierda	Sinistra	Esquerda
+Right	右	Droite	Rechts	Derecha	Destra	Direita
+Left stick click	左スティック押し込み	Clic stick gauche	Linker Stick drücken	Clic del stick izquierdo	Clic stick sinistro	Clique do analógico esquerdo
+Right stick click	右スティック押し込み	Clic stick droit	Rechter Stick drücken	Clic del stick derecho	Clic stick destro	Clique do analógico direito
+Xbox button	Xbox ボタン	Bouton Xbox	Xbox-Taste	Botón Xbox	Tasto Xbox	Botão Xbox
+Turbo	連射	Turbo	Turbo	Turbo	Turbo	Turbo
+Toggle	トグル	Bascule	Umschalten	Alternar	Interruttore	Alternar
+Jan	1月	janv.	Jan.	ene.	gen.	jan.
+Feb	2月	févr.	Feb.	feb.	feb.	fev.
+Mar	3月	mars	März	mar.	mar.	mar.
+Apr	4月	avr.	Apr.	abr.	apr.	abr.
+May	5月	mai	Mai	may.	mag.	mai.
+Jun	6月	juin	Juni	jun.	giu.	jun.
+Jul	7月	juil.	Juli	jul.	lug.	jul.
+Aug	8月	août	Aug.	ago.	ago.	ago.
+Sep	9月	sept.	Sep.	sep.	set.	set.
+Oct	10月	oct.	Okt.	oct.	ott.	out.
+Nov	11月	nov.	Nov.	nov.	nov.	nov.
+Dec	12月	déc.	Dez.	dic.	dic.	dez.
+Couldn't download the HOME Menu theme: %.100s	HOME メニューテーマをダウンロードできませんでした：%.100s	Impossible de télécharger le thème du menu HOME : %.100s	HOME-Menü-Design konnte nicht geladen werden: %.100s	No se pudo descargar el tema del menú HOME: %.100s	Impossibile scaricare il tema del menu HOME: %.100s	Não foi possível baixar o tema do menu HOME: %.100s
+Couldn't save the theme to the SD card.	テーマを SD カードに保存できませんでした。	Impossible d'enregistrer le thème sur la carte SD.	Design konnte nicht auf der SD-Karte gespeichert werden.	No se pudo guardar el tema en la SD.	Impossibile salvare il tema sulla SD.	Não foi possível salvar o tema no SD.
+The theme download didn't work. Try again later.	テーマのダウンロードがうまくいきませんでした。後で再試行してください。	Le téléchargement du thème a échoué. Réessayez plus tard.	Der Design-Download hat nicht geklappt. Versuch es später erneut.	La descarga del tema no funcionó. Inténtalo más tarde.	Il download del tema non è riuscito. Riprova più tardi.	O download do tema não funcionou. Tente mais tarde.
+Sign-in cancelled	サインインをキャンセルしました	Connexion annulée	Anmeldung abgebrochen	Inicio de sesión cancelado	Accesso annullato	Login cancelado
+Pinging GeForce NOW servers...	GeForce NOW のサーバーに ping 中...	Test des serveurs GeForce NOW...	GeForce-NOW-Server werden angepingt...	Midiendo el ping de los servidores de GeForce NOW...	Ping dei server GeForce NOW...	Medindo o ping dos servidores do GeForce NOW...
+Connection: %u ms, %u.%u Mbps; fastest server %s %d ms	接続：%u ms、%u.%u Mbps。最速サーバー %s %d ms	Connexion : %u ms, %u.%u Mbps ; serveur le plus rapide %s %d ms	Verbindung: %u ms, %u.%u Mbps; schnellster Server %s %d ms	Conexión: %u ms, %u.%u Mbps; servidor más rápido %s %d ms	Connessione: %u ms, %u.%u Mbps; server più veloce %s %d ms	Conexão: %u ms, %u.%u Mbps; servidor mais rápido %s %d ms
+ (smaller)	（小さめ）	 (plus petit)	 (kleiner)	 (más pequeño)	 (più piccolo)	 (menor)
+ (smallest)	（最小）	 (le plus petit)	 (am kleinsten)	 (el más pequeño)	 (il più piccolo)	 (o menor)
+Out of memory	メモリ不足	Mémoire insuffisante	Zu wenig Speicher	Sin memoria	Memoria esaurita	Memória insuficiente
+Could not compress the report	レポートを圧縮できませんでした	Impossible de compresser le rapport	Bericht konnte nicht komprimiert werden	No se pudo comprimir el informe	Impossibile comprimere la segnalazione	Não foi possível compactar o relatório

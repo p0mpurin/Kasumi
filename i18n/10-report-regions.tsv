@@ -1,0 +1,45 @@
+# en	ja	fr	de	es	it	pt
+no 720p frame in 10 s	10 秒間 720p のフレームなし	aucune image 720p en 10 s	kein 720p-Bild in 10 s	ningún fotograma 720p en 10 s	nessun fotogramma 720p in 10 s	nenhum quadro 720p em 10 s
+Reports are not set up in this build	このビルドではレポートが設定されていません	Les rapports ne sont pas configurés dans cette version	Berichte sind in diesem Build nicht eingerichtet	Los informes no están configurados en esta versión	Le segnalazioni non sono configurate in questa build	Os relatórios não estão configurados nesta build
+No connection: %.70s	接続なし：%.70s	Pas de connexion : %.70s	Keine Verbindung: %.70s	Sin conexión: %.70s	Nessuna connessione: %.70s	Sem conexão: %.70s
+Too many reports from this network: try again in an hour	このネットワークからのレポートが多すぎます。1 時間後に再試行してください	Trop de rapports depuis ce réseau : réessayez dans une heure	Zu viele Berichte aus diesem Netzwerk: Versuch es in einer Stunde erneut	Demasiados informes desde esta red: inténtalo dentro de una hora	Troppe segnalazioni da questa rete: riprova tra un'ora	Muitos relatórios desta rede: tente de novo em uma hora
+The report service answered HTTP %ld	レポートサービスの応答：HTTP %ld	Le service de rapports a répondu HTTP %ld	Der Berichtsdienst antwortete HTTP %ld	El servicio de informes respondió HTTP %ld	Il servizio segnalazioni ha risposto HTTP %ld	O serviço de relatórios respondeu HTTP %ld
+DSP unavailable: playing without sound	DSP が使えません：音なしで再生します	DSP indisponible : lecture sans son	DSP nicht verfügbar: Wiedergabe ohne Ton	DSP no disponible: se juega sin sonido	DSP non disponibile: si gioca senza audio	DSP indisponível: jogando sem som
+audio linearAlloc failed	音声メモリの確保に失敗しました	échec de l'allocation mémoire audio	Audiospeicher konnte nicht reserviert werden	falló la reserva de memoria de audio	allocazione memoria audio non riuscita	falha ao reservar memória de áudio
+au (KDDI, Japan)	au（KDDI、日本）	au (KDDI, Japon)	au (KDDI, Japan)	au (KDDI, Japón)	au (KDDI, Giappone)	au (KDDI, Japão)
+Cloud.GG (Australia)	Cloud.GG（オーストラリア）	Cloud.GG (Australie)	Cloud.GG (Australien)	Cloud.GG (Australia)	Cloud.GG (Australia)	Cloud.GG (Austrália)
+Taiwan Mobile (Taiwan)	台湾大哥大（台湾）	Taiwan Mobile (Taïwan)	Taiwan Mobile (Taiwan)	Taiwan Mobile (Taiwán)	Taiwan Mobile (Taiwan)	Taiwan Mobile (Taiwan)
+StarHub (Singapore)	StarHub（シンガポール）	StarHub (Singapour)	StarHub (Singapur)	StarHub (Singapur)	StarHub (Singapore)	StarHub (Singapura)
+GFN Korea	GFN 韓国	GFN Corée	GFN Korea	GFN Corea	GFN Corea	GFN Coreia
+rain (South Africa)	rain（南アフリカ）	rain (Afrique du Sud)	rain (Südafrika)	rain (Sudáfrica)	rain (Sudafrica)	rain (África do Sul)
+Digevo (Latin America)	Digevo（中南米）	Digevo (Amérique latine)	Digevo (Lateinamerika)	Digevo (Latinoamérica)	Digevo (America Latina)	Digevo (América Latina)
+Australia	オーストラリア	Australie	Australien	Australia	Australia	Austrália
+Japan	日本	Japon	Japan	Japón	Giappone	Japão
+Korea	韓国	Corée	Korea	Corea	Corea	Coreia
+Taiwan	台湾	Taïwan	Taiwan	Taiwán	Taiwan	Taiwan
+Singapore	シンガポール	Singapour	Singapur	Singapur	Singapore	Singapura
+Malaysia	マレーシア	Malaisie	Malaysia	Malasia	Malesia	Malásia
+Indonesia	インドネシア	Indonésie	Indonesien	Indonesia	Indonesia	Indonésia
+Thailand	タイ	Thaïlande	Thailand	Tailandia	Thailandia	Tailândia
+the Philippines	フィリピン	Philippines	Philippinen	Filipinas	Filippine	Filipinas
+Vietnam	ベトナム	Vietnam	Vietnam	Vietnam	Vietnam	Vietnã
+Chile	チリ	Chili	Chile	Chile	Cile	Chile
+Argentina	アルゼンチン	Argentine	Argentinien	Argentina	Argentina	Argentina
+Peru	ペルー	Pérou	Peru	Perú	Perù	Peru
+Colombia	コロンビア	Colombie	Kolumbien	Colombia	Colombia	Colômbia
+Uruguay	ウルグアイ	Uruguay	Uruguay	Uruguay	Uruguay	Uruguai
+Ecuador	エクアドル	Équateur	Ecuador	Ecuador	Ecuador	Equador
+South Africa	南アフリカ	Afrique du Sud	Südafrika	Sudáfrica	Sudafrica	África do Sul
+Armenia	アルメニア	Arménie	Armenien	Armenia	Armenia	Armênia
+Turkey	トルコ	Turquie	Türkei	Turquía	Turchia	Turquia
+Saudi Arabia	サウジアラビア	Arabie saoudite	Saudi-Arabien	Arabia Saudí	Arabia Saudita	Arábia Saudita
+the UAE	アラブ首長国連邦	Émirats arabes unis	VAE	EAU	EAU	EAU
+Kuwait	クウェート	Koweït	Kuwait	Kuwait	Kuwait	Kuwait
+Bahrain	バーレーン	Bahreïn	Bahrain	Baréin	Bahrein	Bahrein
+Qatar	カタール	Qatar	Katar	Catar	Qatar	Catar
+Oman	オマーン	Oman	Oman	Omán	Oman	Omã
+Jordan	ヨルダン	Jordanie	Jordanien	Jordania	Giordania	Jordânia
+Iraq	イラク	Irak	Irak	Irak	Iraq	Iraque
+Israel	イスラエル	Israël	Israel	Israel	Israele	Israel
+India	インド	Inde	Indien	India	India	Índia
+your country	お住まいの国	votre pays	deinem Land	tu país	il tuo paese	seu país

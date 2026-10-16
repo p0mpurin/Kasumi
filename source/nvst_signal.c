@@ -1,4 +1,5 @@
 #include "nvst_signal.h"
+#include "i18n.h"
 #include "diagnostic.h"
 #include "stream_profile.h"
 #include "webrtc_transport.h"
@@ -219,7 +220,7 @@ static bool incoming(void *context, unsigned opcode, const uint8_t *data, size_t
     const char *text = json_string_value(json_object_get(peer, "msg"));
     if (text && !strcmp(text, "BYE")) {
         s->state = NVST_SIGNAL_CLOSED;
-        snprintf(s->status, sizeof(s->status), "NVIDIA sent BYE; offer=%lu bytes", (unsigned long)s->offer_size);
+        snprintf(s->status, sizeof(s->status), i18n_text("NVIDIA sent BYE; offer=%lu bytes"), (unsigned long)s->offer_size);
         record(s, "peer-bye");
     } else if (text) {
         json_t *payload = json_loads(text, JSON_REJECT_DUPLICATES, &error);

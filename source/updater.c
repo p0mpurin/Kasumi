@@ -1,4 +1,5 @@
 #include "updater.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <jansson.h>
@@ -268,7 +269,7 @@ static bool dev_check(void)
         /* Not used in dev mode, but install() wants both set. */
         snprintf(g_sums_url, sizeof(g_sums_url), "dev");
     } else {
-        snprintf(g_info.error, sizeof(g_info.error), "The dev server has no %s build", kind);
+        snprintf(g_info.error, sizeof(g_info.error), i18n_text("The dev server has no %s build"), kind);
     }
     g_info.state = available ? UPDATE_AVAILABLE : UPDATE_UP_TO_DATE;
     g_info.progress = 0;
@@ -350,7 +351,7 @@ bool updater_check(bool include_beta)
         }
         available = g_package_url[0] && g_sums_url[0];
         if (!available)
-            snprintf(g_info.error, sizeof(g_info.error), "Release %s has no %s with checksums", g_info.latest, wanted);
+            snprintf(g_info.error, sizeof(g_info.error), i18n_text("Release %s has no %s with checksums"), g_info.latest, wanted);
     }
     g_info.state = available ? UPDATE_AVAILABLE : UPDATE_UP_TO_DATE;
     g_info.progress = 0;
@@ -408,7 +409,7 @@ static bool battery_ok(char *why, size_t size)
         ptmuExit();
     }
     if (level >= 2 || charging) return true;
-    snprintf(why, size, "Battery too low: charge the console first");
+    snprintf(why, size, i18n_text("Battery too low: charge the console first"));
     return false;
 }
 
@@ -418,7 +419,7 @@ static bool sd_space_ok(unsigned long needed, char *why, size_t size)
     if (R_FAILED(FSUSER_GetSdmcArchiveResource(&resource))) return true;
     const unsigned long long free_bytes = (unsigned long long)resource.freeClusters * resource.clusterSize;
     if (free_bytes >= (unsigned long long)needed * 3) return true;
-    snprintf(why, size, "Not enough SD card space (%llu MB free)", free_bytes / (1024 * 1024));
+    snprintf(why, size, i18n_text("Not enough SD card space (%llu MB free)"), free_bytes / (1024 * 1024));
     return false;
 }
 

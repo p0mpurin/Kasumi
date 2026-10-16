@@ -124,7 +124,7 @@ static bool init_services(char *error, size_t error_size)
     Result result = acInit();
     if (R_SUCCEEDED(result)) g_ac_ready = true;
     else {
-        snprintf(error, error_size, "ac:u init 0x%08lX", (unsigned long)result);
+        snprintf(error, error_size, i18n_text("ac:u init 0x%08lX"), (unsigned long)result);
         return false;
     }
     g_ptm_ready = R_SUCCEEDED(ptmuInit());
@@ -136,7 +136,7 @@ static bool init_services(char *error, size_t error_size)
     }
     result = socInit(g_soc_buffer, SOC_BUFFER_SIZE);
     if (R_FAILED(result)) {
-        snprintf(error, error_size, "soc:u init 0x%08lX", (unsigned long)result);
+        snprintf(error, error_size, i18n_text("soc:u init 0x%08lX"), (unsigned long)result);
         return false;
     }
     g_soc_ready = true;
@@ -596,9 +596,9 @@ static void steam_type_address(void)
     steam_link_typed_address(text, sizeof(text));
     swkbdInit(&g_search_keyboard, SWKBD_TYPE_NUMPAD, 2, 15);
     swkbdSetNumpadKeys(&g_search_keyboard, '.', 0);
-    swkbdSetHintText(&g_search_keyboard, "Your PC's IPv4 address");
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, "Cancel", false);
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, "Find PC", true);
+    swkbdSetHintText(&g_search_keyboard, i18n_text("Your PC's IPv4 address"));
+    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, i18n_text("Cancel"), false);
+    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, i18n_text("Find PC"), true);
     swkbdSetValidation(&g_search_keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
     swkbdSetFeatures(&g_search_keyboard, SWKBD_DARKEN_TOP_SCREEN);
     if (text[0]) swkbdSetInitialText(&g_search_keyboard, text);
@@ -633,9 +633,9 @@ static void search_catalog(void)
     static const char *const hint[SERVICE_COUNT] = {
         "Search GeForce NOW games", "Search your Xbox cloud games", "Search the games played on your PC"
     };
-    swkbdSetHintText(&g_search_keyboard, hint[current_service()]);
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, "Cancel", false);
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, "Search", true);
+    swkbdSetHintText(&g_search_keyboard, i18n_text(hint[current_service()]));
+    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, i18n_text("Cancel"), false);
+    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, i18n_text("Search"), true);
     swkbdSetValidation(&g_search_keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
     swkbdSetFeatures(&g_search_keyboard, SWKBD_DARKEN_TOP_SCREEN | SWKBD_PREDICTIVE_INPUT);
     if (text[0]) swkbdSetInitialText(&g_search_keyboard, text);
@@ -697,8 +697,8 @@ static void launch_game(const GfnGame *game)
     if (current_service() == SERVICE_GFN && game->needs_paid && !g_paid_confirmed) {
         if (game != &g_current_game) g_current_game = *game;
         char text[sizeof(g_app.modal_text)];
-        snprintf(text, sizeof(text), "%.50s needs a Performance or Ultimate membership. NVIDIA says this "
-                 "account can't play it, so it will likely be refused.", game->title);
+        snprintf(text, sizeof(text), i18n_text("%.50s needs a Performance or Ultimate membership. NVIDIA says this "
+                 "account can't play it, so it will likely be refused."), game->title);
         open_modal(MODAL_PAID_ONLY, "有料", "NEEDS A PAID MEMBERSHIP", text);
         diagnostic_log("APP", "paid-only game on this account: %s", game->title);
         return;
@@ -718,11 +718,11 @@ static void launch_game(const GfnGame *game)
     launch_begin(false, stream_profile_weak(), g_app.auto_weak);
     static char busy[128];
     if (current_service() == SERVICE_STEAM)
-        snprintf(busy, sizeof(busy), "Starting %.60s on %.40s...", game->title, steam_link_host_name());
+        snprintf(busy, sizeof(busy), i18n_text("Starting %.60s on %.40s..."), game->title, steam_link_host_name());
     else if (current_service() == SERVICE_XBOX)
-        snprintf(busy, sizeof(busy), "Asking Xbox Cloud Gaming for a console...");
+        snprintf(busy, sizeof(busy), i18n_text("Asking Xbox Cloud Gaming for a console..."));
     else
-        snprintf(busy, sizeof(busy), "Creating your cloud session...");
+        snprintf(busy, sizeof(busy), i18n_text("Creating your cloud session..."));
     submit_job(NET_JOB_START_SESSION, busy, NULL, &g_current_game);
     if (g_app.settings.voice_cues) menu_audio_cue(MENU_CUE_ITTERASSHAI);
 }
@@ -1534,8 +1534,8 @@ static void sign_in(void)
         char country[4], text[192];
         providers_country(country, sizeof(country));
         snprintf(text, sizeof(text), only
-                 ? "You're in %s, where GeForce NOW is run by %s. Pick NVIDIA only if you signed up on nvidia.com."
-                 : "You're in %s, where GeForce NOW is also sold by %s. Pick the one you signed up with.",
+                 ? i18n_text("You're in %s, where GeForce NOW is run by %s. Pick NVIDIA only if you signed up on nvidia.com.")
+                 : i18n_text("You're in %s, where GeForce NOW is also sold by %s. Pick the one you signed up with."),
                  providers_country_name(country), partner.name);
         open_modal(MODAL_PROVIDER_PICK, "選択", "WHERE'S YOUR ACCOUNT FROM?", text);
         return;
@@ -1572,11 +1572,11 @@ static void refresh_service_status(void)
     };
     for (int i = 0; i < SERVICE_COUNT; ++i) g_app.service_ready[i] = ready[i];
     snprintf(g_app.service_status[SERVICE_GFN], sizeof(g_app.service_status[0]), "%s",
-             ready[SERVICE_GFN] ? "Signed in" : "Not signed in");
+             ready[SERVICE_GFN] ? i18n_text("Signed in") : i18n_text("Not signed in"));
     snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), "%s",
-             g_app.xbox_paused ? "Paused for maintenance" : ready[SERVICE_XBOX] ? "Signed in" : "Not signed in");
-    if (paired) snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "PC: %.40s", pc);
-    else snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), "No PC paired");
+             g_app.xbox_paused ? i18n_text("Paused for maintenance") : ready[SERVICE_XBOX] ? i18n_text("Signed in") : i18n_text("Not signed in"));
+    if (paired) snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), i18n_text("PC: %.40s"), pc);
+    else snprintf(g_app.service_status[SERVICE_STEAM], sizeof(g_app.service_status[0]), i18n_text("No PC paired"));
 }
 
 /* The current service's card follows its login as it loads or ends (the
@@ -1587,14 +1587,14 @@ static void refresh_current_status(void)
     const bool ready = gfn_has_session(&g_client);
     g_app.service_ready[s] = ready;
     if (s == SERVICE_STEAM && ready)
-        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "PC: %.40s", steam_link_host_name());
+        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), i18n_text("PC: %.40s"), steam_link_host_name());
     else if (s == SERVICE_STEAM)
-        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "No PC paired");
+        snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), i18n_text("No PC paired"));
     else
         snprintf(g_app.service_status[s], sizeof(g_app.service_status[0]), "%s",
-                 ready ? "Signed in" : "Not signed in");
+                 ready ? i18n_text("Signed in") : i18n_text("Not signed in"));
     if (g_app.xbox_paused)
-        snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), "Paused for maintenance");
+        snprintf(g_app.service_status[SERVICE_XBOX], sizeof(g_app.service_status[0]), i18n_text("Paused for maintenance"));
 }
 
 static void open_hub(void)
@@ -1783,7 +1783,7 @@ static void handle_pc_sheet(u32 down, u32 repeat, AppAction action)
         static char busy_text[96];
         char index[12];
         snprintf(index, sizeof(index), "%d", pick);
-        snprintf(busy_text, sizeof(busy_text), "Switching to %.60s...", names[pick]);
+        snprintf(busy_text, sizeof(busy_text), i18n_text("Switching to %.60s..."), names[pick]);
         if (submit_job(NET_JOB_USE_PC, busy_text, index, NULL)) {
             g_app.pc_sheet_open = false;
             g_app.selected = g_app.list_top = 0;
@@ -1797,10 +1797,10 @@ static void handle_pc_sheet(u32 down, u32 repeat, AppAction action)
     } else if (count) {
         char text[256];
         if (count > 1)
-            snprintf(text, sizeof(text), "This 3DS forgets %.60s and streams from %.60s instead. Pair it again "
-                     "to stream from it.", names[0], names[1]);
+            snprintf(text, sizeof(text), i18n_text("This 3DS forgets %.60s and streams from %.60s instead. Pair it again "
+                     "to stream from it."), names[0], names[1]);
         else
-            snprintf(text, sizeof(text), "This 3DS forgets %.60s. Pair it again to stream from it.", names[0]);
+            snprintf(text, sizeof(text), i18n_text("This 3DS forgets %.60s. Pair it again to stream from it."), names[0]);
         open_modal(MODAL_SIGN_OUT, "削除", "FORGET THIS PC?", text);
     }
 }
@@ -2106,7 +2106,7 @@ static void shortcut_action(const GfnGame *game)
         g_app.shortcut_sheet = SHORTCUT_SHEET_WORKING;
     } else {
         snprintf(g_app.shortcut_message, sizeof(g_app.shortcut_message), "%s",
-                 shortcut_result()[0] ? shortcut_result() : "Couldn't start making the shortcut.");
+                 shortcut_result()[0] ? shortcut_result() : i18n_text("Couldn't start making the shortcut."));
         g_app.shortcut_sheet = SHORTCUT_SHEET_FAILED;
     }
 }
@@ -2265,9 +2265,9 @@ static void menu_zone(void)
         mvd_video_zoom_position(&x, &y);
         const unsigned n = zoom_zones_add(mvd_video_zoom_level(), x, y);
         char text[80];
-        if (n) snprintf(text, sizeof(text), "Zoom zone %u saved - ZOOM now cycles your zones", n);
+        if (n) snprintf(text, sizeof(text), i18n_text("Zoom zone %u saved - ZOOM now cycles your zones"), n);
         else snprintf(text, sizeof(text), zoom_zones_count() >= ZOOM_ZONES_MAX
-                      ? "All %d zones are used - clear them first" : "That view is already a zone",
+                      ? i18n_text("All %d zones are used - clear them first") : i18n_text("That view is already a zone"),
                       ZOOM_ZONES_MAX);
         show_notice(text);
         if (n) g_app.zone_index = (int)n - 1;
@@ -2346,8 +2346,8 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
             if (g_transport.steam) {
                 /* The PC keeps the game unless asked: let the player choose. */
                 char text[160];
-                snprintf(text, sizeof(text), "Disconnect leaves the game running on %.40s. Quit closes it there.",
-                         steam_link_host_name()[0] ? steam_link_host_name() : "your PC");
+                snprintf(text, sizeof(text), i18n_text("Disconnect leaves the game running on %.40s. Quit closes it there."),
+                         steam_link_host_name()[0] ? steam_link_host_name() : i18n_text("your PC"));
                 g_app.stream_menu = false;
                 open_modal(MODAL_STEAM_LEAVE, "切断", "LEAVE THE GAME?", text);
             } else {
@@ -2654,7 +2654,7 @@ static void track_session(void)
         gallery_mark_dirty();
         sfx_play(SFX_SCREENSHOT);
         char text[96];
-        snprintf(text, sizeof(text), "Screenshot saved: %s", shot);
+        snprintf(text, sizeof(text), i18n_text("Screenshot saved: %s"), shot);
         show_notice(text);
     } else if (shot_result < 0) {
         show_notice("Screenshot could not be saved to the SD card");
@@ -3112,7 +3112,7 @@ static const char *current_status(void)
     static char line[160];
     if (g_notice[0] && osGetTime() < g_notice_until) return g_notice;
     if (g_transport.peer) {
-        snprintf(line, sizeof(line), "%s%.145s", g_transport.steam ? "" : "WebRTC: ", g_transport.status);
+        snprintf(line, sizeof(line), "%s%.145s", g_transport.steam ? "" : i18n_text("WebRTC: "), g_transport.status);
         return line;
     }
     if (nvst_signal_active(&g_signal) || g_signal.state == NVST_SIGNAL_ERROR) return g_signal.status;
@@ -3433,7 +3433,7 @@ static void watch_session_errors(void)
         osGetTime() - g_app.stream_started_at >= 58ull * 60 * 1000) {
         diagnostic_log("APP", "free session ended after its hour (%.80s)", g_client.status);
         snprintf(g_app.end_note, sizeof(g_app.end_note),
-                 "Your free hour is over. Press A to start the game again (you may queue again).");
+                 i18n_text("Your free hour is over. Press A to start the game again (you may queue again)."));
         log_session_end("free-hour");
         perf_note_error("free-hour");
         was_error = error;
@@ -3504,27 +3504,27 @@ static void limit_wait_text(void)
     const unsigned left = g_app.limit_retry_at > now ? (unsigned)((g_app.limit_retry_at - now + 999) / 1000) : 0;
     if (g_app.limit_busy) {
         snprintf(g_app.modal_text, sizeof(g_app.modal_text),
-                 "NVIDIA is limiting new sessions for a few minutes (limited mode). Kasumi tries again by "
-                 "itself: next try in %u:%02u.", left / 60, left % 60);
+                 i18n_text("NVIDIA is limiting new sessions for a few minutes (limited mode). Kasumi tries again by "
+                 "itself: next try in %u:%02u."), left / 60, left % 60);
         return;
     }
     if (g_app.limit_rate) {
         snprintf(g_app.modal_text, sizeof(g_app.modal_text),
-                 "NVIDIA asked Kasumi to slow down after several launches. Trying again in %u:%02u by itself.",
+                 i18n_text("NVIDIA asked Kasumi to slow down after several launches. Trying again in %u:%02u by itself."),
                  left / 60, left % 60);
         return;
     }
     if (g_app.limit_unclosable) {
         snprintf(g_app.modal_text, sizeof(g_app.modal_text),
-                 "A session from an older Kasumi (or another GeForce NOW app) is still open. Only NVIDIA can "
-                 "close it now. Retrying in %u:%02u; B stops, try later.", left / 60, left % 60);
+                 i18n_text("A session from an older Kasumi (or another GeForce NOW app) is still open. Only NVIDIA can "
+                 "close it now. Retrying in %u:%02u; B stops, try later."), left / 60, left % 60);
         return;
     }
     /* Beta.23: every one of 27 waits in a day's reports was cancelled; the
      * ones left alone got in. */
     snprintf(g_app.modal_text, sizeof(g_app.modal_text),
-             "NVIDIA limits how often one console can start games (free accounts most). It usually "
-             "clears in 2-5 min and Kasumi keeps trying: next try in %u:%02u.", left / 60, left % 60);
+             i18n_text("NVIDIA limits how often one console can start games (free accounts most). It usually "
+             "clears in 2-5 min and Kasumi keeps trying: next try in %u:%02u."), left / 60, left % 60);
 }
 
 /* A launch failed: ask about a session in the way, wait for NVIDIA to free
@@ -3541,7 +3541,7 @@ static void launch_failed(void)
                                    !strcmp(g_client.conflict.app_id, g_current_game.app_id);
         char text[sizeof(g_app.modal_text)];
         if (g_app.conflict_same_game)
-            snprintf(text, sizeof(text), "%.90s is already running on your account. Resume it here?",
+            snprintf(text, sizeof(text), i18n_text("%.90s is already running on your account. Resume it here?"),
                      g_current_game.title);
         else
             snprintf(text, sizeof(text), "%s is running on your account, maybe on another device. "
@@ -3607,7 +3607,7 @@ static void launch_failed(void)
         strcmp(g_app.settings.server, REGION_CHOICE_NVIDIA)) {
         static char text[96];
         diagnostic_log("APP", "server %s refused for this account: switching to Auto", g_app.settings.server);
-        snprintf(text, sizeof(text), "%.30s isn't open to your account - Server is now Auto", g_app.settings.server);
+        snprintf(text, sizeof(text), i18n_text("%.30s isn't open to your account - Server is now Auto"), g_app.settings.server);
         g_app.settings.server[0] = '\0';
         regions_set_choice("");
         save_settings();
@@ -3624,13 +3624,13 @@ static void launch_failed(void)
     if (!strcmp(g_client.fail_code, "entitlement") && provider_is_nvidia() && gfn_library_known(&library_games)) {
         if (!library_games) {
             snprintf(entitlement, sizeof(entitlement),
-                     "Your GeForce NOW library is empty, so NVIDIA won't start games yet. On a phone or PC, "
-                     "sign in at play.geforcenow.com, accept the terms and link Steam or Epic, then try again.");
+                     i18n_text("Your GeForce NOW library is empty, so NVIDIA won't start games yet. On a phone or PC, "
+                     "sign in at play.geforcenow.com, accept the terms and link Steam or Epic, then try again."));
             failed_text = entitlement;
         } else if (!gfn_in_library(&g_current_game)) {
             snprintf(entitlement, sizeof(entitlement),
-                     "%.40s isn't in your GeForce NOW library. Add it at play.geforcenow.com (and own it on "
-                     "its store), refresh your library here, then try again.", g_current_game.title);
+                     i18n_text("%.40s isn't in your GeForce NOW library. Add it at play.geforcenow.com (and own it on "
+                     "its store), refresh your library here, then try again."), g_current_game.title);
             failed_text = entitlement;
         }
     }
@@ -3737,7 +3737,7 @@ static void finish_jobs(void)
     if ((result.kind == NET_JOB_USE_PC || result.kind == NET_JOB_SIGN_OUT) && gfn_has_session(&g_client) &&
         current_service() == SERVICE_STEAM) {
         char text[96];
-        snprintf(text, sizeof(text), "Streaming from %.60s", steam_link_host_name());
+        snprintf(text, sizeof(text), i18n_text("Streaming from %.60s"), steam_link_host_name());
         show_notice(text);
     }
     if (result.kind == NET_JOB_HOME_THEME && !result.cancelled)
@@ -3747,8 +3747,8 @@ static void finish_jobs(void)
         load_library();
     if (result.kind == NET_JOB_RESUME_CHECK && result.ok && g_client.resume_found) {
         char text[192];
-        snprintf(text, sizeof(text), "%.90s is still running on your rig. Jump back in, or end it?",
-                 g_client.resume_game.title[0] ? g_client.resume_game.title : "Your game");
+        snprintf(text, sizeof(text), i18n_text("%.90s is still running on your rig. Jump back in, or end it?"),
+                 g_client.resume_game.title[0] ? g_client.resume_game.title : i18n_text("Your game"));
         g_current_game = g_client.resume_game;
         open_modal(MODAL_RESUME, "再開", "RESUME YOUR GAME?", text);
     }
@@ -3760,7 +3760,7 @@ static void finish_jobs(void)
             sfx_play(SFX_QUEUE_READY);
         } else {
             snprintf(g_app.shortcut_message, sizeof(g_app.shortcut_message), "%s",
-                     shortcut_result()[0] ? shortcut_result() : "The installer didn't finish.");
+                     shortcut_result()[0] ? shortcut_result() : i18n_text("The installer didn't finish."));
             g_app.shortcut_sheet = SHORTCUT_SHEET_FAILED;
             sfx_play(SFX_ERROR);
         }
@@ -3774,7 +3774,7 @@ static void finish_jobs(void)
         g_auto_inflight = false;
         if (result.ok) {
             char text[64];
-            snprintf(text, sizeof(text), "Diagnostic report sent · %s", report_code());
+            snprintf(text, sizeof(text), i18n_text("Diagnostic report sent · %s"), report_code());
             show_notice(text);
         }
     } else if (result.kind == NET_JOB_SEND_REPORT && !result.cancelled) {
@@ -3786,7 +3786,7 @@ static void finish_jobs(void)
             /* A modal, not a toast: reports are sent from Settings, which
              * shows no toasts, so a failure looked like nothing happened. */
             char text[192];
-            snprintf(text, sizeof(text), "%.110s. Check the Wi-Fi, then send it again.", report_error());
+            snprintf(text, sizeof(text), i18n_text("%.110s. Check the Wi-Fi, then send it again."), report_error());
             open_modal(MODAL_SEND_REPORT, "送信失敗", "REPORT NOT SENT", text);
         }
     }
@@ -3803,7 +3803,7 @@ static void finish_jobs(void)
                 open_updates();
             } else {
                 char text[96];
-                snprintf(text, sizeof(text), "Kasumi %s is available - Settings > Updates", info.latest);
+                snprintf(text, sizeof(text), i18n_text("Kasumi %s is available - Settings > Updates"), info.latest);
                 show_notice(text);
             }
         }
@@ -4078,7 +4078,7 @@ int main(int argc, char **argv)
         g_app.whats_new_open = false;
         g_app.hub_open = false;
         char text[128];
-        snprintf(text, sizeof(text), "Starting %.90s...", g_shortcut_game.title);
+        snprintf(text, sizeof(text), i18n_text("Starting %.90s..."), g_shortcut_game.title);
         show_notice(text);
     }
     aptHook(&g_apt_cookie, apt_hook, NULL);

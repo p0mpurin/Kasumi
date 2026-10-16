@@ -1,0 +1,15 @@
+# en	ja	fr	de	es	it	pt
+connection dropped, reconnecting	接続が切れました。再接続中	connexion perdue, reconnexion	Verbindung verloren, verbinde neu	conexión perdida, reconectando	connessione persa, riconnessione	conexão caiu, reconectando
+resumed without reconnecting	再接続なしで再開しました	reprise sans reconnexion	ohne Neuverbindung fortgesetzt	reanudado sin reconectar	ripreso senza riconnettersi	retomado sem reconectar
+Create: CloudMatch HTTP %ld; press A to retry	作成：CloudMatch HTTP %ld。A で再試行	Création : CloudMatch HTTP %ld ; appuyez sur A pour réessayer	Erstellen: CloudMatch HTTP %ld; drück A für einen neuen Versuch	Crear: CloudMatch HTTP %ld; pulsa A para reintentar	Creazione: CloudMatch HTTP %ld; premi A per riprovare	Criar: CloudMatch HTTP %ld; aperte A para tentar de novo
+Couldn't compute the session token	セッショントークンを計算できませんでした	Impossible de calculer le jeton de session	Sitzungstoken konnte nicht berechnet werden	No se pudo calcular el token de sesión	Impossibile calcolare il token di sessione	Não foi possível calcular o token da sessão
+no wide art in the library yet	ライブラリにまだ横長の画像がありません	pas encore d'image large dans la bibliothèque	noch kein breites Bild in der Bibliothek	aún no hay imagen ancha en la biblioteca	ancora nessuna immagine larga nella libreria	ainda não há imagem larga na biblioteca
+Input packet self-test failed	入力パケットの自己テストに失敗しました	Échec de l'autotest des paquets d'entrée	Selbsttest der Eingabepakete fehlgeschlagen	Falló la autoprueba de paquetes de entrada	Autotest dei pacchetti di input non riuscito	Falha no autoteste dos pacotes de entrada
+Session create network: %.120s	セッション作成の通信エラー：%.120s	Réseau (création de session) : %.120s	Netzwerk (Sitzung erstellen): %.120s	Red (crear sesión): %.120s	Rete (creazione sessione): %.120s	Rede (criar sessão): %.120s
+Session poll network: %.124s	セッション確認の通信エラー：%.124s	Réseau (suivi de session) : %.124s	Netzwerk (Sitzung abfragen): %.124s	Red (consultar sesión): %.124s	Rete (controllo sessione): %.124s	Rede (consultar sessão): %.124s
+Session stop network: %.124s	セッション終了の通信エラー：%.124s	Réseau (arrêt de session) : %.124s	Netzwerk (Sitzung beenden): %.124s	Red (detener sesión): %.124s	Rete (arresto sessione): %.124s	Rede (encerrar sessão): %.124s
+MOUSE	マウス	SOURIS	MAUS	RATÓN	MOUSE	MOUSE
+GYRO	ジャイロ	GYRO	GYRO	GIROSCOPIO	GIROSCOPIO	GIROSCÓPIO
+KEYS	キー	TOUCHES	TASTEN	TECLAS	TASTI	TECLAS
+ZOOM	ズーム	ZOOM	ZOOM	ZOOM	ZOOM	ZOOM
+MENU	メニュー	MENU	MENÜ	MENÚ	MENU	MENU

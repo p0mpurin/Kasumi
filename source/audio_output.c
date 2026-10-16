@@ -1,4 +1,5 @@
 #include "audio_output.h"
+#include "i18n.h"
 #include "diagnostic.h"
 #include "echo_cancel.h"
 
@@ -133,7 +134,7 @@ bool audio_output_init(void)
     }
 
     if (!audio_system_init()) {
-        snprintf(g_status, sizeof(g_status), "DSP unavailable: playing without sound");
+        snprintf(g_status, sizeof(g_status), i18n_text("DSP unavailable: playing without sound"));
         diagnostic_log("AUDIO", "%s", g_status);
         opus_decoder_destroy(g_decoder);
         g_decoder = NULL;
@@ -144,7 +145,7 @@ bool audio_output_init(void)
     const size_t samples_per_buffer = AUDIO_MAX_SAMPLES * AUDIO_CHANNELS;
     g_pcm = linearAlloc(samples_per_buffer * AUDIO_WAVEBUFS * sizeof(*g_pcm));
     if (!g_pcm) {
-        snprintf(g_status, sizeof(g_status), "audio linearAlloc failed");
+        snprintf(g_status, sizeof(g_status), i18n_text("audio linearAlloc failed"));
         diagnostic_log("AUDIO", "%s", g_status);
         audio_output_close();
         return false;

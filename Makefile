@@ -22,8 +22,8 @@ APP_AUTHOR := p0mpurin
 # Release version: GitHub releases are tagged v$(VERSION). The CIA's own
 # version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
 VERSION_MAJOR := 1
-VERSION_MINOR := 0
-VERSION_MICRO := 9
+VERSION_MINOR := 1
+VERSION_MICRO := 0
 VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 APP_PRODUCT_CODE := CTR-P-KSMI

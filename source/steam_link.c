@@ -1,4 +1,5 @@
 #include "steam_link.h"
+#include "i18n.h"
 
 #include <3ds.h>
 #include <jansson.h>
@@ -396,7 +397,7 @@ static bool update_paired_address(GfnClient *c, const SteamHost *found)
     save();
     char address[20];
     steam_ip_format(found->ip, address, sizeof(address));
-    snprintf(c->status, sizeof(c->status), "Found %.40s at %s", found->name, address);
+    snprintf(c->status, sizeof(c->status), i18n_text("Found %.40s at %s"), found->name, address);
     diagnostic_log("STEAM", "paired PC found at its typed address");
     c->auth_state = GFN_AUTH_LOGGED_IN;
     return true;
@@ -416,21 +417,21 @@ bool steam_link_begin_login(GfnClient *c, const char *choice)
         const uint32_t ip = steam_ip_parse(typed);
         if (!ip || (ip >> 24) == 0 || (ip >> 24) >= 224 || (ip >> 24) == 127) {
             char why[160];
-            snprintf(why, sizeof(why), "\"%.20s\" isn't a PC address. It looks like 192.168.1.20.", typed);
+            snprintf(why, sizeof(why), i18n_text("\"%.20s\" isn't a PC address. It looks like 192.168.1.20."), typed);
             return login_failed(c, why);
         }
         g.typed_ip = ip;
         save();
         diagnostic_log("STEAM", "searching at a typed address");
     }
-    snprintf(c->status, sizeof(c->status), "Looking for a PC running Steam on this Wi-Fi...");
+    snprintf(c->status, sizeof(c->status), i18n_text("Looking for a PC running Steam on this Wi-Fi..."));
     SteamHost hosts[4];
     int found = typed ? steam_discover(&g.id, g.typed_ip, hosts, 1, 3000) : 0;
     if (typed && !found) {
         char why[160], address[20];
         steam_ip_format(g.typed_ip, address, sizeof(address));
-        snprintf(why, sizeof(why), "Nothing with Steam answered at %s. Check the address and that Steam is "
-                 "running there.", address);
+        snprintf(why, sizeof(why), i18n_text("Nothing with Steam answered at %s. Check the address and that Steam is "
+                 "running there."), address);
         return login_failed(c, why);
     }
     if (typed && update_paired_address(c, &hosts[0])) return false;
@@ -456,7 +457,7 @@ bool steam_link_begin_login(GfnClient *c, const char *choice)
     snprintf(pin, sizeof(pin), "%04u", (unsigned)(random_pin % 10000));
     if (!steam_pair_begin(&g.pair, &g.id, &hosts[pick], pin)) {
         c->auth_state = GFN_AUTH_ERROR;
-        snprintf(c->status, sizeof(c->status), "Couldn't prepare the pairing. Press X to try again.");
+        snprintf(c->status, sizeof(c->status), i18n_text("Couldn't prepare the pairing. Press X to try again."));
         return false;
     }
     g.pairing = true;
@@ -465,7 +466,7 @@ bool steam_link_begin_login(GfnClient *c, const char *choice)
     const int64_t now = (int64_t)time(NULL);
     c->challenge_expires_at = now + 5 * 60;
     c->auth_state = GFN_AUTH_WAITING;
-    snprintf(c->status, sizeof(c->status), "On %.40s, Steam asks for a code: type %s there", hosts[pick].name, pin);
+    snprintf(c->status, sizeof(c->status), i18n_text("On %.40s, Steam asks for a code: type %s there"), hosts[pick].name, pin);
     return true;
 }
 
@@ -510,7 +511,7 @@ void steam_link_login_tick(GfnClient *c)
         c->auth_state = GFN_AUTH_LOGGED_IN;
         c->game_count = 0;
         gfn_fetch_library(c);
-        snprintf(c->status, sizeof(c->status), "Paired with %.60s", g.host.name);
+        snprintf(c->status, sizeof(c->status), i18n_text("Paired with %.60s"), g.host.name);
         diagnostic_log("STEAM", "paired (%u PCs)", g.other_count + 1);
         return;
     }
@@ -520,20 +521,20 @@ void steam_link_login_tick(GfnClient *c)
         fill_tokens(c);
         c->auth_state = GFN_AUTH_LOGGED_IN;
         snprintf(c->status, sizeof(c->status), "%s", state == STEAM_PAIR_WRONG_PIN
-                 ? "The code typed on the PC didn't match; nothing changed."
-                 : state == STEAM_PAIR_TIMEOUT ? "The pairing timed out; nothing changed."
-                 : "The other PC didn't pair; nothing changed.");
+                 ? i18n_text("The code typed on the PC didn't match; nothing changed.")
+                 : state == STEAM_PAIR_TIMEOUT ? i18n_text("The pairing timed out; nothing changed.")
+                 : i18n_text("The other PC didn't pair; nothing changed."));
         return;
     }
     c->auth_state = GFN_AUTH_ERROR;
     if (state == STEAM_PAIR_WRONG_PIN)
-        snprintf(c->status, sizeof(c->status), "The code typed on the PC didn't match. Press X to get a new one.");
+        snprintf(c->status, sizeof(c->status), i18n_text("The code typed on the PC didn't match. Press X to get a new one."));
     else if (state == STEAM_PAIR_TIMEOUT)
-        snprintf(c->status, sizeof(c->status), "The pairing timed out. Press X to try again.");
+        snprintf(c->status, sizeof(c->status), i18n_text("The pairing timed out. Press X to try again."));
     else if (g.pair.result == 1 || g.pair.result == 8)
-        snprintf(c->status, sizeof(c->status), "The pairing was declined on the PC. Press X to try again.");
+        snprintf(c->status, sizeof(c->status), i18n_text("The pairing was declined on the PC. Press X to try again."));
     else
-        snprintf(c->status, sizeof(c->status), "Steam refused the pairing (%s). Press X to try again.",
+        snprintf(c->status, sizeof(c->status), i18n_text("Steam refused the pairing (%s). Press X to try again."),
                  steam_pair_result_name(g.pair.result));
 }
 
@@ -598,7 +599,7 @@ bool steam_link_fetch_library(GfnClient *c)
 {
     load();
     if (!g.paired) {
-        snprintf(c->status, sizeof(c->status), "Pair with your PC first (press X)");
+        snprintf(c->status, sizeof(c->status), i18n_text("Pair with your PC first (press X)"));
         return false;
     }
     Recent recent[SL_RECENT_MAX];
@@ -631,12 +632,13 @@ bool steam_link_fetch_library(GfnClient *c)
         char id[24], title[96];
         snprintf(id, sizeof(id), "%llu", (unsigned long long)recent[i].gameid);
         if (recent[i].name[0]) snprintf(title, sizeof(title), "%s", recent[i].name);
-        else snprintf(title, sizeof(title), "Steam game %llu", (unsigned long long)recent[i].gameid);
+        else snprintf(title, sizeof(title), i18n_text("Steam game %llu"), (unsigned long long)recent[i].gameid);
         add_game(c, title, id, recent[i].gameid);
     }
     c->catalog_total = c->game_count;
-    snprintf(c->status, sizeof(c->status), "%s: Big Picture, the desktop and %u game%s played here", g.host.name,
-             count, count == 1 ? "" : "s");
+    snprintf(c->status, sizeof(c->status), i18n_text(count == 1 ? "%s: Big Picture, the desktop and %u game played here"
+                                                                : "%s: Big Picture, the desktop and %u games played here"),
+             g.host.name, count);
     return true;
 }
 
@@ -658,7 +660,7 @@ bool steam_link_search(GfnClient *c, const char *query)
         ++kept;
     }
     c->game_count = kept;
-    snprintf(c->status, sizeof(c->status), "%lu match \"%.40s\"", (unsigned long)kept, query);
+    snprintf(c->status, sizeof(c->status), i18n_text("%lu match \"%.40s\""), (unsigned long)kept, query);
     return true;
 }
 
@@ -707,8 +709,8 @@ bool steam_link_start_session(GfnClient *c, const GfnGame *game)
     SteamHost host;
     if (!find_host(&host)) {
         char text[160];
-        snprintf(text, sizeof(text), "%.40s isn't answering. Is it on, with Steam running? If its address "
-                 "changed: Y, then X to type it.", g.host.name);
+        snprintf(text, sizeof(text), i18n_text("%.40s isn't answering. Is it on, with Steam running? If its address "
+                 "changed: Y, then X to type it."), g.host.name);
         session_failed(c, text, "offline");
         return false;
     }
@@ -726,7 +728,7 @@ bool steam_link_start_session(GfnClient *c, const GfnGame *game)
     }
     snprintf(c->session_id, sizeof(c->session_id), "steam");
     c->session_state = GFN_SESSION_SETUP;
-    snprintf(c->status, sizeof(c->status), "Asking %.40s to start streaming...", host.name);
+    snprintf(c->status, sizeof(c->status), i18n_text("Asking %.40s to start streaming..."), host.name);
     diagnostic_log("STEAM", "start %s (%s)", game->app_id, game->title);
     /* Launching a game or Big Picture can take a while on the PC. */
     const bool granted = !g_cancel && steam_request_stream(&g.id, g.host_secret, &host, &request, &g.grant, 20000,
@@ -736,7 +738,7 @@ bool steam_link_start_session(GfnClient *c, const GfnGame *game)
         memset(c->session_id, 0, sizeof(c->session_id));
         memset(&g.grant, 0, sizeof(g.grant));
         c->session_state = GFN_SESSION_IDLE;
-        snprintf(c->status, sizeof(c->status), "Cancelled");
+        snprintf(c->status, sizeof(c->status), i18n_text("Cancelled"));
         return false;
     }
     if (!granted) {
@@ -751,7 +753,7 @@ bool steam_link_start_session(GfnClient *c, const GfnGame *game)
     snprintf(c->server_ip, sizeof(c->server_ip), "%s", c->media_ip);
     c->media_port = g.grant.port;
     c->session_state = GFN_SESSION_READY;
-    snprintf(c->status, sizeof(c->status), "Connecting to %.40s...", host.name);
+    snprintf(c->status, sizeof(c->status), i18n_text("Connecting to %.40s..."), host.name);
     return true;
 }
 
@@ -767,7 +769,7 @@ bool steam_link_stop_session(GfnClient *c)
     memset(c->session_id, 0, sizeof(c->session_id));
     memset(&g.grant, 0, sizeof(g.grant));
     c->session_state = GFN_SESSION_IDLE;
-    snprintf(c->status, sizeof(c->status), "Stream ended; the PC keeps running");
+    snprintf(c->status, sizeof(c->status), i18n_text("Stream ended; the PC keeps running"));
     if (g.recent_dirty) {
         save();
         gfn_fetch_library(c);
@@ -780,7 +782,7 @@ bool steam_link_signal_start(NvstSignal *s, const GfnClient *client)
     nvst_signal_close(s);
     if (!g.grant.session_key_size || !client->media_port) {
         s->state = NVST_SIGNAL_ERROR;
-        snprintf(s->status, sizeof(s->status), "The stream isn't ready");
+        snprintf(s->status, sizeof(s->status), i18n_text("The stream isn't ready"));
         return false;
     }
     s->steam = true;
@@ -798,6 +800,6 @@ bool steam_link_signal_start(NvstSignal *s, const GfnClient *client)
     s->offer_size = 5;
     s->started_ms = osGetTime();
     s->state = NVST_SIGNAL_OFFER;
-    snprintf(s->status, sizeof(s->status), "Connecting to your PC...");
+    snprintf(s->status, sizeof(s->status), i18n_text("Connecting to your PC..."));
     return s->offer_sdp != NULL;
 }

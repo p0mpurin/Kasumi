@@ -29,3 +29,9 @@ Lang i18n_get(void);
  * with any font). */
 const char *i18n_name(Lang lang);
 const char *tr(TrKey key);
+/* Any English text the app shows, in the chosen language: looked up in the
+ * table built from i18n/<code>.tsv (tools/i18n_gen.py). Text with no
+ * translation, and every text in English, comes back unchanged. The drawing
+ * functions in ui.c call it, so fixed text needs nothing more; a format
+ * string for snprintf goes through it before the values are filled in. */
+const char *i18n_text(const char *english);
