@@ -8,6 +8,7 @@
 
 #include "audio_output.h"
 #include "game_art.h"
+#include "i18n.h"
 #include "mic_capture.h"
 #include "game_prefs.h"
 #include "shortcut.h"
@@ -265,6 +266,7 @@ static const SettingEntry SETTING_ENTRIES[] = {
     { SETTING_NETWORK, NULL, NULL },
     { SETTING_SERVER, NULL, NULL },
     { -1, "本体", "SYSTEM" },
+    { SETTING_LANGUAGE, NULL, NULL },
     { SETTING_LID, NULL, NULL },
     { SETTING_GUIDE, NULL, NULL },
     { SETTING_SHARE, NULL, NULL },
@@ -372,7 +374,7 @@ static const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_MUSIC] = "Menu music", [SETTING_VOICE] = "Voice", [SETTING_SFX] = "Sound effects",
     [SETTING_UPDATES] = "Software update", [SETTING_AUTO_UPDATE] = "Check automatically",
     [SETTING_UPDATE_CHANNEL] = "Update channel", [SETTING_PROVIDER] = "GeForce NOW provider",
-    [SETTING_SERVICE] = "Cloud service",
+    [SETTING_SERVICE] = "Cloud service", [SETTING_LANGUAGE] = "Language",
 };
 static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_LAYOUT] = "ボタン配置", [SETTING_TRIGGERS] = "トリガー",
@@ -396,6 +398,7 @@ static const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_COMMUNITY] = "仲間", [SETTING_SCREENSHOTS] = "写真", [SETTING_HOME_THEME] = "壁紙", [SETTING_MUSIC] = "音楽", [SETTING_VOICE] = "声", [SETTING_SFX] = "効果音",
     [SETTING_UPDATES] = "更新", [SETTING_AUTO_UPDATE] = "自動確認",
     [SETTING_UPDATE_CHANNEL] = "チャンネル", [SETTING_PROVIDER] = "提供元", [SETTING_SERVICE] = "サービス",
+    [SETTING_LANGUAGE] = "言語",
 };
 
 static const char *connection_advice(const GfnClient *c);
@@ -487,6 +490,7 @@ static unsigned setting_option(const App *app, int setting, unsigned *count)
     case SETTING_SLIDER: *count = gfn_slider_choice_count(); return s->slider;
     case SETTING_FRAME_RATE: *count = 2; return s->fps60 ? 1 : 0;
     case SETTING_THEME: *count = UI_THEME_COUNT; return s->theme;
+    case SETTING_LANGUAGE: *count = LANG_COUNT; return s->language;
     case SETTING_VOLUME: *count = 6; return s->volume;
     case SETTING_MENU_AUDIO: *count = 2; return s->mute_in_menus ? 1 : 0;
     case SETTING_LID: *count = LID_MODE_COUNT; return s->lid_mode;
@@ -547,6 +551,7 @@ static const char *setting_value(const App *app, int setting)
         return s->slider == 0 ? "Off" : s->slider == 1 ? "Zoom" : gfn_output_short_name(gfn_slider_choice_output(s->slider));
     case SETTING_FRAME_RATE: return s->fps60 ? "60 fps (beta)" : "30 fps";
     case SETTING_THEME: return ui_theme_name((UiTheme)s->theme);
+    case SETTING_LANGUAGE: return i18n_name((Lang)s->language);
     case SETTING_VOLUME: {
         static const char *const levels[6] = { "Muted", "20 %", "40 %", "60 %", "80 %", "100 %" };
         return levels[s->volume < 6 ? s->volume : 5];
@@ -738,6 +743,8 @@ static const char *setting_description(const App *app, int setting)
                                      : "Both directions of the C-Stick are reversed. Gyro aim is not inverted.";
     case SETTING_THEME:
         return "The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.";
+    case SETTING_LANGUAGE:
+        return "The language of Kasumi's menus. Game titles and store names stay as they are.";
     case SETTING_HOME_THEME:
         return "A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to "
                "/Themes; install it with Anemone3DS.";
@@ -883,6 +890,11 @@ void screens_setting_change(App *app, int setting, int direction)
     }
     case SETTING_FRAME_RATE: s->fps60 = !s->fps60; break;
     case SETTING_THEME: s->theme = (s->theme + UI_THEME_COUNT + step) % UI_THEME_COUNT; break;
+    case SETTING_LANGUAGE:
+        /* Applied at once, so the menu on screen changes language too. */
+        s->language = (s->language + LANG_COUNT + step) % LANG_COUNT;
+        i18n_set((Lang)s->language);
+        break;
     case SETTING_VOLUME: s->volume = (s->volume + 6 + step) % 6; break;
     case SETTING_MENU_AUDIO: s->mute_in_menus = !s->mute_in_menus; break;
     case SETTING_MUSIC:

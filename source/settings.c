@@ -5,6 +5,7 @@
 #include "audio_output.h"
 #include "file_worker.h"
 #include "game_prefs.h"
+#include "i18n.h"
 #include "regions.h"
 #include "stream_profile.h"
 #include "ui.h"
@@ -38,6 +39,7 @@ void settings_defaults(AppSettings *settings)
     settings->touch_stick_size = 1;
     settings->slider = 0;
     settings->theme = UI_THEME_AI; /* indigo: the default look since beta.30 */
+    settings->language = LANG_EN;
     settings->volume = 5;
     settings->mute_in_menus = false;
     settings->music_mode = 0; /* MENU_MUSIC_ON */
@@ -118,6 +120,7 @@ bool settings_load(AppSettings *settings)
     settings->touch_stick_size = (unsigned)read_int(root, "touch_stick_size", (int)settings->touch_stick_size, 3);
     settings->slider = (unsigned)read_int(root, "slider", (int)settings->slider, (int)gfn_slider_choice_count());
     settings->theme = (unsigned)read_int(root, "theme", (int)settings->theme, UI_THEME_COUNT);
+    settings->language = (unsigned)read_int(root, "language", (int)settings->language, LANG_COUNT);
     settings->volume = (unsigned)read_int(root, "volume", (int)settings->volume, 6);
     settings->mute_in_menus = read_bool(root, "mute_in_menus", settings->mute_in_menus);
     settings->music_mode = (unsigned)read_int(root, "music_mode", (int)settings->music_mode, 3);
@@ -197,6 +200,7 @@ static json_t *settings_json(const AppSettings *settings)
     json_object_set_new(root, "xbox_names", json_boolean(settings->xbox_names));
     json_object_set_new(root, "mic", json_boolean(settings->mic));
     json_object_set_new(root, "discord_seen", json_boolean(settings->discord_seen));
+    json_object_set_new(root, "language", json_integer((json_int_t)settings->language));
     if (settings->has_map) game_prefs_write_map(root, &settings->map);
     return root;
 }

@@ -68,6 +68,8 @@ typedef struct {
     unsigned slider;
     /* Appearance and audio. */
     unsigned theme;
+    /* The language the screens use (Lang, i18n.h). */
+    unsigned language;
     /* Stream volume in steps of 20 %: 0 = mute ... 5 = 100 %. */
     unsigned volume;
     bool mute_in_menus;

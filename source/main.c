@@ -13,6 +13,7 @@
 #include "app.h"
 #include "app_paths.h"
 #include "audio_output.h"
+#include "i18n.h"
 #include "diagnostic.h"
 #include "game_art.h"
 #include "game_prefs.h"
@@ -3982,6 +3983,7 @@ int main(int argc, char **argv)
     providers_load();
     regions_load();
     settings_load(&g_app.settings);
+    i18n_set((Lang)g_app.settings.language);
     /* Files the menus consult, read once before the background writer
      * starts: on a slow card a read waits behind any write. */
     report_stats_pending();
