@@ -1084,6 +1084,7 @@ The PC ended the stream.
 The PC didn't answer the stream connection.
 The stream didn't start (Steam stopped answering during setup).
 Lost the connection to the PC.
+Your PC sent sound but no picture. Restart Steam on the PC, then try again.
 -3DS/
 Accept: application/vnd.github+json
 X-GitHub-Api-Version: 2022-11-28

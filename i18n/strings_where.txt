@@ -1071,19 +1071,20 @@ steam_remote.c:464	Steam is set to Invisible on the PC. Go online, then try agai
 steam_remote.c:465	Steam couldn't launch the game on the PC.
 steam_remote.c:466	The PC's answer couldn't be decrypted. Pair this 3DS again.
 steam_remote.c:467	The PC didn't answer. Is Steam running, on the same Wi-Fi?
-steam_session.c:270	Connecting to the PC...
-steam_session.c:322	Couldn't compute the session token
-steam_session.c:332	Signing in to the stream...
-steam_session.c:345	The PC refused the stream's sign-in. Pair this 3DS again.
-steam_session.c:370	The PC can't stream H.264 video.
-steam_session.c:434	Couldn't send the stream settings
-steam_session.c:456	Streaming from your PC
-steam_session.c:764	Steam can't capture the PC screen. Check screen-sharing permissions.
-steam_session.c:1160	Connected; setting up the stream...
-steam_session.c:1187	The PC ended the stream.
-steam_session.c:1203	The PC didn't answer the stream connection.
-steam_session.c:1207	The stream didn't start (Steam stopped answering during setup).
-steam_session.c:1211	Lost the connection to the PC.
+steam_session.c:284	Connecting to the PC...
+steam_session.c:336	Couldn't compute the session token
+steam_session.c:346	Signing in to the stream...
+steam_session.c:359	The PC refused the stream's sign-in. Pair this 3DS again.
+steam_session.c:384	The PC can't stream H.264 video.
+steam_session.c:453	Couldn't send the stream settings
+steam_session.c:476	Streaming from your PC
+steam_session.c:788	Steam can't capture the PC screen. Check screen-sharing permissions.
+steam_session.c:1196	Connected; setting up the stream...
+steam_session.c:1223	The PC ended the stream.
+steam_session.c:1239	The PC didn't answer the stream connection.
+steam_session.c:1243	The stream didn't start (Steam stopped answering during setup).
+steam_session.c:1247	Lost the connection to the PC.
+steam_session.c:1289	Your PC sent sound but no picture. Restart Steam on the PC, then try again.
 updater.c:23	-3DS/
 updater.c:171	Accept: application/vnd.github+json
 updater.c:171	X-GitHub-Api-Version: 2022-11-28
@@ -1283,41 +1284,41 @@ report.c:478	Too many reports from this network: try again in an hour
 report.c:480	The report service answered HTTP %ld
 audio_output.c:137	DSP unavailable: playing without sound
 audio_output.c:148	audio linearAlloc failed
-provider.c:53	Xbox Cloud Gaming (beta)
-provider.c:98	au (KDDI, Japan)
-provider.c:98	Cloud.GG (Australia)
-provider.c:99	Taiwan Mobile (Taiwan)
-provider.c:99	StarHub (Singapore)
-provider.c:99	GFN Korea
-provider.c:100	rain (South Africa)
-provider.c:100	Digevo (Latin America)
-provider.c:289	Australia
-provider.c:289	Japan
-provider.c:289	Korea
-provider.c:289	Taiwan
-provider.c:290	Singapore
-provider.c:290	Malaysia
-provider.c:290	Indonesia
-provider.c:290	Thailand
-provider.c:291	the Philippines
-provider.c:291	Vietnam
-provider.c:291	Chile
-provider.c:291	Argentina
-provider.c:292	Peru
-provider.c:292	Colombia
-provider.c:292	Uruguay
-provider.c:292	Ecuador
-provider.c:293	South Africa
-provider.c:293	Armenia
-provider.c:293	Turkey
-provider.c:293	Saudi Arabia
-provider.c:294	the UAE
-provider.c:294	Kuwait
-provider.c:294	Bahrain
-provider.c:294	Qatar
-provider.c:294	Oman
-provider.c:295	Jordan
-provider.c:295	Iraq
-provider.c:295	Israel
-provider.c:295	India
-provider.c:302	your country
+provider.c:54	Xbox Cloud Gaming (beta)
+provider.c:99	au (KDDI, Japan)
+provider.c:99	Cloud.GG (Australia)
+provider.c:100	Taiwan Mobile (Taiwan)
+provider.c:100	StarHub (Singapore)
+provider.c:100	GFN Korea
+provider.c:101	rain (South Africa)
+provider.c:101	Digevo (Latin America)
+provider.c:290	Australia
+provider.c:290	Japan
+provider.c:290	Korea
+provider.c:290	Taiwan
+provider.c:291	Singapore
+provider.c:291	Malaysia
+provider.c:291	Indonesia
+provider.c:291	Thailand
+provider.c:292	the Philippines
+provider.c:292	Vietnam
+provider.c:292	Chile
+provider.c:292	Argentina
+provider.c:293	Peru
+provider.c:293	Colombia
+provider.c:293	Uruguay
+provider.c:293	Ecuador
+provider.c:294	South Africa
+provider.c:294	Armenia
+provider.c:294	Turkey
+provider.c:294	Saudi Arabia
+provider.c:295	the UAE
+provider.c:295	Kuwait
+provider.c:295	Bahrain
+provider.c:295	Qatar
+provider.c:295	Oman
+provider.c:296	Jordan
+provider.c:296	Iraq
+provider.c:296	Israel
+provider.c:296	India
+provider.c:303	your country

@@ -43,6 +43,15 @@ enum {
 #define VIDEO_PART_TIMEOUT_MS 150
 #define HID_REPORT_SIZE 48
 #define HID_DEVICE 1
+/* Steam starts video within a second of setup (StartVideoData). Report
+ * CBU-4BE: a PC sent sound for 40 minutes and started video once, so the
+ * player sat on "Starting the stream". After this long the session fails,
+ * and Kasumi's automatic retry asks again with plainer settings. */
+#define NO_VIDEO_TIMEOUT_MS 20000
+
+/* Sessions in a row that got sound but no video. While set, the next
+ * session leaves out the handheld form factor and the drawn-in pointer. */
+static unsigned g_no_video_sessions;
 
 typedef struct {
     bool used;
@@ -103,6 +112,12 @@ struct SteamSession {
      * Steam's seven-byte video header carries the inclusive slice range. */
     VideoPart video_parts[VIDEO_PARTS_MAX];
     unsigned video_part_count, video_part_logs, video_reordered;
+    /* Report CBU-4BE: audio for 40 minutes, video almost never. These say
+     * what the PC sent that Kasumi didn't use, and where media went. */
+    unsigned unhandled_logs, video_channel_packets, other_channel_packets, dropped_data_messages;
+    unsigned control_messages, video_wait_logs;
+    uint64_t streaming_at;
+    bool video_seen;
     size_t video_part_bytes;
     uint64_t video_part_since;
     uint16_t video_next_slice, video_frame_id;
@@ -414,16 +429,19 @@ static void on_negotiation_init(SteamSession *s, const uint8_t *data, size_t siz
              "\t\"VideoVendorID\"\t\"0\"\n\t\"VideoDeviceID\"\t\"0\"\n\t\"VideoRevision\"\t\"0\"\n"
              "\t\"VideoRAM\"\t\t\"0\"\n\t\"VideoDisplayX\"\t\"%u\"\n\t\"VideoDisplayY\"\t\"%u\"\n"
              "\t\"VideoDisplayNameID\"\t\"Kasumi\"\n}\n", c->width, c->height);
+    const bool compat = g_no_video_sessions > 0;
     pb_writer(&caps, caps_data, sizeof(caps_data));
     pb_string(&caps, 1, info);
     pb_bool(&caps, 2, true);
     pb_int(&caps, 3, (int)c->kbps);
     pb_int(&caps, 4, (int)c->kbps * 2);
-    /* The PC draws the mouse pointer into the picture: Steam otherwise sends
-     * it apart (SetCursorImage) for the client to draw, and on the desktop
-     * Kasumi showed no pointer at all. */
-    pb_bool(&caps, 7, true);             /* disable_client_cursor */
-    pb_int(&caps, 11, 1);                /* phone-sized: a handheld */
+    if (!compat) {
+        /* The PC draws the mouse pointer into the picture: Steam otherwise
+         * sends it apart (SetCursorImage) for the client to draw, and on the
+         * desktop Kasumi showed no pointer at all. */
+        pb_bool(&caps, 7, true);         /* disable_client_cursor */
+        pb_int(&caps, 11, 1);            /* phone-sized: a handheld */
+    }
     if (opus) pb_varint(&caps, 14, 3);
     pb_varint(&caps, 15, 4);
 
@@ -431,6 +449,8 @@ static void on_negotiation_init(SteamSession *s, const uint8_t *data, size_t siz
     pb_message(&m, 1, &config);
     pb_message(&m, 2, &client);
     pb_message(&m, 3, &caps);
+    diagnostic_log("STEAM", "settings sent: %ux%u@%u %u kbps opus=%d hid=%d plain=%d", c->width, c->height, c->fps,
+                   c->kbps, opus, s->hid_supported, compat);
     if (!send_control(s, CTL_NEGOTIATION_SET_CONFIG, &m)) fail(s, "Couldn't send the stream settings");
 }
 
@@ -453,6 +473,7 @@ static void on_negotiation_set_config(SteamSession *s)
     pb_writer(&m, data, sizeof(data));
     send_control(s, CTL_NEGOTIATION_COMPLETE, &m);
     s->state = STEAM_SESSION_STREAMING;
+    s->streaming_at = steam_now_ms();
     set_status(s, "Streaming from your PC");
     diagnostic_log("STEAM", "negotiation complete after %llu ms",
                    (unsigned long long)(steam_now_ms() - s->opened_at));
@@ -488,7 +509,11 @@ static void on_start_data(SteamSession *s, unsigned type, const uint8_t *data, s
         memset(s->video_slots, 0, sizeof(s->video_slots));
         s->stats.video_width = width;
         s->stats.video_height = height;
-        diagnostic_log("STEAM", "video channel=%u codec=%u %ux%u", channel, codec, width, height);
+        diagnostic_log("STEAM", "video channel=%u codec=%u %ux%u after %llu ms plain=%d", channel, codec, width, height,
+                       (unsigned long long)(s->streaming_at ? steam_now_ms() - s->streaming_at : 0),
+                       g_no_video_sessions > 0);
+        g_no_video_sessions = 0;
+        s->video_seen = true;
         if (s->cb.video_start) s->cb.video_start(s->cb.user, width, height);
         uint8_t message[48];
         PbWriter m;
@@ -695,6 +720,7 @@ void steam_session_set_pad(SteamSession *s, const SteamPad *pad)
 static void on_control(SteamSession *s, const uint8_t *message, size_t size)
 {
     if (!size) return;
+    s->control_messages++;
     const unsigned type = message[0];
     const uint8_t *data = message + 1;
     size_t data_size = size - 1;
@@ -774,7 +800,10 @@ static void on_control(SteamSession *s, const uint8_t *message, size_t size)
             if (f.field == 1) diagnostic_log("STEAM", "target bitrate %lld kbps", (long long)(int32_t)f.value);
         break;
     }
-    default: break;
+    default:
+        if (s->unhandled_logs++ < 24)
+            diagnostic_log("STEAM", "control message %u not used (%lu bytes)", type, (unsigned long)data_size);
+        break;
     }
     free(heap);
 }
@@ -1010,7 +1039,12 @@ static void on_data_message(SteamSession *s, unsigned channel, const uint8_t *da
 {
     /* EStreamDataMessage 1 (a packet), then the frame header: id, timestamp,
      * input mark, input receive time (12 bytes). */
-    if (size <= 13 || data[0] != 1) return;
+    if (size <= 13 || data[0] != 1) {
+        if ((int)channel == s->video_channel && s->dropped_data_messages++ < 8)
+            diagnostic_log("STEAM", "video data message type=%u bytes=%lu not used", size ? data[0] : 0,
+                           (unsigned long)size);
+        return;
+    }
     const uint16_t frame_id = get16(data + 1);
     if ((int)channel == s->video_channel) {
         video_frame(s, frame_id, data + 13, size - 13);
@@ -1027,10 +1061,14 @@ static void on_unreliable(SteamSession *s, unsigned channel, const uint8_t *h, c
     if ((int)channel == s->video_channel) {
         slots = s->video_slots;
         window = VIDEO_WINDOW;
+        s->video_channel_packets++;
     } else if ((int)channel == s->audio_channel) {
         slots = s->audio_slots;
         window = AUDIO_WINDOW;
     } else {
+        if (s->other_channel_packets++ < 8)
+            diagnostic_log("STEAM", "media packet on channel %u (video=%d audio=%d) %lu bytes", channel,
+                           s->video_channel, s->audio_channel, (unsigned long)size);
         return;
     }
     const unsigned type = h[0] & 0x7f;
@@ -1235,6 +1273,25 @@ void steam_session_tick(SteamSession *s)
         p->sent_at = now;
         s->stats.resends++;
     }
+    if (s->state == STEAM_SESSION_STREAMING && !s->video_seen) {
+        /* Sound but no video: say what has come so far, then give up so the
+         * retry can ask again (see NO_VIDEO_TIMEOUT_MS). */
+        const uint64_t waited = now - s->streaming_at;
+        if ((s->video_wait_logs == 0 && waited >= 5000) || (s->video_wait_logs == 1 && waited >= 15000)) {
+            s->video_wait_logs++;
+            diagnostic_log("STEAM", "no video yet after %llu s: control=%u unused=%u audio=%u packets=%u other=%u act=%d",
+                           (unsigned long long)(waited / 1000), s->control_messages, s->unhandled_logs,
+                           s->stats.audio_packets, s->stats.packets_in, s->other_channel_packets, s->activity);
+        }
+        if (waited >= NO_VIDEO_TIMEOUT_MS) {
+            g_no_video_sessions++;
+            diagnostic_flag("steam-no-video", "sound, no StartVideo after %llus (run %u, control=%u unused=%u audio=%u)",
+                            (unsigned long long)(waited / 1000), g_no_video_sessions,
+                            s->control_messages, s->unhandled_logs, s->stats.audio_packets);
+            fail(s, "Your PC sent sound but no picture. Restart Steam on the PC, then try again.");
+            return;
+        }
+    }
     if (s->state == STEAM_SESSION_STREAMING) {
         if (s->video_part_count && now - s->video_part_since >= VIDEO_PART_TIMEOUT_MS) {
             diagnostic_log("STEAM", "video slice timeout expected=%u pending=%u; requesting keyframe",
@@ -1339,9 +1396,10 @@ void steam_session_close(SteamSession *s)
             send_raw(s, packet, n);
         }
     }
-    diagnostic_log("STEAM", "session closed: frames=%u keyframes=%u lost=%u kfreq=%u audio=%u resends=%u abandoned=%u bad=%u",
+    diagnostic_log("STEAM", "session closed: frames=%u keyframes=%u lost=%u kfreq=%u audio=%u resends=%u abandoned=%u bad=%u videoPackets=%u otherPackets=%u",
                    s->stats.video_frames, s->stats.video_keyframes, s->stats.video_lost, s->stats.keyframe_requests,
-                   s->stats.audio_packets, s->stats.resends, s->stats.abandoned, s->stats.packets_bad);
+                   s->stats.audio_packets, s->stats.resends, s->stats.abandoned, s->stats.packets_bad,
+                   s->video_channel_packets, s->other_channel_packets);
     steam_udp_close(s->sock);
     clear_video_frame(s);
     free(s);

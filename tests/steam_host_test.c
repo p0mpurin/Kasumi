@@ -28,6 +28,17 @@ void diagnostic_log(const char *component, const char *format, ...)
     fflush(stdout);
 }
 
+void diagnostic_flag(const char *code, const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    printf("%7.3f [FLAG] %s: ", (double)GetTickCount64() / 1000.0, code);
+    vprintf(format, args);
+    printf("\n");
+    va_end(args);
+    fflush(stdout);
+}
+
 /* vendor/mbedtls is configured for the 3DS (MBEDTLS_ENTROPY_HARDWARE_ALT). */
 #include <bcrypt.h>
 int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)

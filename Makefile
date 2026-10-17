@@ -23,7 +23,7 @@ APP_AUTHOR := p0mpurin
 # version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
 VERSION_MAJOR := 1
 VERSION_MINOR := 1
-VERSION_MICRO := 0
+VERSION_MICRO := 1
 VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 # makerom drops the minor number from the CIA's title version (1.1.0 came out
