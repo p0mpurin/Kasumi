@@ -1,6 +1,6 @@
 #pragma once
 
-#include <3ds.h>
+#include "platform.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -125,7 +125,12 @@ typedef enum {
     ACTION_HUB,
     /* A row of the Steam PCs sheet (screens_touched_pc), or its CLOSE. */
     ACTION_PC_ROW,
-    ACTION_PC_CLOSE
+    ACTION_PC_CLOSE,
+    /* Touch, where the screen shows the whole list (screens_touched_index):
+     * a game on the library shelf, a library tab, a settings row. */
+    ACTION_SELECT_GAME,
+    ACTION_TAB,
+    ACTION_SELECT_SETTING
 } AppAction;
 
 enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SETTING_DEADZONE, SETTING_POINTER,
@@ -138,7 +143,7 @@ enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SET
        SETTING_CAMERA_SPEED, SETTING_CAMERA_INVERT, SETTING_SCREENSHOTS,
        SETTING_VIDEO_SHARPEN, SETTING_VIDEO_COLOR, SETTING_TOUCH_CAMERA, SETTING_TOUCH_STICK_SIZE,
        SETTING_FRAME_RATE, SETTING_MIC, SETTING_SERVICE, SETTING_SLIDER, SETTING_HOME_THEME,
-       SETTING_LANGUAGE, SETTING_COUNT };
+       SETTING_LANGUAGE, SETTING_EXTRA_BUTTONS, SETTING_COUNT };
 
 /* Library tabs (L / R). */
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
@@ -398,5 +403,8 @@ bool screens_zoom_busy(void);
 void screens_setting_change(App *app, int setting, int direction);
 /* The options row a tap landed on (with ACTION_OPTION_PREV/NEXT). */
 int screens_touched_option_row(void);
+/* The item a tap landed on with ACTION_SELECT_GAME (a list position),
+ * ACTION_TAB (a library tab) or ACTION_SELECT_SETTING (a settings position). */
+int screens_touched_index(void);
 /* The lower screen is mid-animation and wants redrawing every frame. */
 bool screens_bottom_animating(void);

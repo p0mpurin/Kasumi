@@ -1,267 +1,3 @@
-GEFORCE NOW
-XBOX CLOUD
-STEAM LINK
-GeForce NOW
-Your PC games from Steam, Epic and more, running on NVIDIA's servers.
-An NVIDIA account (free or paid).
-SIGN IN WITH NVIDIA
-Xbox Cloud Gaming
-Game Pass games, and free ones like Fortnite, from Microsoft's servers. Beta.
-A Microsoft account; most games need Game Pass Ultimate.
-SIGN IN WITH MICROSOFT
-Steam Link
-Your own PC: play whatever Steam on it can run, over your Wi-Fi.
-A PC with Steam on, on the same Wi-Fi as the 3DS.
-PAIR WITH YOUR PC
-CONTROLS
-PICTURE
-SOUND & LOOK
-NETWORK
-SYSTEM
-ACCOUNT & UPDATES
-Buttons, sticks, camera, gyro, mouse
-Screen mode, bitrate, sharpness, colour
-Volume, music, voice, sounds, theme
-Connection check, type, server
-Lid, guide, screenshots, reports
-Updates, provider, sign out
-Button layout
-Triggers
-Button names
-Button mapping
-Microphone
-Stick deadzone
-Mouse mode at start
-Stream stats
-Fast input
-Screen mode
-Bitrate
-Server sharpening
-Gyro aim
-Sharpness
-Colour
-Touch camera
-Touch C-stick size
-3D slider
-Frame rate
-Gyro speed
-Account
-Camera stick speed
-Invert camera
-Theme
-Stream volume
-Audio in menus
-Closing the lid
-Connection check
-Getting started
-Connection type
-Server
-Send diagnostic report
-Share problem reports
-Share performance stats
-Kasumi Discord
-Screenshots
-HOME Menu theme
-Menu music
-Voice
-Sound effects
-Software update
-Check automatically
-Update channel
-GeForce NOW provider
-Cloud service
-Language
-STEAM
-Steam
-EPIC
-Epic Games
-EPIC_GAMES_STORE
-EA_APP
-EA app
-ORIGIN
-UBISOFT
-Ubisoft
-UPLAY
-UBISOFT_CONNECT
-BATTLENET
-Battle.net
-BATTLE_NET
-XBOX
-Xbox
-MICROSOFT
-MICROSOFT_STORE
-NV_BUNDLE
-UNKNOWN
-Own launcher
-NONE
-ROCKSTAR
-Rockstar
-WARGAMING
-Wargaming
-Always
-While aiming
-Off
-Position
-Letters
-PlayStation
-On
-Custom
-Default
-ZL / ZR
-Small
-Large
-Medium
-Genshin
-Never
-On (beta)
-Wide 800
-Classic 400
-Adaptive
-Steady 1 Mbps
-Steady 1.2 Mbps
-Steady 1.5 Mbps
-Sharp
-Low
-High
-Natural
-Vivid
-Extra vivid
-Slow
-Fast
-Fastest
-Normal
-Up-down
-Both
-Stick
-Trackpad
-Zoom
-60 fps (beta)
-30 fps
-Muted
-Keep playing
-Sleep
-Pause
-Run test
-%u ms · %u.%u Mbps
-Weak / hotspot
-Standard
-NVIDIA picks
-Auto · %s
-Auto (lowest ping)
-Open
-Download
-Scan
-None yet
-%u saved
-Quiet
-Send
-Unavailable
-Up to date
-Restart to finish
-Dev (your PC)
-Beta
-Stable
-Sign out
-Signed out
-Xbox Cloud (beta)
-NVIDIA (default)
-Your button mapping (below) decides every button, so this layout is not used.
-Buttons match their place on the pad: bottom is A, right is B, like an Xbox controller. 3DS A sends B.
-The printed letters match: 3DS A sends A, 3DS B sends B. A and B sit swapped compared with an Xbox pad.
-Buttons match their place on the pad: bottom is Cross, right is Circle. Plays like a PlayStation controller.
-The printed letters match: 3DS A sends A. Cross and Circle end up swapped compared with a PlayStation pad.
-Voice chat in games: tap MIC on the lower screen to talk, again to mute (starts muted). Use headphones, or your team hears the game through the mic. Next game.
-Talk in games with voice chat, using the 3DS microphone. Off: nothing is ever recorded.
-Kasumi shows Xbox buttons: A, B, LB, RT, Menu. Most PC games on GeForce NOW show these too.
-Kasumi shows PlayStation buttons: Cross, Circle, L1, R2, Options.
-Your own map for every game: press A to change it. A game's own mapping (game page > X > Options) goes first.
-Choose what each 3DS button sends, for every game: two buttons at once, turbo, toggle, or a stick push.
-The big L and R buttons act as the LT / RT triggers; ZL and ZR become LB / RB.
-ZL and ZR are the LT / RT triggers; L and R are the LB / RB bumpers.
-The big L and R buttons act as the L2 / R2 triggers; ZL and ZR become L1 / R1.
-ZL and ZR are the L2 / R2 triggers; L and R are the L1 / R1 bumpers.
-How far a stick moves before the game notices. Raise it if a character drifts on its own.
-Start Genshin Impact in mouse and keyboard mode so you can click through its PC login screen. Tap MOUSE in game to go back to controller mode.
-Show frame rate, bitrate, ping and resent packets on the lower screen while playing.
-Beta. Sends controller input on a channel that never waits for lost packets. If buttons stop responding in game, turn it off.
-Uses the top screen's 800-pixel mode: twice the detail across, sharper text.
-The normal 400-column top screen. Use only if Wide misbehaves.
-About 1.3 Mbps: a clean, detailed picture on good home Wi-Fi. The default. Next launch.
-About 1.8-2 Mbps: the sharpest picture. Needs strong Wi-Fi (3 bars, near the router). Next launch.
-About 1 Mbps: smoothest on weak Wi-Fi or a phone hotspot, a little softer. Next launch.
-A fixed rate. If the stats show RESENT/S climbing, pick a lower one. Next launch.
-Needs Screen mode: Wide 800. 60 frames a second for smoother motion.
-Smoother motion and quicker controls. Most games keep up; a very heavy one can hitch now and then (Kasumi says so), and 30 suits it better. Next launch.
-30 frames a second: the most detail in every frame. Next launch.
-A short push turns at full speed: quick, for small thumbs or fast games.
-A long push for full speed: finer control when aiming slowly.
-How far you push the touch C-stick for full speed. Medium suits most games.
-The 3D slider does nothing in games. Slide it to choose zoom or a button.
-In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.
-In a game, the 3D slider past halfway holds %s until you slide it back down.
-No C-STICK button in games: the lower screen keeps its stats and buttons.
-In a game, tap C-STICK by PS. Touch and push, like the C-Stick: hold it out to keep turning. Double-tap for R3.
-In a game, tap C-STICK by PS, then drag to turn the camera; it stops when your finger does. Double-tap for R3.
-Needs Screen mode: Wide 800. Sharpens edges and text on the console, at no cost to the stream.
-The picture exactly as it arrives.
-Strong sharpening on the console: crispest text, but blocky spots in fast scenes stand out more.
-Sharpens edges and small text on the console, at no cost to the stream or the frame rate.
-Needs Screen mode: Wide 800. Richer colour and contrast for the 3DS screen.
-Colours exactly as the game sends them.
-A little more colour and contrast, so games look less washed out on the 3DS screen.
-Strong colour and contrast. Fun for colourful games; skin and skies can look overdone.
-NVIDIA sharpens before compressing, which spends scarce bitrate on edges: more blocking and pulsing. Sharpness above does it on the console for free. Next launch.
-Recommended. The bitrate goes to the picture itself; use Sharpness above to sharpen on the console instead. Next launch.
-Tilt and turn the console to aim, like a Switch or Steam Deck. Adds to the C-Stick; moves the mouse in mouse mode.
-Turning the console always moves the camera. Great for shooters; hold the console still when you don't aim.
-Gyro only works while the aim trigger (ZL, or L when triggers are swapped) is held.
-How fast turning the console moves the camera. Start at Medium and lower it if aiming overshoots.
-The C-Stick turns the camera at most 70 % as fast. For precise aiming.
-The C-Stick as it is: a full push turns the camera at full speed.
-A lighter push on the C-Stick turns the camera at full speed.
-Full camera speed with a light push. For games that turn slowly.
-The C-Stick moves the camera the usual way.
-Pushing the C-Stick up looks down, like a flight stick. Gyro aim is not inverted.
-Both directions of the C-Stick are reversed. Gyro aim is not inverted.
-The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
-The language of Kasumi's menus. Game titles and store names stay as they are.
-A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to /Themes; install it with Anemone3DS.
-No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the Homebrew Launcher, then restart Kasumi.
-Game audio volume on this console, on top of the 3DS volume slider.
-Game audio goes quiet while the stream menu or controls sheet is open.
-Game audio keeps playing while the stream menu is open.
-For far-away Wi-Fi or a phone hotspot: a steadier 0.6-1 Mbps picture, a longer wait for lost packets and a bigger buffer. Softer image, a little more delay. Next launch.
-For home Wi-Fi near the router: the sharpest picture and lowest delay. Next launch.
-Kasumi pings every GeForce NOW server and uses the fastest, measured again on each new Wi-Fi network (like a phone hotspot).
-NVIDIA chooses from your internet address. On mobile data that can be a far-away server.
-Always use this server. Your ping and queue depend on it; run Connection check to see ping to each one.
-Walk through the basics again: signing in, controls, picture and extras.
-When something goes wrong (a crash, freeze or failed stream), Kasumi sends its log to the developer on its own, at most once per run. No login or passwords.
-Kasumi never sends anything on its own. Turn on to send the log automatically when something goes wrong, which helps fix bugs faster.
-After each launch and session, Kasumi sends a few numbers: did the game start, queue time, ping, smoothness, lost frames. No log text, no addresses, no account.
-Turn on to send a few numbers after each launch and session (did the game start, ping, smoothness). It shows what to improve for real players.
-Tsumugi welcomes you back when Kasumi opens and sees you off when a game starts.
-No voice lines. Turn on for Tsumugi's welcome and send-off.
-Soft koto, wood and water sounds in the menus. In a game, only the stream menu and screenshots make a sound.
-Silent menus. The \"your game is ready\" chime still plays when a queue ends.
-Look through the screenshots you took in games (stream menu > Screenshot). Press A to open; L and R browse, X deletes.
-Chat with other players, get help and hear about new versions first. Scan with your phone, or visit discord.gg/K9Jy3t7YHE
-Having a problem? Send this run's and the last run's log to Kasumi's developer and get a code to share. Only when you choose; nothing is sent otherwise.
-See what's new and install the latest Kasumi from GitHub. Your login, library and settings stay.
-Kasumi looks for a new version every few hours, only in the menus, never while you play.
-Kasumi only looks for updates when you open Software update.
-Beta: get test versions first. They may have rough edges.
-Stable: only finished releases.
-Closing the lid turns the screens off; the game and its sound keep running.
-Closing the lid sleeps the console to save battery. On opening it, Kasumi reconnects to the same rig.
-Closing the lid turns the screens and sound off but stays connected: open it and you are straight back in.
-Forget the paired PC. Pair again to stream from it; your cloud logins stay.
-Remove the saved Microsoft (Xbox) login from this console's SD card. The NVIDIA one stays.
-Remove the saved NVIDIA login from this console's SD card. An Xbox one stays.
-GeForce NOW, Xbox Cloud Gaming (Game Pass, and free games like Fortnite), or Steam Link: play from your own PC running Steam, on the same Wi-Fi. Each keeps its own login. Xbox and Steam Link are experimental.
-Signed in with %s. To use %s, sign out below and sign in again.
-Most accounts are NVIDIA's. Here GeForce NOW is also sold by %.30s: if your subscription is from %.30s, pick it and sign in again. Beta.
-Most accounts are NVIDIA's. In some countries (Japan, Korea, Taiwan, the Middle East...) GeForce NOW is sold by a local partner: if yours is, pick it, then sign in. Beta.
 UPDATE
 Continue: %s
 MAINTENANCE
@@ -286,7 +22,9 @@ SELECT
 Settings
 Try again
 PC address
+PAIR WITH YOUR PC
 SIGN IN WITH XBOX
+SIGN IN WITH NVIDIA
 Steam asks for a code on
 On your phone or computer, open
 Type it in the Authorize Device window
@@ -294,12 +32,6 @@ Waiting for approval
 Code expires in %ld:%02ld
 New code
 Cancel
-synced just now
-synced %ld min ago
-synced %ld h ago
-synced %ld days ago
-From %s  ·  800x480 wide  ·  %u fps
-Xbox Cloud  ·  800x480 wide  ·  60 fps
 RECENT
 SEARCH  \"%s\"
 %lu / %lu%s%s
@@ -315,6 +47,7 @@ Games you play show up here, newest first.
 NOT IN LIBRARY
 PAID MEMBERSHIP ONLY
 Browse
+Open
 Search
 Close
 Library
@@ -364,13 +97,12 @@ Never your login · change it in Settings > System
 Share
 No thanks
 Confirm
+Send
 Resume
 End it
 Try now
 Stop
 NVIDIA
-%lu h %02lu m
-%lu min
 Taking it off the HOME Menu...
 Getting the game's art...
 Drawing the icon and banner...
@@ -407,19 +139,16 @@ Your usual settings
 Play
 Favourite
 Options
-Steady 1
-Steady 1.2
-Steady 1.5
-Not tested
-%u ms  ·  %u.%u Mbps  ·  %u/3
-Default (%s)
-Measures Wi-Fi, latency and speed to NVIDIA, and pings every server.
-Weak link: set Connection type to Weak / hotspot.
-High latency: expect some input lag; Weak / hotspot may help.
-Strong connection: Bitrate Sharp should run cleanly for the most detail.
-Good connection: Standard with Adaptive should run smoothly.
 GAME OPTIONS
 DONE
+Bitrate
+Camera stick speed
+Invert camera
+Touch camera
+Gyro aim
+Gyro speed
+Button layout
+Button mapping
 Connection
 Picture detail for this game. Default follows Settings.
 How fast the C-Stick turns the camera in this game.
@@ -442,6 +171,7 @@ PRESS ANY 3DS BUTTON TO PICK IT
 SENDS
 AND AT THE SAME TIME
 Nothing more
+Normal
 Turbo: 10 presses a second
 Toggle: press once to hold
 Circle Pad: button and value  ·  C-Stick: row
@@ -450,6 +180,7 @@ CANCEL
 SAVE
 PLAY
 Your PC
+Xbox Cloud Gaming
 LAUNCH FROM  (LEFT / RIGHT)
 LAUNCH FROM
 PLAYS ON
@@ -461,19 +192,12 @@ ON THE HOME MENU  ·  REMOVE
 INSTALLING THE SHORTCUT...
 DRAWING THE SHORTCUT...
 No release notes.
-Checking GitHub for updates
-Downloading
-Checking the download
-Installing - keep the console on
-Update installed
-Update didn't finish
-A new version is ready
-Kasumi is up to date
 SOFTWARE UPDATE
 INSTALLED
 NEW BETA
 WHAT'S NEW  ·  %s
 Checking GitHub for a newer Kasumi...
+Kasumi is up to date
 Could not check for updates
 Version %s  ·  checked just now
 Version %s  ·  checked %ld min ago
@@ -501,20 +225,6 @@ New versions first, help from other players, and a say in what Kasumi gets next.
 discord.gg/K9Jy3t7YHE
 Also in Settings > System > Kasumi Discord
 SCAN WITH YOUR PHONE
-WELCOME TO KASUMI
-Play on the New 3DS from GeForce NOW, Xbox Cloud Gaming, or your own PC with Steam Link. The game runs elsewhere; the 3DS shows the picture and sends your buttons.
-Next you pick a service on the hub. B always brings you back to it.
-SIGN IN
-Cloud services show a short code to enter on your phone or computer; no password is typed on the 3DS. Steam Link shows a code to type into Steam on your PC.
-Logins and paired PCs stay only on this console's SD card.
-The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 and Home / PS are on the lower screen.
-Hold START + SELECT during play for the stream menu.
-PICTURE & WI-FI
-Stay close to your router (3 bars). For cloud games, Adaptive is the default; Steady 1 Mbps helps if the picture stutters. ZOOM crops for small text.
-Settings > Network > Connection check tests your Wi-Fi.
-EXTRAS
-Gyro aiming, screenshots, zoom zones, themes, favourites and options for each game. Open a game from the library to see them.
-Settings > System > Getting started shows this guide again.
 Next
 Skip
 GETTING STARTED
@@ -525,7 +235,9 @@ Paired with %.60s
 Kasumi game hub
 Welcome! Where are your games?
 Most Xbox games stream at a size the 3DS can't show yet. Back when they do.
+GeForce NOW
 Xbox Cloud
+Steam Link
 EXIT
 Your 3DS clock says %s. Set the date and time in System Settings first, or the sign-in fails.
 Turn the PC on and start Steam. Kasumi finds
@@ -563,6 +275,7 @@ HOLD ZL TO AIM
 SMOOTH
 SHARP
 3DS
+XBOX
 PLAYSTATION
 L  %s     ZL  %s     R  %s     ZR  %s
 SIGN OUT
@@ -595,6 +308,7 @@ SAVE ZONE
 CLEAR ZONES
 RESUME
 SCREENSHOT
+CONTROLS
 SOUND: OFF
 SOUND: ON
 DISCONNECT
@@ -649,10 +363,388 @@ SEND
 SHARE
 END GAME
 NO THANKS
-ac:u init 0x%08lX
-soc:u init 0x%08lX
-Saving screenshot...
-Screenshot failed
+Xbox Cloud Gaming is paused for now. Back when it streams again.
+ENTER
+SET UP
+SIGN IN
+Your Vita's clock says %s. Set the date and time in Settings first, or the sign-in fails.
+Turn the PC on and start Steam. Kasumi finds it on your Wi-Fi and shows a code to type into Steam there.
+Sign-in happens on your phone or computer: no password is typed on the Vita.
+The pairing stays on this Vita; the stream never leaves your Wi-Fi. Kasumi is unofficial, not made by Valve.
+Your login stays on this Vita only. Kasumi is unofficial, not made by Microsoft.
+Your login stays on this Vita only. Kasumi is unofficial, not made by NVIDIA.
+FAVOURITES
+Open a game and tap FAVOURITE to add it here.
+SHOW ALL
+Tab
+Refresh
+YOUR PCS
+IN USE - TAP TO RELOAD ITS GAMES
+Its own options (tap OPTIONS to change)
+How fast the right stick turns the camera in this game.
+Reverse the right stick in this game. Gyro is not inverted.
+Turn the camera by touching the screen, in this game.
+Aim by turning the Vita, in this game only.
+How fast turning the Vita moves the camera here.
+Circle sends the pad's right button (position), or the bottom one (letters).
+Move any Vita button to any controller button. Tap to edit.
+PRESS A BUTTON TO PICK IT
+Turbo: 10 a second
+Toggle: press once
+Buttons, sticks, rear touch, camera, gyro
+Frame rate, bitrate, filter, stats
+Volume, music, voice, sounds, theme
+Connection check, type, server
+Language, guide, screenshots, reports
+Updates, provider, sign out
+PLAY AGAIN
+Wi-Fi %u/3: move closer to the router
+Wi-Fi %u/3
+The Vita plays like a PlayStation pad. L2 / R2 and L3 / R3 are on the rear touchpad's corners (or the screen's edges: Settings > Controls). PS is in the stream menu.
+Hold START + SELECT, or tap the handle at the top of the screen, for the stream menu.
+Scroll
+Version %s
+IN THE GAME
+TOUCH CAM
+Hold the PS / Xbox button above for the game's own menu. B or a tap outside resumes.
+LEFT STICK
+RIGHT STICK
+screen edges, upper buttons
+off (Settings > Controls)
+rear touchpad, top corners
+LS / RS click
+screen edges, lower buttons
+rear touchpad, bottom corners
+Hold for the stream menu (or tap the top handle)
+Drag moves the mouse, tap clicks
+Touch camera: drag to look
+Drag moves the zoomed view
+Nothing (turn on Touch camera or MOUSE)
+Hold START + SELECT, or tap the handle, for the menu
+GEFORCE NOW
+XBOX CLOUD
+STEAM LINK
+Your PC games from Steam, Epic and more, running on NVIDIA's servers.
+An NVIDIA account (free or paid).
+Game Pass games, and free ones like Fortnite, from Microsoft's servers. Beta.
+A Microsoft account; most games need Game Pass Ultimate.
+SIGN IN WITH MICROSOFT
+Your own PC: play whatever Steam on it can run, over your Wi-Fi.
+A PC with Steam on, on the same Wi-Fi as the 3DS.
+PICTURE
+SOUND & LOOK
+NETWORK
+SYSTEM
+ACCOUNT & UPDATES
+Buttons, sticks, camera, gyro, mouse
+Screen mode, bitrate, sharpness, colour
+Lid, guide, screenshots, reports
+Triggers
+Button names
+Microphone
+Stick deadzone
+Mouse mode at start
+Stream stats
+Fast input
+Screen mode
+Server sharpening
+Sharpness
+Colour
+Touch C-stick size
+3D slider
+Frame rate
+Account
+Theme
+Stream volume
+Audio in menus
+Closing the lid
+Connection check
+Getting started
+Connection type
+Server
+Send diagnostic report
+Share problem reports
+Share performance stats
+Kasumi Discord
+Screenshots
+HOME Menu theme
+Menu music
+Voice
+Sound effects
+Software update
+Check automatically
+Update channel
+GeForce NOW provider
+Cloud service
+Language
+STEAM
+Steam
+EPIC
+Epic Games
+EPIC_GAMES_STORE
+EA_APP
+EA app
+ORIGIN
+UBISOFT
+Ubisoft
+UPLAY
+UBISOFT_CONNECT
+BATTLENET
+Battle.net
+BATTLE_NET
+Xbox
+MICROSOFT
+MICROSOFT_STORE
+NV_BUNDLE
+UNKNOWN
+Own launcher
+NONE
+ROCKSTAR
+Rockstar
+WARGAMING
+Wargaming
+Always
+While aiming
+Off
+Position
+Letters
+PlayStation
+On
+Custom
+Default
+ZL / ZR
+Small
+Large
+Medium
+Genshin
+Never
+On (beta)
+Wide 800
+Classic 400
+Adaptive
+Steady 1 Mbps
+Steady 1.2 Mbps
+Steady 1.5 Mbps
+Sharp
+Low
+High
+Natural
+Vivid
+Extra vivid
+Slow
+Fast
+Fastest
+Up-down
+Both
+Stick
+Trackpad
+Zoom
+60 fps (beta)
+30 fps
+Muted
+Keep playing
+Sleep
+Pause
+Run test
+%u ms · %u.%u Mbps
+Weak / hotspot
+Standard
+NVIDIA picks
+Auto · %s
+Auto (lowest ping)
+Download
+Scan
+None yet
+%u saved
+Quiet
+Touch screen
+Rear touchpad
+Unavailable
+Up to date
+Restart to finish
+Dev (your PC)
+Beta
+Stable
+Sign out
+Signed out
+Xbox Cloud (beta)
+NVIDIA (default)
+Buttons match their place on the pad: Cross is A, Circle is B, like an Xbox controller.
+By letter: Circle sends A and Cross sends B, the Nintendo way round.
+Buttons match their place: Cross is Cross, Circle is Circle. Plays like a PlayStation controller.
+Cross and Circle swapped, the Nintendo way round: Circle confirms in most games.
+Voice chat in games: MIC at the top of the picture (or in the stream menu) talks, tap again to mute (starts muted). Use headphones, or your team hears the game. Next game.
+Talk in games with voice chat, using the Vita's microphone. Off: nothing is ever recorded.
+Choose what each Vita button sends, for every game: two buttons at once, turbo, toggle, or a stick push.
+L and R act as the LT / RT triggers; the touch L2 / R2 become LB / RB.
+L and R are the LB / RB bumpers; L2 / R2 (rear touchpad or screen edges) are LT / RT.
+L and R act as the L2 / R2 triggers; the touch L2 / R2 become L1 / R1.
+L and R are the L1 / R1 bumpers; L2 / R2 come from the rear touchpad or the screen's edges.
+Show frame rate, bitrate, ping and resent packets at the bottom of the picture while playing.
+About 3-5 Mbps: a clean, detailed picture on home Wi-Fi. The default. Next launch.
+About 5-8 Mbps: the sharpest picture. Needs strong Wi-Fi, near the router. Next launch.
+About 1 Mbps: smoothest on weak Wi-Fi or a phone hotspot, but soft on the Vita's screen. Next launch.
+A fixed rate. If the stats show RESENT climbing, pick a lower one. Next launch.
+60 frames a second: smoother motion and quicker controls. The Vita keeps up. Next launch.
+30 frames a second: a little more detail in each frame on weak Wi-Fi. Next launch.
+A short drag turns at full speed: quick, for fast games.
+A long drag for full speed: finer control when aiming slowly.
+How far you drag the touch camera for full speed. Medium suits most games.
+Touching the picture does nothing (except the mouse, when it is on).
+Turn on TOUCH CAM in the stream menu, then touch and push like a stick: hold it out to keep turning. Double-tap for R3.
+Turn on TOUCH CAM in the stream menu, then drag to turn the camera; it stops when your finger does. Double-tap for R3.
+Tilt and turn the Vita to aim, like a Switch or Steam Deck. Adds to the right stick; moves the mouse in mouse mode.
+Turning the Vita always moves the camera. Great for shooters; hold it still when you don't aim.
+Gyro only works while the aim trigger (L2, or L when triggers are swapped) is held.
+How fast turning the Vita moves the camera. Start at Medium and lower it if aiming overshoots.
+The right stick turns the camera at most 70 % as fast. For precise aiming.
+The right stick as it is: a full push turns the camera at full speed.
+A lighter push on the right stick turns the camera at full speed.
+Full camera speed with a light push. For games that turn slowly.
+The right stick moves the camera the usual way.
+Pushing the right stick up looks down, like a flight stick. Gyro aim is not inverted.
+Both directions of the right stick are reversed. Gyro aim is not inverted.
+The colour and the wallpaper behind the menus. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
+Game audio volume in Kasumi, on top of the Vita's own volume buttons.
+Look through the screenshots you took in games (stream menu > Screenshot). Tap to open; the arrows browse, DELETE removes one.
+Your button mapping (below) decides every button, so this layout is not used.
+Buttons match their place on the pad: bottom is A, right is B, like an Xbox controller. 3DS A sends B.
+The printed letters match: 3DS A sends A, 3DS B sends B. A and B sit swapped compared with an Xbox pad.
+Buttons match their place on the pad: bottom is Cross, right is Circle. Plays like a PlayStation controller.
+The printed letters match: 3DS A sends A. Cross and Circle end up swapped compared with a PlayStation pad.
+Voice chat in games: tap MIC on the lower screen to talk, again to mute (starts muted). Use headphones, or your team hears the game through the mic. Next game.
+Talk in games with voice chat, using the 3DS microphone. Off: nothing is ever recorded.
+Kasumi shows Xbox buttons: A, B, LB, RT, Menu. Most PC games on GeForce NOW show these too.
+Kasumi shows PlayStation buttons: Cross, Circle, L1, R2, Options.
+Your own map for every game: press A to change it. A game's own mapping (game page > X > Options) goes first.
+Choose what each 3DS button sends, for every game: two buttons at once, turbo, toggle, or a stick push.
+The big L and R buttons act as the LT / RT triggers; ZL and ZR become LB / RB.
+ZL and ZR are the LT / RT triggers; L and R are the LB / RB bumpers.
+The big L and R buttons act as the L2 / R2 triggers; ZL and ZR become L1 / R1.
+ZL and ZR are the L2 / R2 triggers; L and R are the L1 / R1 bumpers.
+How far a stick moves before the game notices. Raise it if a character drifts on its own.
+Start Genshin Impact in mouse and keyboard mode so you can click through its PC login screen. Tap MOUSE in game to go back to controller mode.
+Show frame rate, bitrate, ping and resent packets on the lower screen while playing.
+Beta. Sends controller input on a channel that never waits for lost packets. If buttons stop responding in game, turn it off.
+Uses the top screen's 800-pixel mode: twice the detail across, sharper text.
+The normal 400-column top screen. Use only if Wide misbehaves.
+About 1.3 Mbps: a clean, detailed picture on good home Wi-Fi. The default. Next launch.
+About 1.8-2 Mbps: the sharpest picture. Needs strong Wi-Fi (3 bars, near the router). Next launch.
+About 1 Mbps: smoothest on weak Wi-Fi or a phone hotspot, a little softer. Next launch.
+A fixed rate. If the stats show RESENT/S climbing, pick a lower one. Next launch.
+Needs Screen mode: Wide 800. 60 frames a second for smoother motion.
+Smoother motion and quicker controls. Most games keep up; a very heavy one can hitch now and then (Kasumi says so), and 30 suits it better. Next launch.
+30 frames a second: the most detail in every frame. Next launch.
+In games, four buttons on the screen's edges: L2 above L3 on the left, R2 above R3 on the right. The rear touchpad does nothing.
+No L2 / R2 / L3 / R3 from touch. A PS TV controller still has them.
+In games, the rear touchpad's corners: top left L2, top right R2, bottom left L3, bottom right R3. Its middle, where fingers rest, does nothing.
+A short push turns at full speed: quick, for small thumbs or fast games.
+A long push for full speed: finer control when aiming slowly.
+How far you push the touch C-stick for full speed. Medium suits most games.
+The 3D slider does nothing in games. Slide it to choose zoom or a button.
+In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.
+In a game, the 3D slider past halfway holds %s until you slide it back down.
+No C-STICK button in games: the lower screen keeps its stats and buttons.
+In a game, tap C-STICK by PS. Touch and push, like the C-Stick: hold it out to keep turning. Double-tap for R3.
+In a game, tap C-STICK by PS, then drag to turn the camera; it stops when your finger does. Double-tap for R3.
+Needs Screen mode: Wide 800. Sharpens edges and text on the console, at no cost to the stream.
+The picture exactly as it arrives.
+Strong sharpening on the console: crispest text, but blocky spots in fast scenes stand out more.
+Sharpens edges and small text on the console, at no cost to the stream or the frame rate.
+Needs Screen mode: Wide 800. Richer colour and contrast for the 3DS screen.
+Colours exactly as the game sends them.
+A little more colour and contrast, so games look less washed out on the 3DS screen.
+Strong colour and contrast. Fun for colourful games; skin and skies can look overdone.
+NVIDIA sharpens before compressing, which spends scarce bitrate on edges: more blocking and pulsing. Sharpness above does it on the console for free. Next launch.
+Recommended. The bitrate goes to the picture itself; use Sharpness above to sharpen on the console instead. Next launch.
+Tilt and turn the console to aim, like a Switch or Steam Deck. Adds to the C-Stick; moves the mouse in mouse mode.
+Turning the console always moves the camera. Great for shooters; hold the console still when you don't aim.
+Gyro only works while the aim trigger (ZL, or L when triggers are swapped) is held.
+How fast turning the console moves the camera. Start at Medium and lower it if aiming overshoots.
+The C-Stick turns the camera at most 70 % as fast. For precise aiming.
+The C-Stick as it is: a full push turns the camera at full speed.
+A lighter push on the C-Stick turns the camera at full speed.
+The C-Stick moves the camera the usual way.
+Pushing the C-Stick up looks down, like a flight stick. Gyro aim is not inverted.
+Both directions of the C-Stick are reversed. Gyro aim is not inverted.
+The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
+The language of Kasumi's menus. Game titles and store names stay as they are.
+A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to /Themes; install it with Anemone3DS.
+No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the Homebrew Launcher, then restart Kasumi.
+Game audio volume on this console, on top of the 3DS volume slider.
+Game audio goes quiet while the stream menu or controls sheet is open.
+Game audio keeps playing while the stream menu is open.
+For far-away Wi-Fi or a phone hotspot: a steadier 0.6-1 Mbps picture, a longer wait for lost packets and a bigger buffer. Softer image, a little more delay. Next launch.
+For home Wi-Fi near the router: the sharpest picture and lowest delay. Next launch.
+Kasumi pings every GeForce NOW server and uses the fastest, measured again on each new Wi-Fi network (like a phone hotspot).
+NVIDIA chooses from your internet address. On mobile data that can be a far-away server.
+Always use this server. Your ping and queue depend on it; run Connection check to see ping to each one.
+Walk through the basics again: signing in, controls, picture and extras.
+When something goes wrong (a crash, freeze or failed stream), Kasumi sends its log to the developer on its own, at most once per run. No login or passwords.
+Kasumi never sends anything on its own. Turn on to send the log automatically when something goes wrong, which helps fix bugs faster.
+After each launch and session, Kasumi sends a few numbers: did the game start, queue time, ping, smoothness, lost frames. No log text, no addresses, no account.
+Turn on to send a few numbers after each launch and session (did the game start, ping, smoothness). It shows what to improve for real players.
+Tsumugi welcomes you back when Kasumi opens and sees you off when a game starts.
+No voice lines. Turn on for Tsumugi's welcome and send-off.
+Soft koto, wood and water sounds in the menus. In a game, only the stream menu and screenshots make a sound.
+Silent menus. The \"your game is ready\" chime still plays when a queue ends.
+Look through the screenshots you took in games (stream menu > Screenshot). Press A to open; L and R browse, X deletes.
+Chat with other players, get help and hear about new versions first. Scan with your phone, or visit discord.gg/K9Jy3t7YHE
+Having a problem? Send this run's and the last run's log to Kasumi's developer and get a code to share. Only when you choose; nothing is sent otherwise.
+See what's new and install the latest Kasumi from GitHub. Your login, library and settings stay.
+Kasumi looks for a new version every few hours, only in the menus, never while you play.
+Kasumi only looks for updates when you open Software update.
+Beta: get test versions first. They may have rough edges.
+Stable: only finished releases.
+Closing the lid turns the screens off; the game and its sound keep running.
+Closing the lid sleeps the console to save battery. On opening it, Kasumi reconnects to the same rig.
+Closing the lid turns the screens and sound off but stays connected: open it and you are straight back in.
+Forget the paired PC. Pair again to stream from it; your cloud logins stay.
+Remove the saved Microsoft (Xbox) login from this console's SD card. The NVIDIA one stays.
+Remove the saved NVIDIA login from this console's SD card. An Xbox one stays.
+GeForce NOW, Xbox Cloud Gaming (Game Pass, and free games like Fortnite), or Steam Link: play from your own PC running Steam, on the same Wi-Fi. Each keeps its own login. Xbox and Steam Link are experimental.
+Signed in with %s. To use %s, sign out below and sign in again.
+Most accounts are NVIDIA's. Here GeForce NOW is also sold by %.30s: if your subscription is from %.30s, pick it and sign in again. Beta.
+Most accounts are NVIDIA's. In some countries (Japan, Korea, Taiwan, the Middle East...) GeForce NOW is sold by a local partner: if yours is, pick it, then sign in. Beta.
+synced just now
+synced %ld min ago
+synced %ld h ago
+synced %ld days ago
+From %s  ·  800x480 wide  ·  %u fps
+Xbox Cloud  ·  800x480 wide  ·  60 fps
+%lu h %02lu m
+%lu min
+Steady 1
+Steady 1.2
+Steady 1.5
+Not tested
+%u ms  ·  %u.%u Mbps  ·  %u/3
+Default (%s)
+Measures Wi-Fi, latency and speed to NVIDIA, and pings every server.
+Weak link: set Connection type to Weak / hotspot.
+High latency: expect some input lag; Weak / hotspot may help.
+Strong connection: Bitrate Sharp should run cleanly for the most detail.
+Good connection: Standard with Adaptive should run smoothly.
+Checking GitHub for updates
+Downloading
+Checking the download
+Installing - keep the console on
+Update installed
+Update didn't finish
+A new version is ready
+WELCOME TO KASUMI
+Play on the New 3DS from GeForce NOW, Xbox Cloud Gaming, or your own PC with Steam Link. The game runs elsewhere; the 3DS shows the picture and sends your buttons.
+Next you pick a service on the hub. B always brings you back to it.
+Cloud services show a short code to enter on your phone or computer; no password is typed on the 3DS. Steam Link shows a code to type into Steam on your PC.
+Logins and paired PCs stay only on this console's SD card.
+The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 and Home / PS are on the lower screen.
+Hold START + SELECT during play for the stream menu.
+PICTURE & WI-FI
+Stay close to your router (3 bars). For cloud games, Adaptive is the default; Steady 1 Mbps helps if the picture stutters. ZOOM crops for small text.
+Settings > Network > Connection check tests your Wi-Fi.
+EXTRAS
+Gyro aiming, screenshots, zoom zones, themes, favourites and options for each game. Open a game from the library to see them.
+Settings > System > Getting started shows this guide again.
 Still working on the last request
 Requesting a sign-in code from NVIDIA...
 Requesting a sign-in code from Microsoft...
@@ -728,7 +820,6 @@ Button mapping saved for this game
 This game uses the normal mapping
 Still making the last shortcut
 Shortcuts aren't available for Steam Link yet
-Shortcuts need Kasumi installed as a CIA (with FBI), not the .3dsx
 REMOVE THE SHORTCUT?
 Takes this game's shortcut off the HOME Menu. You can add it again any time.
 Couldn't start making the shortcut.
@@ -779,6 +870,7 @@ request %ux%u -> launch failed: %s
 request %ux%u -> no video after 10 min (%s)
 Mouse & keyboard mode for the login. Tap MOUSE for controller mode
 WebRTC: 
+stream was running; no error
 dark=%d kbps=%u pli=%u errors=%u state=%d status=%d game=\"%.40s\" msg=\"%.100s\"
 No sound: this 3DS's sound firmware is missing. Run DSP1 once, then restart Kasumi
 No sound on this 3DS: run DSP1 once (see Settings > Sound & Look)
@@ -826,6 +918,7 @@ Starting %.90s...
 Could not start the network worker thread.
 Checking for a game that's still running...
 net=%u track=%u render=%u other=%u
+Ag
 q61ddeJrVt7O90Nl-P-N7I36yctih4Ml6FyXLrb6j-U
 %s: HTTP %ld
 Authorization: Bearer %s
@@ -911,9 +1004,7 @@ GFN queued; position not supplied%s
 , ad required
 nv-client-id: %s
 nv-browser-type: CHROME
-nv-client-streamer: NVIDIA-CLASSIC
-nv-client-type: NATIVE
-nv-client-version: 2.0.87.131
+nv-client-version: 2.0.89.154
 nv-device-make: UNKNOWN
 nv-device-model: UNKNOWN
 Connection: close
@@ -938,6 +1029,7 @@ Reconnect: no connection to NVIDIA yet
 NVIDIA ended this session. Press A to start the game again.
 Recover
 NVIDIA would not resume this session. Press A to start the game again.
+FAILED_TO_REQUEST_ADS
 Ad
 Session poll network: %.124s
 Poll
@@ -1096,19 +1188,9 @@ The dev server has no %s build
 Could not reach GitHub (%s)
 GitHub is rate limiting checks; try again later
 GitHub answered HTTP %ld
-Kasumi.3dsx
-Kasumi.cia
 Release %s has no %s with checksums
 Battery too low: charge the console first
 Not enough SD card space (%llu MB free)
-Could not open the system installer (am)
-Installer refused to start (0x%08lX)
-Install write failed (0x%08lX); the old version is untouched
-Install could not finish (0x%08lX)
-Could not tell where Kasumi.3dsx is; update it by hand
-Could not write %s
-SD card write failed
-Could not replace Kasumi.3dsx
 Check for updates first
 Could not download the release checksums
 The release checksums do not list %s
@@ -1169,7 +1251,6 @@ NVIDIA ended this session (HTTP %d). Press A to start the game again.
 PHONE
 SHIFT
 SPACE
-ENTER
 TYPE ON YOUR PHONE
 The phone keyboard could not start. Check that the 3DS is on Wi-Fi, then try again.
 Put your phone on the same Wi-Fi as the 3DS.
@@ -1181,6 +1262,7 @@ NOT SENT
 CONNECTED
 CONNECTING
 Space
+Shortcuts need Kasumi installed as a CIA (with FBI), not the .3dsx
 No free shortcut slots left
 Kasumi shortcut
 Couldn't draw the shortcut's picture (unknown pixel order)
@@ -1197,6 +1279,7 @@ Shortcut removed from the HOME Menu
 Couldn't make the shortcut: %.70s
 Shortcut added: find %.60s on the HOME Menu
 KSHORTC1
+Shortcuts aren't available on the Vita yet
 shortcut template missing
 shortcut template cut short
 NCCH
@@ -1322,3 +1405,24 @@ Iraq
 Israel
 India
 your country
+Saving screenshot...
+Screenshot failed
+ac:u init 0x%08lX
+soc:u init 0x%08lX
+Network module load 0x%08X
+Network init 0x%08X
+Network control init 0x%08X
+Kasumi.3dsx
+Kasumi.cia
+Could not open the system installer (am)
+Installer refused to start (0x%08lX)
+Install write failed (0x%08lX); the old version is untouched
+Install could not finish (0x%08lX)
+Could not tell where Kasumi.3dsx is; update it by hand
+Could not write %s
+SD card write failed
+Could not replace Kasumi.3dsx
+Kasumi.vpk
+Memory card write failed
+Could not save %s
+Saved %s: install it with VitaShell

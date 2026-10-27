@@ -54,7 +54,15 @@ bool stream_profile_fps60_requested(void) { return g_fps60; }
  * time; beta.34's export says they don't (about 13 ms a frame at 0.8 and at
  * 1.8 Mbps alike, 14 at 60 fps). Only Sharp's 2-2.5 Mbps is trimmed, where
  * DOOM Eternal lagged (report EM7YGV). */
-static bool sixty_sharp(void) { return g_fps60 && g_bitrate == STREAM_BITRATE_SHARP_TEST; }
+static bool sixty_sharp(void)
+{
+#if defined(__vita__)
+    /* The trim was for the 3DS's decoder; the Vita's keeps up. */
+    return false;
+#else
+    return g_fps60 && g_bitrate == STREAM_BITRATE_SHARP_TEST;
+#endif
+}
 void stream_profile_set_weak(bool weak) { g_weak = weak; }
 bool stream_profile_weak(void) { return g_weak; }
 bool stream_profile_sharpen(void) { return g_sharpen; }
@@ -84,12 +92,31 @@ static unsigned steady_rate(void)
  * ~1.4 Mbps and the 3DS radio losing ~1.5 packets/s there; build 64 at a
  * steady ~1.3 Mbps hit a loss burst. Adaptive starts at 1.2 and may move
  * within 1-1.8 Mbps. Steady modes hold a floor, like the official mode 0. */
+/* The Vita's Wi-Fi carries far more than the 3DS's (Moonlight runs it at
+ * 5-10 Mbps), so Adaptive and Sharp start from higher floors there. The
+ * steady modes keep the rates their names promise. */
+#if defined(__vita__)
+#define ADAPTIVE_INITIAL 3500
+#define ADAPTIVE_MIN 3000
+#define ADAPTIVE_MAX 5000
+#define SHARP_INITIAL 6000
+#define SHARP_MIN 5000
+#define SHARP_MAX 8000
+#else
+#define ADAPTIVE_INITIAL 1400
+#define ADAPTIVE_MIN 1300
+#define ADAPTIVE_MAX 1800
+#define SHARP_INITIAL 2000
+#define SHARP_MIN 1800
+#define SHARP_MAX 2500
+#endif
+
 unsigned stream_profile_initial_bitrate(void)
 {
     if (g_weak) return 800;
     if (sixty_sharp()) return 1600;
-    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return 2000;
-    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? 1400 : steady_rate();
+    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return SHARP_INITIAL;
+    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? ADAPTIVE_INITIAL : steady_rate();
 }
 
 unsigned stream_profile_min_bitrate(void)
@@ -98,8 +125,8 @@ unsigned stream_profile_min_bitrate(void)
     if (sixty_sharp()) return 1500;
     /* NVIDIA parks at the floor without bandwidth feedback (beta.25 tests:
      * a flat ~0.92 Mbps under Adaptive), so the test mode sets a high one. */
-    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return 1800;
-    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? 1300 : steady_rate();
+    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return SHARP_MIN;
+    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? ADAPTIVE_MIN : steady_rate();
 }
 
 unsigned stream_profile_max_bitrate(void)
@@ -108,8 +135,8 @@ unsigned stream_profile_max_bitrate(void)
      * average are what the 3DS radio loses first. */
     if (g_weak) return 1000;
     if (sixty_sharp()) return 1800;
-    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return 2500;
-    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? 1800 : steady_rate() + 250;
+    if (g_bitrate == STREAM_BITRATE_SHARP_TEST) return SHARP_MAX;
+    return g_bitrate == STREAM_BITRATE_ADAPTIVE ? ADAPTIVE_MAX : steady_rate() + 250;
 }
 
 /* How NVIDIA spreads a frame's packets. Sharp spreads a frame over ~9 ms

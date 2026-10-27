@@ -1,6 +1,6 @@
 #include "echo_cancel.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <string.h>
 
 #include "diagnostic.h"
@@ -29,7 +29,7 @@ int32_t WebRtcAecm_Process(void *inst, const int16_t *noisy, const int16_t *clea
 
 /* The far end is fed from the media thread and the mic is processed on the
  * mic thread. */
-static LightLock g_lock = 1;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static void *g_aecm;
 static bool g_bypassed;
 static int16_t g_far[ECHO_CANCEL_BLOCK];
@@ -38,14 +38,14 @@ static unsigned g_failures;
 
 bool echo_cancel_start(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (!g_aecm) {
         g_aecm = WebRtcAecm_Create();
         const AecmConfig config = { 1, ECHO_MODE };
         if (!g_aecm || WebRtcAecm_Init(g_aecm, RATE) != 0 || WebRtcAecm_set_config(g_aecm, config) != 0) {
             if (g_aecm) WebRtcAecm_Free(g_aecm);
             g_aecm = NULL;
-            LightLock_Unlock(&g_lock);
+            plat_unlock(&g_lock);
             diagnostic_log("MIC", "echo canceller failed to start");
             return false;
         }
@@ -53,17 +53,17 @@ bool echo_cancel_start(void)
         g_failures = 0;
         g_bypassed = false;
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     diagnostic_log("MIC", "echo canceller on (AECM mode %d)", ECHO_MODE);
     return true;
 }
 
 void echo_cancel_stop(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (g_aecm) WebRtcAecm_Free(g_aecm);
     g_aecm = NULL;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* Headphones: no speaker echo to remove, and the canceller would only
@@ -71,7 +71,7 @@ void echo_cancel_stop(void)
  * back, so it starts over then (as TriCord does). */
 static bool bypass_for_headphones(void)
 {
-    const bool headphones = osIsHeadsetConnected();
+    const bool headphones = plat_headset_connected();
     if (headphones != g_bypassed) {
         g_bypassed = headphones;
         if (!headphones) WebRtcAecm_Init(g_aecm, RATE);
@@ -82,9 +82,9 @@ static bool bypass_for_headphones(void)
 
 void echo_cancel_far_end(const int16_t *pcm, size_t frames)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (!g_aecm || bypass_for_headphones()) {
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         return;
     }
     /* 48 kHz stereo -> 16 kHz mono: average each three stereo frames.
@@ -100,12 +100,12 @@ void echo_cancel_far_end(const int16_t *pcm, size_t frames)
             g_far_fill = 0;
         }
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void echo_cancel_process(int16_t *mic)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (g_aecm && !bypass_for_headphones()) {
         int16_t out[ECHO_CANCEL_BLOCK];
         if (WebRtcAecm_Process(g_aecm, mic, NULL, out, ECHO_CANCEL_BLOCK, DELAY_HINT_MS) == 0)
@@ -113,5 +113,5 @@ void echo_cancel_process(int16_t *mic)
         else if (++g_failures <= 5)
             diagnostic_log("MIC", "echo canceller: process failed");
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }

@@ -1,6 +1,6 @@
 #include "queue_eta.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,7 +23,7 @@ typedef struct {
 
 static Model g_models[MAX_PROVIDERS];
 static int g_count;
-static LightLock g_lock = 1;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 
 /* Under the lock. */
 static Model *find(const char *code, bool create)
@@ -75,7 +75,7 @@ void queue_eta_load(void)
 {
     json_error_t error;
     json_t *root = json_load_file(QUEUE_ETA_PATH, 0, &error);
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_count = 0;
     if (json_is_object(root)) {
         read_providers(json_object_get(root, "providers"));
@@ -86,7 +86,7 @@ void queue_eta_load(void)
             if (m) m->local_seconds = (float)json_number_value(value);
         }
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     json_decref(root);
 }
 
@@ -102,14 +102,14 @@ void queue_eta_fetch(void)
     http_response_free(&response);
     json_t *providers = json_is_object(root) ? json_object_get(root, "providers") : NULL;
     if (json_is_object(providers)) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         read_providers(providers);
         save();
         const Model *nv = find("NVIDIA", false);
         if (nv && nv->samples)
             diagnostic_log("QUEUE", "shared estimate: NVIDIA %.0f s + %.3f s/place (%d queues)", (double)nv->base,
                            (double)nv->per_place, nv->samples);
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
     }
     json_decref(root);
 }
@@ -117,7 +117,7 @@ void queue_eta_fetch(void)
 bool queue_eta_expected(const char *provider, int place, float *seconds)
 {
     bool ok = false;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const Model *m = find(provider && provider[0] ? provider : "NVIDIA", false);
     if (m && m->samples >= 5) {
         *seconds = m->base + m->per_place * (float)(place > 0 ? place : 1);
@@ -126,7 +126,7 @@ bool queue_eta_expected(const char *provider, int place, float *seconds)
         *seconds = m->local_seconds;
         ok = true;
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return ok;
 }
 
@@ -134,11 +134,11 @@ void queue_eta_learn(const char *provider, int place, float seconds)
 {
     (void)place;
     if (seconds < 5.0f || seconds > 4.0f * 3600.0f) return;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     Model *m = find(provider && provider[0] ? provider : "NVIDIA", true);
     if (m) {
         m->local_seconds = m->local_seconds > 0 ? m->local_seconds * 0.6f + seconds * 0.4f : seconds;
         save();
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }

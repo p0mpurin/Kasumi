@@ -1,4 +1,5 @@
 #include "mvd_video.h"
+#include "platform.h"
 #include "diagnostic.h"
 #include "stream_profile.h"
 
@@ -84,10 +85,10 @@ static unsigned g_output_stride;
  * overflow froze the picture until a keyframe ("decoder-backlog"). The ring
  * holds 48 AUs (1.6 s) in about the same memory. */
 enum { AU_ENTRIES = 48, AU_RING_SIZE = 2 * 1024 * 1024, AU_MAX = AU_RING_SIZE / 4, WIDE_OUTPUTS = 6 };
-static Thread g_decoder;
+static PlatThread g_decoder;
 static volatile bool g_decoder_quit;
-static LightLock g_queue_lock;
-static LightEvent g_queue_event;
+static PlatLock g_queue_lock;
+static PlatEvent g_queue_event;
 static unsigned char *g_ring;
 static size_t g_entry_offset[AU_ENTRIES], g_entry_size[AU_ENTRIES];
 /* Where the next AU goes (submitting thread only, under g_queue_lock). */
@@ -112,7 +113,7 @@ static unsigned g_soft_errors;
 
 static void await_idr(void)
 {
-    if (!g_await_idr) g_await_since = osGetTime();
+    if (!g_await_idr) g_await_since = plat_time_ms();
     g_await_idr = true;
 }
 /* Wide output buffers flow FREE -> DECODING -> READY (FIFO) -> PRESENTING
@@ -126,9 +127,9 @@ static size_t g_output_bytes[WIDE_OUTPUTS];
 static u64 g_ready_tick[WIDE_OUTPUTS];
 static unsigned g_ready_count;
 static unsigned g_recycled_frames;
-static LightLock g_frame_lock;
+static PlatLock g_frame_lock;
 /* Zoom edits g_config on the UI thread while the decoder renders with it. */
-static LightLock g_config_lock;
+static PlatLock g_config_lock;
 static unsigned g_level_min = 255, g_level_max;
 
 static void decoder_main(void *arg);
@@ -146,7 +147,7 @@ static void crash_checkpoint(void)
 
 static void record_performance(u64 process_ticks, u64 render_ticks, u64 copy_ticks)
 {
-    const unsigned process_us = (unsigned)(process_ticks / (SYSCLOCK_ARM11 / 1000000u));
+    const unsigned process_us = (unsigned)(process_ticks / (PLAT_TICKS_PER_SEC / 1000000u));
     /* A decode that spans sleep or the HOME Menu is not decoder time
      * (beta.18 stats: a 417 s "slowest decode"). */
     if (process_us > 1000000u) return;
@@ -161,7 +162,7 @@ static void record_performance(u64 process_ticks, u64 render_ticks, u64 copy_tic
     if (copy_ticks > g_perf_copy_max) g_perf_copy_max = copy_ticks;
     if (++g_perf_samples < 600) return; /* ~20 s */
 
-    const u64 ticks_per_us = SYSCLOCK_ARM11 / 1000000u;
+    const u64 ticks_per_us = PLAT_TICKS_PER_SEC / 1000000u;
     diagnostic_log("MVD", "perf frames=%u process avg/max=%llu/%llu us render avg/max=%llu/%llu us copy avg/max=%llu/%llu us",
                    g_perf_samples,
                    (unsigned long long)(g_perf_process_sum / g_perf_samples / ticks_per_us),
@@ -392,10 +393,10 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     if (g_wide) {
         for (unsigned i = 1; i < WIDE_OUTPUTS; ++i)
             memset(g_wide_outputs[i], 0, output_size);
-        LightLock_Init(&g_queue_lock);
-        LightLock_Init(&g_frame_lock);
-        LightLock_Init(&g_config_lock);
-        LightEvent_Init(&g_queue_event, RESET_ONESHOT);
+        plat_lock_init(&g_queue_lock);
+        plat_lock_init(&g_frame_lock);
+        plat_lock_init(&g_config_lock);
+        plat_event_init(&g_queue_event, false);
         g_queue_head = g_queue_count = 0;
         g_ring_write = 0;
         for (unsigned i = 0; i < WIDE_OUTPUTS; ++i) g_output_state[i] = OUT_FREE;
@@ -406,11 +407,10 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
         g_soft_resync = false;
         g_soft_errors = 0;
         g_decoder_quit = false;
-        s32 priority = 0x30;
-        svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+        const int priority = plat_thread_priority();
         /* Above the UI thread: it spends almost all its time blocked in the
          * MVD service, and should resume the moment a frame is done. */
-        g_decoder = threadCreate(decoder_main, NULL, 64 * 1024, priority - 1, -2, false);
+        g_decoder = plat_thread_create(decoder_main, NULL, 64 * 1024, priority - 1, -2, false);
         if (!g_decoder) {
             snprintf(g_status, sizeof(g_status), "MVD decoder thread failed");
             diagnostic_log("MVD", "%s", g_status);
@@ -542,7 +542,7 @@ bool mvd_video_pan_to_touch(unsigned touch_x, unsigned touch_y)
 {
     if (!g_active || !g_zoom_level || touch_x >= 320 || touch_y < 128 || touch_y >= 192)
         return false;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < (g_wide ? 16u : 100u)) return false;
     const unsigned center_x = touch_x * g_input_width / 319;
     const unsigned center_y = (touch_y - 128) * g_input_height / 63;
@@ -553,7 +553,7 @@ bool mvd_video_pan_to_touch(unsigned touch_x, unsigned touch_y)
 bool mvd_video_pan_to(unsigned x_permille, unsigned y_permille)
 {
     if (!g_active || !g_zoom_level) return false;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (g_last_zoom_pan_at && now - g_last_zoom_pan_at < (g_wide ? 16u : 100u)) return false;
     if (x_permille > 1000) x_permille = 1000;
     if (y_permille > 1000) y_permille = 1000;
@@ -617,9 +617,9 @@ void mvd_video_set_visible(unsigned width, unsigned height)
 unsigned mvd_video_ready_frames(void)
 {
     if (!g_wide) return 0;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     const unsigned count = g_ready_count;
-    LightLock_Unlock(&g_frame_lock);
+    plat_unlock(&g_frame_lock);
     return count;
 }
 
@@ -628,86 +628,86 @@ unsigned mvd_video_ready_frames(void)
  * decoder can't be closed (a new stream size) under the copy. The UI used
  * to hold the transport lock for this instead, and the media thread waited
  * up to 11 ms for it while the copy waited on the GPU (report KA48GF). */
-static LightLock g_present_lock = 1;
+static PlatLock g_present_lock = PLAT_LOCK_INIT;
 
 const void *mvd_video_take_gpu_frame(void)
 {
-    LightLock_Lock(&g_present_lock);
+    plat_lock(&g_present_lock);
     if (!g_wide) {
-        LightLock_Unlock(&g_present_lock);
+        plat_unlock(&g_present_lock);
         return NULL;
     }
     int index = -1;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     if (g_ready_count) {
         index = g_ready_fifo[0];
         memmove(g_ready_fifo, g_ready_fifo + 1, --g_ready_count * sizeof(int));
         g_output_state[index] = OUT_PRESENTING;
     }
-    LightLock_Unlock(&g_frame_lock);
-    if (index < 0) LightLock_Unlock(&g_present_lock);
+    plat_unlock(&g_frame_lock);
+    if (index < 0) plat_unlock(&g_present_lock);
     return index >= 0 ? g_wide_outputs[index] : NULL;
 }
 
 void mvd_video_release_gpu_frame(void)
 {
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     for (unsigned i = 0; i < WIDE_OUTPUTS; ++i)
         if (g_output_state[i] == OUT_PRESENTING) g_output_state[i] = OUT_FREE;
-    LightLock_Unlock(&g_frame_lock);
-    LightLock_Unlock(&g_present_lock);
+    plat_unlock(&g_frame_lock);
+    plat_unlock(&g_present_lock);
 }
 
 /* Discard the oldest ready frame so latency cannot build up. */
 void mvd_video_skip_oldest_frame(void)
 {
     if (!g_wide) return;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     if (g_ready_count) {
         g_output_state[g_ready_fifo[0]] = OUT_FREE;
         memmove(g_ready_fifo, g_ready_fifo + 1, --g_ready_count * sizeof(int));
     }
-    LightLock_Unlock(&g_frame_lock);
+    plat_unlock(&g_frame_lock);
 }
 
 size_t mvd_video_ready_frame_bytes(unsigned index)
 {
     if (!g_wide) return 0;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     const size_t bytes = index < g_ready_count ? g_output_bytes[g_ready_fifo[index]] : 0;
-    LightLock_Unlock(&g_frame_lock);
+    plat_unlock(&g_frame_lock);
     return bytes;
 }
 
 unsigned mvd_video_ready_frame_age_us(unsigned index)
 {
     if (!g_wide) return 0;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     const u64 at = index < g_ready_count ? g_ready_tick[g_ready_fifo[index]] : 0;
-    LightLock_Unlock(&g_frame_lock);
-    return at ? (unsigned)((svcGetSystemTick() - at) / (SYSCLOCK_ARM11 / 1000000u)) : 0;
+    plat_unlock(&g_frame_lock);
+    return at ? (unsigned)((plat_ticks() - at) / (PLAT_TICKS_PER_SEC / 1000000u)) : 0;
 }
 
 bool mvd_video_hd_halving(void) { return g_active && g_hd && g_hd_halve; }
 
 void mvd_video_hd_skip_one(void)
 {
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     ++g_hd_decoded;
-    LightLock_Unlock(&g_frame_lock);
+    plat_unlock(&g_frame_lock);
 }
 
 void mvd_video_skip_ready_frame(unsigned index)
 {
     if (!g_wide) return;
-    LightLock_Lock(&g_frame_lock);
+    plat_lock(&g_frame_lock);
     if (index < g_ready_count) {
         g_output_state[g_ready_fifo[index]] = OUT_FREE;
         memmove(g_ready_fifo + index, g_ready_fifo + index + 1,
                 (g_ready_count - index - 1) * sizeof(int));
         --g_ready_count;
     }
-    LightLock_Unlock(&g_frame_lock);
+    plat_unlock(&g_frame_lock);
 }
 
 void mvd_video_resync(void)
@@ -728,11 +728,11 @@ void mvd_video_resync(void)
 unsigned mvd_video_drop_backlog(void)
 {
     if (!g_wide) return 0;
-    LightLock_Lock(&g_queue_lock);
+    plat_lock(&g_queue_lock);
     /* The head may be in the decoder's hands: keep it. */
     const unsigned dropped = g_queue_count > 1 ? g_queue_count - 1 : 0;
     if (dropped) g_queue_count = 1;
-    LightLock_Unlock(&g_queue_lock);
+    plat_unlock(&g_queue_lock);
     if (!dropped) return 0;
     await_idr();
     g_resync_requested = true;
@@ -874,12 +874,12 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
                        (unsigned long)size, g_input_width, g_input_height);
         crash_checkpoint();
     }
-    const u64 process_start = svcGetSystemTick();
+    const u64 process_start = plat_ticks();
     bool hd_has_vcl = false;
     MVDSTD_ProcessNALUnitOut process_out = {0};
     Result rc = hd ? process_720p_nals(annex_b, size, &hd_has_vcl) :
                      mvdstdProcessVideoFrame(input, size, 1, &process_out);
-    const u64 process_ticks = svcGetSystemTick() - process_start;
+    const u64 process_ticks = plat_ticks() - process_start;
     if (!MVD_CHECKNALUPROC_SUCCESS(rc) && g_soft_resync) {
         ++g_errors;
         ++g_soft_errors;
@@ -922,7 +922,7 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
         (rc != MVD_STATUS_PARAMSET && rc != MVD_STATUS_FRAMEREADY &&
          rc != MVD_STATUS_INCOMPLETEPROCESSING))
         return true;
-    const u64 render_start = svcGetSystemTick();
+    const u64 render_start = plat_ticks();
     if (!g_first_render_done) {
         diagnostic_log("MVD", "first-render-enter input=%ux%u",
                        g_input_width, g_input_height);
@@ -930,9 +930,9 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
     }
     if (g_wide) {
         MVDSTD_Config config;
-        LightLock_Lock(&g_config_lock);
+        plat_lock(&g_config_lock);
         config = g_config;
-        LightLock_Unlock(&g_config_lock);
+        plat_unlock(&g_config_lock);
         config.physaddr_outdata0 = osConvertVirtToPhys(output);
         rc = mvdstdRenderVideoFrame(&config, true);
     } else {
@@ -943,7 +943,7 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
         crash_checkpoint();
         g_first_render_done = true;
     }
-    const u64 render_ticks = svcGetSystemTick() - render_start;
+    const u64 render_ticks = plat_ticks() - render_start;
     if (rc != MVD_STATUS_OK) {
         ++g_errors;
         snprintf(g_status, sizeof(g_status), "MVD render %08lX", (unsigned long)rc);
@@ -967,7 +967,7 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
         if (green < g_level_min) g_level_min = green;
         if (green > g_level_max) g_level_max = green;
     }
-    const u64 copy_start = svcGetSystemTick();
+    const u64 copy_start = plat_ticks();
     if (g_frames == 0) {
         diagnostic_log("MVD", "first-copy-enter");
         crash_checkpoint();
@@ -978,7 +978,7 @@ static bool decode_access_unit(const unsigned char *annex_b, unsigned char *inpu
         diagnostic_log("MVD", "first-copy-return");
         crash_checkpoint();
     }
-    const u64 copy_ticks = svcGetSystemTick() - copy_start;
+    const u64 copy_ticks = plat_ticks() - copy_start;
     record_performance(process_ticks, render_ticks, copy_ticks);
     ++g_frames;
     snprintf(g_status, sizeof(g_status), "MVD decoded frame %u", g_frames);
@@ -1006,17 +1006,17 @@ static void decoder_main(void *arg)
 {
     (void)arg;
     while (!g_decoder_quit) {
-        LightLock_Lock(&g_queue_lock);
+        plat_lock(&g_queue_lock);
         const unsigned count = g_queue_count;
         const unsigned slot = g_queue_head;
-        LightLock_Unlock(&g_queue_lock);
+        plat_unlock(&g_queue_lock);
         if (!count) {
-            LightEvent_Wait(&g_queue_event);
+            plat_event_wait(&g_queue_event);
             continue;
         }
         /* Take a free output; if the pacer is behind, recycle the oldest
          * ready frame rather than stalling decode (references must flow). */
-        LightLock_Lock(&g_frame_lock);
+        plat_lock(&g_frame_lock);
         int target = -1;
         for (unsigned i = 0; i < WIDE_OUTPUTS && target < 0; ++i)
             if (g_output_state[i] == OUT_FREE) target = (int)i;
@@ -1026,13 +1026,13 @@ static void decoder_main(void *arg)
             ++g_recycled_frames;
         }
         if (target >= 0) g_output_state[target] = OUT_DECODING;
-        LightLock_Unlock(&g_frame_lock);
+        plat_unlock(&g_frame_lock);
         if (target < 0) target = 0; /* unreachable: 6 outputs, 1 presenting */
         const unsigned rendered_before = g_frames;
         unsigned char *au = g_ring + g_entry_offset[slot];
         if (!g_process_failed)
             decode_access_unit(au, au, g_entry_size[slot], g_wide_outputs[target]);
-        LightLock_Lock(&g_frame_lock);
+        plat_lock(&g_frame_lock);
         /* Xbox 720p is 60 fps (it ignores asking for 30) and is shown at 30.
          * Showing the newest of whatever was ready (builds 146-148) stepped
          * the game 1, 2 or 3 frames at a time with decode jitter: it judered
@@ -1042,9 +1042,9 @@ static void decoder_main(void *arg)
          * 33 ms apart keeps all, with a gap between so it doesn't flip. */
         bool keep = true;
         if (g_hd && g_frames != rendered_before) {
-            const u64 now = svcGetSystemTick();
+            const u64 now = plat_ticks();
             if (g_hd_last_tick) {
-                const float ms = (float)(now - g_hd_last_tick) / ((float)SYSCLOCK_ARM11 / 1000.0f);
+                const float ms = (float)(now - g_hd_last_tick) / ((float)PLAT_TICKS_PER_SEC / 1000.0f);
                 if (ms < 200.0f)
                     g_hd_interval_ms = g_hd_interval_ms > 0.0f ? g_hd_interval_ms * 0.95f + ms * 0.05f : ms;
             }
@@ -1062,16 +1062,16 @@ static void decoder_main(void *arg)
         if (g_frames != rendered_before && keep) {
             g_output_state[target] = OUT_READY;
             g_output_bytes[target] = g_entry_size[slot];
-            g_ready_tick[target] = svcGetSystemTick();
+            g_ready_tick[target] = plat_ticks();
             g_ready_fifo[g_ready_count++] = target;
         } else {
             g_output_state[target] = OUT_FREE;
         }
-        LightLock_Unlock(&g_frame_lock);
-        LightLock_Lock(&g_queue_lock);
+        plat_unlock(&g_frame_lock);
+        plat_lock(&g_queue_lock);
         g_queue_head = (g_queue_head + 1) % AU_ENTRIES;
         --g_queue_count;
-        LightLock_Unlock(&g_queue_lock);
+        plat_unlock(&g_queue_lock);
     }
 }
 
@@ -1098,11 +1098,11 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
             g_await_idr = false;
             g_soft_resync = false;
             diagnostic_log("MVD", "resynchronised on IDR after dropped frames");
-        } else if (g_soft_errors < 3 && osGetTime() - g_await_since >= SOFT_RESYNC_MS) {
+        } else if (g_soft_errors < 3 && plat_time_ms() - g_await_since >= SOFT_RESYNC_MS) {
             g_await_idr = false;
             g_soft_resync = true;
             diagnostic_log("MVD", "no keyframe %llu ms after a lost frame: decoding on without one",
-                           (unsigned long long)(osGetTime() - g_await_since));
+                           (unsigned long long)(plat_time_ms() - g_await_since));
         } else {
             return true; /* hold the last clean picture */
         }
@@ -1123,7 +1123,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
      * can't be mistaken for an empty ring. */
     const size_t need = (size + 0x7F) & ~(size_t)0x7F;
     size_t start = (size_t)-1;
-    LightLock_Lock(&g_queue_lock);
+    plat_lock(&g_queue_lock);
     if (g_queue_count == 0) {
         start = 0;
     } else if (g_queue_count < AU_ENTRIES) {
@@ -1136,7 +1136,7 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
         }
     }
     if (start == (size_t)-1) {
-        LightLock_Unlock(&g_queue_lock);
+        plat_unlock(&g_queue_lock);
         /* Dropping breaks the reference chain: freeze until a keyframe. */
         ++g_errors;
         g_resync_requested = true;
@@ -1156,13 +1156,13 @@ bool mvd_video_submit(const unsigned char *annex_b, size_t size)
     g_entry_offset[slot] = start;
     g_entry_size[slot] = size;
     g_ring_write = start + need;
-    LightLock_Unlock(&g_queue_lock);
+    plat_unlock(&g_queue_lock);
     memcpy(g_ring + start, annex_b, size);
     GSPGPU_FlushDataCache(g_ring + start, size);
-    LightLock_Lock(&g_queue_lock);
+    plat_lock(&g_queue_lock);
     ++g_queue_count;
-    LightLock_Unlock(&g_queue_lock);
-    LightEvent_Signal(&g_queue_event);
+    plat_unlock(&g_queue_lock);
+    plat_event_signal(&g_queue_event);
     return true;
 }
 
@@ -1170,12 +1170,11 @@ void mvd_video_close(void)
 {
     g_visible_width = g_visible_height = 0;
     /* Not while a frame is on its way to the GPU. */
-    LightLock_Lock(&g_present_lock);
+    plat_lock(&g_present_lock);
     if (g_decoder) {
         g_decoder_quit = true;
-        LightEvent_Signal(&g_queue_event);
-        threadJoin(g_decoder, U64_MAX);
-        threadFree(g_decoder);
+        plat_event_signal(&g_queue_event);
+        plat_thread_join(g_decoder);
         g_decoder = NULL;
     }
     if (g_ring) linearFree(g_ring);
@@ -1204,7 +1203,7 @@ void mvd_video_close(void)
     g_zoom_center_x = g_zoom_center_y = 0;
     g_last_zoom_pan_at = 0;
     memset(&g_config, 0, sizeof(g_config));
-    LightLock_Unlock(&g_present_lock);
+    plat_unlock(&g_present_lock);
 }
 
 bool mvd_video_active(void) { return g_active; }

@@ -1,7 +1,7 @@
 #include "steam_link.h"
+#include "platform.h"
 #include "i18n.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,7 +60,7 @@ static struct {
     uint32_t typed_ip;
 } g;
 
-static LightLock g_lock;
+static PlatLock g_lock;
 static volatile bool g_selected;
 /* B while a stream is being asked for (net_worker_cancel). */
 static volatile bool g_cancel;
@@ -75,7 +75,7 @@ void steam_link_select(bool steam)
 {
     static bool once;
     if (!once) {
-        LightLock_Init(&g_lock);
+        plat_lock_init(&g_lock);
         /* Builds the checksum table before any second thread needs it. */
         steam_crc32c("", 0);
         once = true;
@@ -113,10 +113,10 @@ bool steam_link_saved_pc(char *name, size_t size)
 
 unsigned steam_link_pcs(char names[][64], unsigned max)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const unsigned count = g_pc_count < max ? g_pc_count : max;
     for (unsigned i = 0; i < count; ++i) memcpy(names[i], g_pc_names[i], sizeof(g_pc_names[i]));
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return count;
 }
 
@@ -152,13 +152,13 @@ static uint64_t u64_of(json_t *object, const char *key)
 /* The names the screens show, after any change to the paired PCs. */
 static void publish_pcs(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(g_host_name, sizeof(g_host_name), "%s", g.paired ? g.host.name : "");
     g_pc_count = 0;
     if (g.paired) snprintf(g_pc_names[g_pc_count++], 64, "%s", g.host.name);
     for (unsigned i = 0; i < g.other_count && g_pc_count < SL_PC_MAX; ++i)
         snprintf(g_pc_names[g_pc_count++], 64, "%s", g.others[i].host.name);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 static json_t *pc_json(const SteamHost *host, const uint8_t secret[32], const Recent *recent, unsigned count)
@@ -210,13 +210,13 @@ static void save(void)
     json_t *root = json_pack("{s:s,s:s}", "device_id", id, "device_secret", secret);
     if (!root) return;
     json_t *hosts = json_array();
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (g.paired) json_array_append_new(hosts, pc_json(&g.host, g.host_secret, g.recent, g.recent_count));
     for (unsigned i = 0; i < g.other_count; ++i)
         json_array_append_new(hosts, pc_json(&g.others[i].host, g.others[i].secret, g.others[i].recent,
                                              g.others[i].recent_count));
     g.recent_dirty = false;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     json_object_set_new(root, "hosts", hosts);
     if (g.typed_ip) {
         char typed[20];
@@ -238,7 +238,7 @@ static void load(void)
         unhex(text_of(root, "device_secret"), g.id.secret, 32);
         g.typed_ip = steam_ip_parse(text_of(root, "pc_address"));
         json_t *hosts = json_object_get(root, "hosts");
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         g.paired = false;
         g.other_count = 0;
         if (json_is_array(hosts)) {
@@ -257,7 +257,7 @@ static void load(void)
             g.paired = pc_from_json(json_object_get(root, "host"), &g.host, g.host_secret, g.recent,
                                     &g.recent_count, json_object_get(root, "recent"));
         }
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
     }
     json_decref(root);
     snprintf(g.id.name, sizeof(g.id.name), "Kasumi (New 3DS)");
@@ -300,17 +300,17 @@ bool steam_link_load_login(GfnClient *c)
 /* Drops one of the other PCs. */
 static void drop_other(unsigned index)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     memmove(&g.others[index], &g.others[index + 1], (g.other_count - index - 1) * sizeof(OtherPc));
     --g.other_count;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* One of the other PCs becomes the one in use (whatever was in use is
  * overwritten: push_current first to keep it). */
 static void take_other(unsigned index)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const OtherPc next = g.others[index];
     memmove(&g.others[index], &g.others[index + 1], (g.other_count - index - 1) * sizeof(OtherPc));
     --g.other_count;
@@ -319,14 +319,14 @@ static void take_other(unsigned index)
     memcpy(g.recent, next.recent, sizeof(g.recent));
     g.recent_count = next.recent_count;
     g.paired = true;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* The PC in use moves to the front of the others (room is made). */
 static void push_current(void)
 {
     if (!g.paired) return;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (g.other_count == SL_PC_MAX - 1) --g.other_count;
     memmove(&g.others[1], &g.others[0], g.other_count * sizeof(OtherPc));
     OtherPc *o = &g.others[0];
@@ -337,7 +337,7 @@ static void push_current(void)
     ++g.other_count;
     g.paired = false;
     g.recent_count = 0;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 bool steam_link_sign_out(GfnClient *c)
@@ -347,12 +347,12 @@ bool steam_link_sign_out(GfnClient *c)
     load();
     /* Forget the PC in use; another paired one takes its place. The device
      * identity stays: PCs list this console by it. */
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g.paired = false;
     memset(&g.host, 0, sizeof(g.host));
     memset(g.host_secret, 0, sizeof(g.host_secret));
     g.recent_count = 0;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (g.other_count) take_other(0);
     save();
     publish_pcs();
@@ -494,7 +494,7 @@ void steam_link_login_tick(GfnClient *c)
                 break;
             }
         if (g.paired && g.host.client_id != g.pair.host.client_id) push_current();
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         if (!g.paired) {
             memcpy(g.recent, kept, sizeof(kept));
             g.recent_count = kept_count;
@@ -503,7 +503,7 @@ void steam_link_login_tick(GfnClient *c)
         if (g.pair.steamid) g.host.steamid = g.pair.steamid;
         memcpy(g.host_secret, g.pair.secret, 32);
         g.paired = true;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         steam_pair_cancel(&g.pair);
         save();
         publish_pcs();
@@ -544,7 +544,7 @@ void steam_link_note_activity(int activity, uint64_t gameid, const char *name)
 {
     /* 2: a game (the desktop and Big Picture are activities of their own). */
     if (activity != 2 || !gameid) return;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     unsigned at = g.recent_count;
     for (unsigned i = 0; i < g.recent_count; ++i)
         if (g.recent[i].gameid == gameid) at = i;
@@ -556,7 +556,7 @@ void steam_link_note_activity(int activity, uint64_t gameid, const char *name)
     memmove(&g.recent[1], &g.recent[0], at * sizeof(Recent));
     g.recent[0] = entry;
     g.recent_dirty = true;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* A game Steam named only by its id: the store knows its name. */
@@ -603,10 +603,10 @@ bool steam_link_fetch_library(GfnClient *c)
         return false;
     }
     Recent recent[SL_RECENT_MAX];
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const unsigned count = g.recent_count;
     memcpy(recent, g.recent, sizeof(recent));
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     /* A few unnamed games per refresh: each is a request to the store. */
     unsigned named = 0;
     bool changed = false;
@@ -617,12 +617,12 @@ bool steam_link_fetch_library(GfnClient *c)
         ++named;
     }
     if (changed) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         for (unsigned i = 0; i < count && i < g.recent_count; ++i)
             if (g.recent[i].gameid == recent[i].gameid && !g.recent[i].name[0])
                 snprintf(g.recent[i].name, sizeof(g.recent[i].name), "%s", recent[i].name);
         g.recent_dirty = true;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
     }
     if (g.recent_dirty) save();
     c->game_count = 0;
@@ -798,7 +798,7 @@ bool steam_link_signal_start(NvstSignal *s, const GfnClient *client)
     /* The transport starts once an "offer" is there. */
     s->offer_sdp = strdup("steam");
     s->offer_size = 5;
-    s->started_ms = osGetTime();
+    s->started_ms = plat_time_ms();
     s->state = NVST_SIGNAL_OFFER;
     snprintf(s->status, sizeof(s->status), i18n_text("Connecting to your PC..."));
     return s->offer_sdp != NULL;

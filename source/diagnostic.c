@@ -1,6 +1,6 @@
 #include "diagnostic.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -30,25 +30,25 @@ static char g_chunks[2][DIAGNOSTIC_CHUNK];
 static size_t g_chunk_used[2];
 static int g_active;
 /* 1 is the unlocked state, so logging before diagnostic_init cannot hang. */
-static LightLock g_log_lock = 1;
+static PlatLock g_log_lock = PLAT_LOCK_INIT;
 /* Serialises SD writes between the writer thread and checkpoints. */
-static LightLock g_file_lock = 1;
-static Thread g_writer;
-static LightEvent g_writer_wake;
+static PlatLock g_file_lock = PLAT_LOCK_INIT;
+static PlatThread g_writer;
+static PlatEvent g_writer_wake;
 static volatile bool g_writer_quit;
 
 /* Swap buffers under the log lock (fast), then write the full one. */
 static void write_pending(void)
 {
-    LightLock_Lock(&g_file_lock);
-    LightLock_Lock(&g_log_lock);
+    plat_lock(&g_file_lock);
+    plat_lock(&g_log_lock);
     const int full = g_active;
     const size_t size = g_chunk_used[full];
     g_active ^= 1;
     g_chunk_used[g_active] = 0;
     const bool roll = g_roll_pending;
     g_roll_pending = false;
-    LightLock_Unlock(&g_log_lock);
+    plat_unlock(&g_log_lock);
     if (roll && g_file) {
         fclose(g_file);
         remove(DIAGNOSTIC_OLDER_PATH);
@@ -64,29 +64,29 @@ static void write_pending(void)
         fwrite(g_chunks[full], 1, size, g_file);
         fflush(g_file);
     }
-    LightLock_Unlock(&g_file_lock);
+    plat_unlock(&g_file_lock);
 }
 
 static void writer_main(void *arg)
 {
     (void)arg;
     while (!g_writer_quit) {
-        LightEvent_WaitTimeout(&g_writer_wake, 1000000000LL);
+        plat_event_wait_timeout(&g_writer_wake, 1000000000LL);
         write_pending();
     }
 }
 
 void diagnostic_init(void)
 {
-    LightLock_Init(&g_log_lock);
-    LightLock_Init(&g_file_lock);
-    LightEvent_Init(&g_writer_wake, RESET_ONESHOT);
-    mkdir("sdmc:/3ds", 0777);
+    plat_lock_init(&g_log_lock);
+    plat_lock_init(&g_file_lock);
+    plat_event_init(&g_writer_wake, false);
+    mkdir(APP_ROOT_DIR, 0777);
     mkdir(APP_DATA_DIR, 0777);
     g_lines = g_dropped = 0;
     g_chunk_used[0] = g_chunk_used[1] = 0;
     g_active = 0;
-    g_started_ms = osGetTime();
+    g_started_ms = plat_time_ms();
     if (g_file) fclose(g_file);
     /* Keep the last run's log instead of overwriting it: after a crash or
      * freeze that is the one worth reading. */
@@ -99,11 +99,10 @@ void diagnostic_init(void)
     fputs(APP_NAME " " APP_VERSION " (build " APP_BUILD ") diagnostic\n", g_file);
     fputs("Privacy: tokens, authorization headers, full SDP and ICE passwords are excluded.\n", g_file);
     fflush(g_file);
-    s32 priority = 0x30;
-    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    const int priority = plat_thread_priority();
     g_writer_quit = false;
     /* Below every other Kasumi thread: it only runs when the app is idle. */
-    g_writer = threadCreate(writer_main, NULL, WRITER_STACK,
+    g_writer = plat_thread_create(writer_main, NULL, WRITER_STACK,
                             priority + 4 > 0x3F ? 0x3F : priority + 4, -2, false);
 }
 
@@ -111,9 +110,8 @@ void diagnostic_close(void)
 {
     if (g_writer) {
         g_writer_quit = true;
-        LightEvent_Signal(&g_writer_wake);
-        threadJoin(g_writer, U64_MAX);
-        threadFree(g_writer);
+        plat_event_signal(&g_writer_wake);
+        plat_thread_join(g_writer);
         g_writer = NULL;
     }
     /* Both buffers may hold lines. */
@@ -131,7 +129,7 @@ void diagnostic_close(void)
  * export). Before the writer starts, write directly as before. */
 void diagnostic_checkpoint(void)
 {
-    if (g_writer) LightEvent_Signal(&g_writer_wake);
+    if (g_writer) plat_event_signal(&g_writer_wake);
     else write_pending();
 }
 
@@ -145,7 +143,7 @@ void diagnostic_vlog(const char *component, const char *format, va_list args)
 {
     char line[DIAGNOSTIC_LINE];
     int n = snprintf(line, sizeof(line), "ms=%llu [%s] ",
-                     (unsigned long long)(osGetTime() - g_started_ms),
+                     (unsigned long long)(plat_time_ms() - g_started_ms),
                      component ? component : "APP");
     if (n < 0) return;
     if ((size_t)n < sizeof(line)) {
@@ -156,7 +154,7 @@ void diagnostic_vlog(const char *component, const char *format, va_list args)
     line[n++] = '\n';
 
     /* The UI thread, decoder and network worker all log; keep lines whole. */
-    LightLock_Lock(&g_log_lock);
+    plat_lock(&g_log_lock);
     if (g_lines >= DIAGNOSTIC_MAX_LINES) {
         g_lines = 0;
         g_roll_pending = true;
@@ -172,8 +170,8 @@ void diagnostic_vlog(const char *component, const char *format, va_list args)
         }
     }
     const bool nearly_full = g_chunk_used[g_active] > DIAGNOSTIC_CHUNK / 2;
-    LightLock_Unlock(&g_log_lock);
-    if (nearly_full && g_writer) LightEvent_Signal(&g_writer_wake);
+    plat_unlock(&g_log_lock);
+    if (nearly_full && g_writer) plat_event_signal(&g_writer_wake);
 }
 
 void diagnostic_log(const char *component, const char *format, ...)
@@ -193,13 +191,13 @@ static struct {
     bool taken;
 } g_flags[FLAG_SLOTS];
 static unsigned g_flag_count;
-static LightLock g_flag_lock = 1;
+static PlatLock g_flag_lock = PLAT_LOCK_INIT;
 
 void diagnostic_flag(const char *code, const char *format, ...)
 {
     if (!code || !code[0]) code = "unknown";
     unsigned count = 0;
-    LightLock_Lock(&g_flag_lock);
+    plat_lock(&g_flag_lock);
     unsigned i = 0;
     while (i < g_flag_count && strncmp(g_flags[i].code, code, FLAG_CODE - 1)) ++i;
     if (i == g_flag_count && g_flag_count < FLAG_SLOTS) {
@@ -209,7 +207,7 @@ void diagnostic_flag(const char *code, const char *format, ...)
         ++g_flag_count;
     }
     if (i < g_flag_count) count = ++g_flags[i].count;
-    LightLock_Unlock(&g_flag_lock);
+    plat_unlock(&g_flag_lock);
     /* The first few of each, then every 50th: a flag that fires every frame
      * must not push the rest of the log out. */
     if (count > 5 && count % 50) return;
@@ -224,13 +222,13 @@ void diagnostic_flag(const char *code, const char *format, ...)
 const char *diagnostic_take_new_flag(void)
 {
     const char *code = NULL;
-    LightLock_Lock(&g_flag_lock);
+    plat_lock(&g_flag_lock);
     for (unsigned i = 0; i < g_flag_count && !code; ++i) {
         if (g_flags[i].taken) continue;
         g_flags[i].taken = true;
         code = g_flags[i].code;
     }
-    LightLock_Unlock(&g_flag_lock);
+    plat_unlock(&g_flag_lock);
     return code;
 }
 
@@ -239,13 +237,13 @@ void diagnostic_flags_summary(char *out, size_t size)
     if (!out || !size) return;
     out[0] = '\0';
     size_t used = 0;
-    LightLock_Lock(&g_flag_lock);
+    plat_lock(&g_flag_lock);
     for (unsigned i = 0; i < g_flag_count && used + 1 < size; ++i) {
         const int n = snprintf(out + used, size - used, "%s%s x%u", used ? ", " : "", g_flags[i].code,
                                g_flags[i].count);
         if (n < 0) break;
         used += (size_t)n;
     }
-    LightLock_Unlock(&g_flag_lock);
+    plat_unlock(&g_flag_lock);
     if (used >= size) out[size - 1] = '\0';
 }

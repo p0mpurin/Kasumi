@@ -1,6 +1,6 @@
 #include "file_worker.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -22,9 +22,9 @@ static Job g_queue[QUEUE_MAX];
 static unsigned g_head, g_count;
 /* Jobs taken off the queue but not finished (for flush). */
 static unsigned g_running;
-static LightLock g_lock = 1;
-static LightEvent g_wake, g_idle;
-static Thread g_thread;
+static PlatLock g_lock = PLAT_LOCK_INIT;
+static PlatEvent g_wake, g_idle;
+static PlatThread g_thread;
 static bool g_started, g_quit;
 static volatile unsigned g_failed_writes;
 
@@ -38,7 +38,7 @@ static const char *base_name(const char *path)
 
 static void run(Job *job)
 {
-    const u64 start = osGetTime();
+    const u64 start = plat_time_ms();
     switch (job->kind) {
     case JOB_SAVE:
         if (json_dump_file(job->data, job->path, job->flags) != 0) {
@@ -66,7 +66,7 @@ static void run(Job *job)
         remove(job->path);
         break;
     }
-    const u64 took = osGetTime() - start;
+    const u64 took = plat_time_ms() - start;
     if (took >= SLOW_WRITE_MS)
         diagnostic_log("FILE", "%s took %llu ms (slow SD card?)", base_name(job->path), (unsigned long long)took);
     json_decref(job->data);
@@ -77,24 +77,24 @@ static void worker_main(void *arg)
 {
     (void)arg;
     for (;;) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         if (!g_count) {
             const bool quit = g_quit;
-            LightEvent_Signal(&g_idle);
-            LightLock_Unlock(&g_lock);
+            plat_event_signal(&g_idle);
+            plat_unlock(&g_lock);
             if (quit) return;
-            LightEvent_Wait(&g_wake);
+            plat_event_wait(&g_wake);
             continue;
         }
         Job job = g_queue[g_head];
         g_head = (g_head + 1) % QUEUE_MAX;
         --g_count;
         ++g_running;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         run(&job);
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         --g_running;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
     }
 }
 
@@ -102,12 +102,11 @@ static bool start(void)
 {
     if (g_started) return g_thread != NULL;
     g_started = true;
-    LightEvent_Init(&g_wake, RESET_ONESHOT);
-    LightEvent_Init(&g_idle, RESET_STICKY);
-    s32 priority = 0x30;
-    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    plat_event_init(&g_wake, false);
+    plat_event_init(&g_idle, true);
+    const int priority = plat_thread_priority();
     /* Below the main loop, above the diagnostic writer. */
-    g_thread = threadCreate(worker_main, NULL, 32 * 1024, priority + 2 > 0x3F ? 0x3F : priority + 2, -2, false);
+    g_thread = plat_thread_create(worker_main, NULL, 32 * 1024, priority + 2 > 0x3F ? 0x3F : priority + 2, -2, false);
     return g_thread != NULL;
 }
 
@@ -122,7 +121,7 @@ static void enqueue(int kind, const char *path, json_t *data, size_t keep, size_
         run(&job);
         return;
     }
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     /* A newer save of a file still waiting replaces the old one, if
      * nothing else was queued for that file after it. */
     if (kind == JOB_SAVE) {
@@ -133,7 +132,7 @@ static void enqueue(int kind, const char *path, json_t *data, size_t keep, size_
                 json_decref(queued->data);
                 queued->data = data;
                 queued->flags = flags;
-                LightLock_Unlock(&g_lock);
+                plat_unlock(&g_lock);
                 return;
             }
             break;
@@ -142,15 +141,15 @@ static void enqueue(int kind, const char *path, json_t *data, size_t keep, size_
     if (g_count == QUEUE_MAX) {
         /* Full (the card has stalled for a long time): wait for room
          * rather than lose a write. */
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         file_worker_flush();
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
     }
     g_queue[(g_head + g_count) % QUEUE_MAX] = job;
     ++g_count;
-    LightEvent_Clear(&g_idle);
-    LightLock_Unlock(&g_lock);
-    LightEvent_Signal(&g_wake);
+    plat_event_clear(&g_idle);
+    plat_unlock(&g_lock);
+    plat_event_signal(&g_wake);
 }
 
 void file_worker_save_json(const char *path, json_t *root, size_t flags)
@@ -174,11 +173,11 @@ void file_worker_flush(void)
 {
     if (!g_thread) return;
     for (;;) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         const bool idle = !g_count && !g_running;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         if (idle) return;
-        LightEvent_WaitTimeout(&g_idle, 50000000LL);
+        plat_event_wait_timeout(&g_idle, 50000000LL);
     }
 }
 
@@ -187,8 +186,7 @@ void file_worker_exit(void)
     if (!g_thread) return;
     file_worker_flush();
     g_quit = true;
-    LightEvent_Signal(&g_wake);
-    threadJoin(g_thread, U64_MAX);
-    threadFree(g_thread);
+    plat_event_signal(&g_wake);
+    plat_thread_join(g_thread);
     g_thread = NULL;
 }

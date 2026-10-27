@@ -15,6 +15,16 @@ import re
 import sys
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
+# Shared code, then each console's own (platform.h's backends).
+SOURCE_DIRS = ["source", os.path.join("source", "3ds"), os.path.join("source", "vita")]
+
+
+def source_path(name):
+    for folder in SOURCE_DIRS:
+        path = os.path.join(ROOT, folder, name)
+        if os.path.exists(path):
+            return path
+    return None
 # Per file, the snprintf destinations that end up on screen (a regex on the
 # first argument). Everything else (headers, URLs, SDP, JSON) stays as is.
 DESTINATIONS = {
@@ -70,7 +80,7 @@ def main():
     catalog = set(l.rstrip("\n") for l in open(os.path.join(ROOT, "i18n", "strings.txt"), encoding="utf-8"))
     total = 0
     for name in FILES:
-        path = os.path.join(ROOT, "source", name)
+        path = source_path(name)
         src = open(path, encoding="utf-8", newline="").read()
         edits = []
         for start, end in find_calls(src, "snprintf"):

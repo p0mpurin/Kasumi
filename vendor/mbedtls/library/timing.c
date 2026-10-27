@@ -19,7 +19,8 @@
 
 #if !defined(unix) && !defined(__unix__) && !defined(__unix) && \
     !defined(__APPLE__) && !defined(_WIN32) && !defined(__QNXNTO__) && \
-    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__3DS__)
+    !defined(__HAIKU__) && !defined(__midipix__) && !defined(__3DS__) && \
+    !defined(__vita__)
 #error "This module only works on Unix and Windows, see MBEDTLS_TIMING_C in config.h"
 #endif
 
@@ -296,6 +297,12 @@ static void sighandler(int signum)
 
 void mbedtls_set_alarm(int seconds)
 {
+#if defined(__vita__)
+    /* Kasumi: the Vita has no alarm(); only mbedTLS's benchmarks use it. */
+    (void)sighandler;
+    mbedtls_timing_alarmed = seconds == 0;
+    return;
+#endif
     mbedtls_timing_alarmed = 0;
     signal(SIGALRM, sighandler);
     alarm(seconds);

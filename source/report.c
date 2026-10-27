@@ -1,7 +1,6 @@
 #include "report.h"
 #include "i18n.h"
 
-#include <3ds.h>
 #include <dirent.h>
 #include <jansson.h>
 #include <mbedtls/base64.h>
@@ -21,7 +20,13 @@
 
 /* Each log is capped (its end is kept): 6000 lines is well under this. */
 #define LOG_CAP (768 * 1024)
+/* Luma's ARM11 crash dumps (the Vita's own dumps are another format and
+ * far too big to send). */
+#if defined(__vita__)
+#define DUMP_DIR "ux0:data/kasumi/no-dumps"
+#else
 #define DUMP_DIR "sdmc:/luma/dumps/arm11"
+#endif
 #define DUMP_MAX_AGE (3 * 24 * 3600)
 #define DUMP_CAP (64 * 1024)
 /* The installed CIA's title (APP_UNIQUE_ID 0x4B534). */

@@ -1,6 +1,6 @@
 #include "webrtc_peer.h"
+#include "platform.h"
 #include "nvst_signal.h"
-#include <3ds.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -260,8 +260,8 @@ void webrtc_peer_tick(void) {
      * placeholder; real check would query dtls_srtp.state but it's private.
      * We approximate by checking that peer is still connected after 500ms. */
     static uint64_t connected_since = 0;
-    if (connected_since==0) connected_since = osGetTime();
-    if (osGetTime() - connected_since > 500) {
+    if (connected_since==0) connected_since = plat_time_ms();
+    if (plat_time_ms() - connected_since > 500) {
       g_dtls_connected = true;
       g_state = WEBRTC_DTLS_CONNECTED;
     }

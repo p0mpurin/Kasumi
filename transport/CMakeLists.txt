@@ -7,7 +7,12 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(ENABLE_MBEDTLS OFF CACHE BOOL "" FORCE)
 set(ENABLE_OPENSSL OFF CACHE BOOL "" FORCE)
 add_subdirectory(../vendor/mbedtls mbedtls)
-target_sources(mbedcrypto PRIVATE entropy_3ds.c)
+# mbedTLS's entropy comes from the console's hardware random source.
+if(VITASDK)
+  target_sources(mbedcrypto PRIVATE entropy_vita.c)
+else()
+  target_sources(mbedcrypto PRIVATE entropy_3ds.c)
+endif()
 add_subdirectory(../vendor/libsrtp srtp)
 # libsrtp upstream assumes unsigned int == uint32_t (true on x86_64 LP64,
 # false on arm-none-eabi newlib where uint32_t is unsigned long). The

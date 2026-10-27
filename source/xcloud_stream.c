@@ -1,6 +1,6 @@
 #include "xcloud_stream.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,8 +47,8 @@ void xcloud_stream_reset(void)
 
 static uint32_t ms_since_start(void)
 {
-    if (!x.start_at) x.start_at = osGetTime();
-    return (uint32_t)(osGetTime() - x.start_at);
+    if (!x.start_at) x.start_at = plat_time_ms();
+    return (uint32_t)(plat_time_ms() - x.start_at);
 }
 
 static void uuid(char out[40])
@@ -57,7 +57,7 @@ static void uuid(char out[40])
     int k = 0;
     for (int i = 0; i < 36; ++i) {
         if (i == 8 || i == 13 || i == 18 || i == 23) out[k++] = '-';
-        else out[k++] = hex[(rand() ^ (int)(svcGetSystemTick() >> (i % 7))) & 15];
+        else out[k++] = hex[(rand() ^ (int)(plat_ticks() >> (i % 7))) & 15];
     }
     out[k] = '\0';
 }
@@ -186,7 +186,7 @@ static void send_handshake(PeerConnection *pc)
     snprintf(text, sizeof(text), "{\"type\":\"Handshake\",\"version\":\"messageV1\",\"id\":\"%s\",\"cv\":\"0\"}", id);
     const bool ok = send_text(pc, SID_MESSAGE, text);
     x.handshake_sent = true;
-    x.handshake_at = osGetTime();
+    x.handshake_at = plat_time_ms();
     ++x.handshake_tries;
     diagnostic_log("XCLOUD", "message handshake %u sent=%d", x.handshake_tries, ok ? 1 : 0);
 }
@@ -278,7 +278,7 @@ void xcloud_stream_on_data(WebRtcTransport *t, const char *data, size_t length, 
 void xcloud_stream_tick(WebRtcTransport *t, void *peer)
 {
     PeerConnection *pc = peer;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (!t->data_open) return;
     if (!x.opened) {
         x.opened = open_channels(pc);
@@ -302,7 +302,7 @@ void xcloud_stream_tick(WebRtcTransport *t, void *peer)
     }
 
     GfnGamepadState pad;
-    gfn_input_read_3ds(&pad);
+    gfn_input_read(&pad);
     if (t->keyboard_mode) memset(&pad, 0, sizeof(pad));
     const bool changed = !x.sent_once || memcmp(&pad, &x.last, sizeof(pad)) != 0;
     const u64 since = now - x.last_input_at;

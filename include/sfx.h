@@ -3,7 +3,7 @@
 #include <stdbool.h>
 
 /* Menu sound effects (tools/audio/sfx.py: koto, wood, rin, furin, water).
- * Decoded once at start-up into linear memory and played on NDSP channels
+ * Decoded once at start-up into sound memory and played on channels
  * 11-13 in turn, so a quick run of presses overlaps instead of cutting off. */
 typedef enum {
     SFX_MOVE,

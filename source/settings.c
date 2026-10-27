@@ -6,6 +6,7 @@
 #include "file_worker.h"
 #include "game_prefs.h"
 #include "i18n.h"
+#include "platform.h"
 #include "regions.h"
 #include "stream_profile.h"
 #include "ui.h"
@@ -27,7 +28,12 @@ void settings_defaults(AppSettings *settings)
     settings->wide_video = true;
     settings->bitrate_mode = STREAM_BITRATE_ADAPTIVE;
     settings->sharpen = false;
+#if PLAT_HAS_WIDE_MODE
     settings->fps60 = false;
+#else
+    /* The Vita's decoder keeps 60 frames a second at its screen's size. */
+    settings->fps60 = true;
+#endif
     settings->video_sharpen = 1;
     settings->video_color = 1;
     settings->gyro_mode = GFN_GYRO_OFF;
@@ -37,6 +43,7 @@ void settings_defaults(AppSettings *settings)
     settings->touch_camera = 1;
     settings->touch_camera_shown = false;
     settings->touch_stick_size = 1;
+    settings->extra_buttons = EXTRA_BUTTONS_REAR;
     settings->slider = 0;
     settings->theme = UI_THEME_AI; /* indigo: the default look since beta.30 */
     settings->language = LANG_EN;
@@ -118,6 +125,7 @@ bool settings_load(AppSettings *settings)
     settings->touch_camera = (unsigned)read_int(root, "touch_camera", (int)settings->touch_camera, 3);
     settings->touch_camera_shown = read_bool(root, "touch_camera_shown", settings->touch_camera_shown);
     settings->touch_stick_size = (unsigned)read_int(root, "touch_stick_size", (int)settings->touch_stick_size, 3);
+    settings->extra_buttons = (unsigned)read_int(root, "extra_buttons", (int)settings->extra_buttons, EXTRA_BUTTONS_COUNT);
     settings->slider = (unsigned)read_int(root, "slider", (int)settings->slider, (int)gfn_slider_choice_count());
     settings->theme = (unsigned)read_int(root, "theme", (int)settings->theme, UI_THEME_COUNT);
     settings->language = (unsigned)read_int(root, "language", (int)settings->language, LANG_COUNT);
@@ -194,6 +202,7 @@ static json_t *settings_json(const AppSettings *settings)
     json_object_set_new(root, "fps60", json_boolean(settings->fps60));
     json_object_set_new(root, "touch_camera_shown", json_boolean(settings->touch_camera_shown));
     json_object_set_new(root, "touch_stick_size", json_integer((json_int_t)settings->touch_stick_size));
+    json_object_set_new(root, "extra_buttons", json_integer((json_int_t)settings->extra_buttons));
     json_object_set_new(root, "slider", json_integer((json_int_t)settings->slider));
     json_object_set_new(root, "video_sharpen", json_integer((json_int_t)settings->video_sharpen));
     json_object_set_new(root, "video_color", json_integer((json_int_t)settings->video_color));
@@ -207,7 +216,7 @@ static json_t *settings_json(const AppSettings *settings)
 
 bool settings_save(const AppSettings *settings)
 {
-    mkdir("sdmc:/3ds", 0777);
+    mkdir(APP_ROOT_DIR, 0777);
     mkdir(APP_DATA_DIR, 0777);
     json_t *root = settings_json(settings);
     if (!root) return false;
@@ -243,8 +252,14 @@ void settings_apply_picture(const AppSettings *settings)
     stream_profile_set_sharpen(settings->sharpen);
     /* 60 fps only in Wide mode (GPU pacing; the classic path writes the
      * framebuffer directly). A probe.txt run sets its own rate. Probe of
-     * build 103: a steady 60, every frame decoded at 15.8 ms average. */
-    if (!stream_profile_probing()) stream_profile_set_fps60(settings->fps60 && settings->wide_video);
+     * build 103: a steady 60, every frame decoded at 15.8 ms average. The
+     * Vita has no classic path. */
+#if PLAT_HAS_WIDE_MODE
+    const bool fps60 = settings->fps60 && settings->wide_video;
+#else
+    const bool fps60 = settings->fps60;
+#endif
+    if (!stream_profile_probing()) stream_profile_set_fps60(fps60);
     stream_profile_set_weak(settings->net_weak);
     regions_set_choice(settings->server);
     ui_set_theme((UiTheme)settings->theme);

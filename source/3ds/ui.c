@@ -1,5 +1,11 @@
 #include "ui.h"
+#include "ui_3ds.h"
+#include "ui_internal.h"
+#include "platform.h"
 #include "i18n.h"
+
+#include <3ds.h>
+#include <citro2d.h>
 
 #include <math.h>
 #include <stdarg.h>
@@ -15,11 +21,6 @@
 #define VIDEO_HEIGHT 480
 #define TEXT_GLYPHS 6144
 
-u32 g_ui_accent = 0xFFA5BE7Eu; /* C2D_Color32 packs ABGR */
-u32 g_ui_accent_deep = 0xFF262E14u;
-u32 g_ui_accent_ink = 0xFF212A0Eu;
-static UiTheme g_theme;
-
 /* Wallpapers (gfx/bg_*.png, gfx/glass_*.png; tools/themes/make_themes.py). */
 #define THEME_GFX(name) \
     extern const unsigned char _binary_bg_##name##_t3x_start[], _binary_bg_##name##_t3x_end[]; \
@@ -29,23 +30,12 @@ THEME_GFX(beni) THEME_GFX(matcha) THEME_GFX(kaki) THEME_GFX(sumi) THEME_GFX(shir
 #define THEME_ART(name) _binary_bg_##name##_t3x_start, _binary_bg_##name##_t3x_end, \
     _binary_glass_##name##_t3x_start, _binary_glass_##name##_t3x_end
 
-/* 青磁 celadon, 桜 cherry, 金 gold, 藍 indigo, 藤 wisteria, 紅 crimson,
- * 抹茶 matcha, 柿 persimmon, 墨 ink, 白 white. */
+/* Each theme's wallpaper and its blurred copy, in UiTheme order. */
 static const struct {
-    const char *name;
-    u8 r, g, b;
     const unsigned char *bg, *bg_end, *glass, *glass_end;
-} THEMES[UI_THEME_COUNT] = {
-    { "Seiji", 0x7E, 0xBE, 0xA5, THEME_ART(seiji) },
-    { "Sakura", 0xE8, 0x9A, 0xB4, THEME_ART(sakura) },
-    { "Kin", 0xD8, 0xA5, 0x3F, THEME_ART(kin) },
-    { "Ai", 0x74, 0x9B, 0xD8, THEME_ART(ai) },
-    { "Fuji", 0xA9, 0x8E, 0xD6, THEME_ART(fuji) },
-    { "Beni", 0xE2, 0x72, 0x7C, THEME_ART(beni) },
-    { "Matcha", 0x9C, 0xC2, 0x6E, THEME_ART(matcha) },
-    { "Kaki", 0xEC, 0x93, 0x52, THEME_ART(kaki) },
-    { "Sumi", 0xC8, 0xC4, 0xBC, THEME_ART(sumi) },
-    { "Shiro", 0xEC, 0xE8, 0xDE, THEME_ART(shiro) },
+} THEME_ART_DATA[UI_THEME_COUNT] = {
+    { THEME_ART(seiji) }, { THEME_ART(sakura) }, { THEME_ART(kin) }, { THEME_ART(ai) }, { THEME_ART(fuji) },
+    { THEME_ART(beni) }, { THEME_ART(matcha) }, { THEME_ART(kaki) }, { THEME_ART(sumi) }, { THEME_ART(shiro) },
 };
 
 /* The theme's wallpaper and its blurred copy. A replaced pair is freed at
@@ -56,55 +46,20 @@ static int g_backdrop_theme = -1;
  * glass only makes sense over it (in a game the lower screen stays black). */
 static bool g_on_bottom, g_backdrop_drawn;
 
-static void load_backdrop(UiTheme theme)
+void ui_load_wallpaper(UiTheme theme)
 {
     if ((int)theme == g_backdrop_theme) return;
     if (g_retired[0]) C2D_SpriteSheetFree(g_retired[0]);
     if (g_retired[1]) C2D_SpriteSheetFree(g_retired[1]);
     g_retired[0] = g_backdrop;
     g_retired[1] = g_glass;
-    g_backdrop = C2D_SpriteSheetLoadFromMem(THEMES[theme].bg, (size_t)(THEMES[theme].bg_end - THEMES[theme].bg));
-    g_glass = C2D_SpriteSheetLoadFromMem(THEMES[theme].glass,
-                                         (size_t)(THEMES[theme].glass_end - THEMES[theme].glass));
+    g_backdrop = C2D_SpriteSheetLoadFromMem(THEME_ART_DATA[theme].bg, (size_t)(THEME_ART_DATA[theme].bg_end - THEME_ART_DATA[theme].bg));
+    g_glass = C2D_SpriteSheetLoadFromMem(THEME_ART_DATA[theme].glass,
+                                         (size_t)(THEME_ART_DATA[theme].glass_end - THEME_ART_DATA[theme].glass));
     g_backdrop_theme = (int)theme;
 }
 
-void ui_set_theme(UiTheme theme)
-{
-    if (theme >= UI_THEME_COUNT) theme = UI_THEME_AI;
-    g_theme = theme;
-    const u8 r = THEMES[theme].r, g = THEMES[theme].g, b = THEMES[theme].b;
-    g_ui_accent = C2D_Color32(r, g, b, 0xFF);
-    g_ui_accent_deep = C2D_Color32(r * 18 / 100, g * 18 / 100, b * 18 / 100, 0xFF);
-    g_ui_accent_ink = C2D_Color32(r * 12 / 100, g * 12 / 100, b * 12 / 100, 0xFF);
-    load_backdrop(theme);
-}
-
-static u32 g_saved_accent[3];
-static bool g_accent_pushed;
-
-void ui_push_accent(u32 color)
-{
-    if (!g_accent_pushed) {
-        g_saved_accent[0] = g_ui_accent;
-        g_saved_accent[1] = g_ui_accent_deep;
-        g_saved_accent[2] = g_ui_accent_ink;
-        g_accent_pushed = true;
-    }
-    const unsigned r = color & 0xFF, g = (color >> 8) & 0xFF, b = (color >> 16) & 0xFF;
-    g_ui_accent = C2D_Color32(r, g, b, 0xFF);
-    g_ui_accent_deep = C2D_Color32(r * 18 / 100, g * 18 / 100, b * 18 / 100, 0xFF);
-    g_ui_accent_ink = C2D_Color32(r * 12 / 100, g * 12 / 100, b * 12 / 100, 0xFF);
-}
-
-void ui_pop_accent(void)
-{
-    if (!g_accent_pushed) return;
-    g_ui_accent = g_saved_accent[0];
-    g_ui_accent_deep = g_saved_accent[1];
-    g_ui_accent_ink = g_saved_accent[2];
-    g_accent_pushed = false;
-}
+bool ui_glass_ready(void) { return g_on_bottom && g_glass && g_backdrop_drawn; }
 
 bool ui_backdrop(void)
 {
@@ -150,17 +105,6 @@ bool ui_wallpaper(UiRect r)
     return C2D_DrawImageAt(part, r.x, r.y, 0.0f, NULL, 1.0f, 1.0f);
 }
 
-const char *ui_theme_name(UiTheme theme)
-{
-    return theme < UI_THEME_COUNT ? THEMES[theme].name : "";
-}
-
-u32 ui_theme_color(UiTheme theme)
-{
-    if (theme >= UI_THEME_COUNT) theme = UI_THEME_AI;
-    return C2D_Color32(THEMES[theme].r, THEMES[theme].g, THEMES[theme].b, 0xFF);
-}
-
 static C3D_RenderTarget *g_top;
 static C3D_RenderTarget *g_top_wide;
 static C3D_RenderTarget *g_bottom;
@@ -174,9 +118,6 @@ static float g_video_x, g_video_y, g_video_scale = 1.0f;
 /* The part of the picture shown (zoom), as fractions of it. */
 static float g_crop_x, g_crop_y, g_crop_w = 1.0f, g_crop_h = 1.0f;
 static C2D_TextBuf g_text;
-static u64 g_started_at;
-static u64 g_last_frame_at;
-static float g_dt;
 
 static bool g_has_japanese;
 
@@ -383,7 +324,7 @@ static void draw_video_look(void)
      GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(out) | \
      GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
-bool ui_init(void)
+static bool ui_start(void)
 {
     if (!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) return false;
     if (!C2D_Init(8192)) { C3D_Fini(); return false; }
@@ -422,13 +363,24 @@ bool ui_init(void)
         C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
     }
     g_text = C2D_TextBufNew(TEXT_GLYPHS);
-    g_started_at = osGetTime();
+    ui_common_init();
     /* Regional system fonts (and emulators without a dumped font) can lack
      * kana/kanji; the decorative Japanese labels are then left out. */
     const int missing = fontGetInfo(NULL)->alterCharIndex;
     g_has_japanese = fontGlyphIndexFromCodePoint(NULL, 0x971E) != missing &&
                      fontGlyphIndexFromCodePoint(NULL, 0x30E9) != missing;
     return g_text != NULL;
+}
+
+bool ui_init(void)
+{
+    gfxInitDefault();
+    gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
+    /* One top framebuffer: MVD frames are written into it directly. */
+    gfxSetDoubleBuffering(GFX_TOP, false);
+    if (ui_start()) return true;
+    gfxExit();
+    return false;
 }
 
 void ui_exit(void)
@@ -443,6 +395,7 @@ void ui_exit(void)
     if (g_bottom) C3D_RenderTargetDelete(g_bottom);
     C2D_Fini();
     C3D_Fini();
+    gfxExit();
 }
 
 static void frame_started(void);
@@ -469,31 +422,7 @@ static void frame_started(void)
             g_retired[i] = NULL;
         }
     C2D_TextBufClear(g_text);
-    const u64 now = osGetTime();
-    g_dt = g_last_frame_at ? (float)(now - g_last_frame_at) / 1000.0f : 0.0f;
-    if (g_dt > 0.1f) g_dt = 0.1f;
-    g_last_frame_at = now;
-}
-
-float ui_dt(void) { return g_dt; }
-
-float ui_approach(float current, float target, float rate)
-{
-    const float step = 1.0f - expf(-rate * g_dt);
-    const float next = current + (target - current) * step;
-    return fabsf(next - target) < 0.05f ? target : next;
-}
-
-float ui_progress(u64 start_ms, float ms)
-{
-    const float t = (float)(osGetTime() - start_ms) / ms;
-    return t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
-}
-
-float ui_ease_out(float t)
-{
-    const float inv = 1.0f - t;
-    return 1.0f - inv * inv * inv;
+    ui_frame_tick();
 }
 
 void ui_offset(float dx, float dy)
@@ -564,7 +493,7 @@ void ui_begin_top_video(void)
     g_on_bottom = false;
     link_top(true);
     /* Black: a picture narrower than the screen leaves bars. */
-    C2D_TargetClear(g_top_wide, C2D_Color32(0x00, 0x00, 0x00, 0xFF));
+    C2D_TargetClear(g_top_wide, UI_RGBA(0x00, 0x00, 0x00, 0xFF));
     C2D_SceneBegin(g_top_wide);
     /* citro2d reuses its cached 400-wide top-screen projection for 800-wide
      * targets too (a framebuffer readback showed everything drawn at twice
@@ -628,8 +557,6 @@ void ui_begin_bottom(void)
     ui_offset(0.0f, 0.0f);
 }
 
-u64 ui_ticks(void) { return osGetTime() - g_started_at; }
-
 bool ui_image(UiImage image, float x, float y, float scale, float alpha)
 {
     if (image >= UI_IMAGE_COUNT || !g_sheets[image]) return false;
@@ -637,7 +564,7 @@ bool ui_image(UiImage image, float x, float y, float scale, float alpha)
     C2D_AlphaImageTint(&tint, alpha);
     /* The seal, ensō and lantern art is celadon with transparent cut-outs,
      * so other themes recolour it wholesale. */
-    const bool recolour = g_theme != UI_THEME_SEIJI &&
+    const bool recolour = ui_theme() != UI_THEME_SEIJI &&
         (image == UI_IMAGE_SEAL || image == UI_IMAGE_SEAL_40 || image == UI_IMAGE_SEAL_16 ||
          image == UI_IMAGE_ENSO || image == UI_IMAGE_LANTERN);
     if (recolour) C2D_PlainImageTint(&tint, ui_with_alpha(g_ui_accent, (u8)(alpha * 255.0f)), 1.0f);
@@ -653,10 +580,105 @@ bool ui_image_rotated(UiImage image, float cx, float cy, float scale, float angl
     if (image >= UI_IMAGE_COUNT || !g_sheets[image]) return false;
     C2D_ImageTint tint;
     C2D_AlphaImageTint(&tint, alpha);
-    const bool recolour = g_theme != UI_THEME_SEIJI && image == UI_IMAGE_ENSO;
+    const bool recolour = ui_theme() != UI_THEME_SEIJI && image == UI_IMAGE_ENSO;
     if (recolour) C2D_PlainImageTint(&tint, ui_with_alpha(g_ui_accent, (u8)(alpha * 255.0f)), 1.0f);
     return C2D_DrawImageAtRotated(C2D_SpriteSheetGetImage(g_sheets[image], 0), cx, cy, 0.0f,
                                   angle, recolour || alpha < 1.0f ? &tint : NULL, scale, scale);
+}
+
+struct UiPicture {
+    C3D_Tex tex;
+    Tex3DS_SubTexture sub;
+};
+
+static u16 texture_side(unsigned size)
+{
+    u16 side = 8;
+    while (side < size) side <<= 1;
+    return side;
+}
+
+UiPicture *ui_picture_create(unsigned width, unsigned height)
+{
+    UiPicture *picture = calloc(1, sizeof(*picture));
+    if (!picture) return NULL;
+    if (!C3D_TexInit(&picture->tex, texture_side(width), texture_side(height), GPU_RGBA8)) {
+        free(picture);
+        return NULL;
+    }
+    C3D_TexSetFilter(&picture->tex, GPU_LINEAR, GPU_LINEAR);
+    C3D_TexSetWrap(&picture->tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+    return picture;
+}
+
+bool ui_picture_set(UiPicture *picture, const u32 *pixels, unsigned width, unsigned height, unsigned stride)
+{
+    const unsigned tw = picture->tex.width, th = picture->tex.height;
+    if (width > tw || height > th) return false;
+    /* Tiled the same way as video frames: one display transfer from a
+     * linear surface; row 0 lands at the top (v = 1). Outside a frame, so
+     * it waits for the GPU to finish the last one before overwriting a
+     * texture it may have drawn. */
+    u32 *linear = linearAlloc(tw * th * sizeof(u32));
+    if (!linear) return false;
+    /* The transfer writes the texture behind the CPU's back. After a stream
+     * this memory held video buffers the CPU wrote to; any of those lines
+     * still dirty in the data cache would later be written back over the
+     * picture (blocks of it missing). Flush them out first. */
+    GSPGPU_FlushDataCache(picture->tex.data, picture->tex.size);
+    memset(linear, 0, tw * th * sizeof(u32));
+    for (unsigned y = 0; y < height; ++y) memcpy(linear + y * tw, pixels + y * stride, width * sizeof(u32));
+    GSPGPU_FlushDataCache(linear, tw * th * sizeof(u32));
+    C3D_SyncDisplayTransfer(linear, GX_BUFFER_DIM(tw, th), (u32 *)picture->tex.data, GX_BUFFER_DIM(tw, th),
+                            GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+                            GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                            GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                            GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+    /* Nothing of the old contents may linger in the CPU's cache. */
+    GSPGPU_InvalidateDataCache(picture->tex.data, picture->tex.size);
+    linearFree(linear);
+    picture->sub.width = (u16)width;
+    picture->sub.height = (u16)height;
+    picture->sub.left = 0.0f;
+    picture->sub.top = 1.0f;
+    picture->sub.right = (float)width / tw;
+    picture->sub.bottom = 1.0f - (float)height / th;
+    return true;
+}
+
+void ui_picture_free(UiPicture *picture)
+{
+    if (!picture) return;
+    C3D_TexDelete(&picture->tex);
+    free(picture);
+}
+
+bool ui_picture_draw(const UiPicture *picture, float x, float y, float scale, float alpha)
+{
+    if (!picture || !picture->sub.width) return false;
+    const C2D_Image image = { (C3D_Tex *)&picture->tex, &picture->sub };
+    C2D_ImageTint tint;
+    C2D_AlphaImageTint(&tint, alpha);
+    return C2D_DrawImageAt(image, x, y, 0.0f, alpha < 1.0f ? &tint : NULL, scale, scale);
+}
+
+bool ui_picture_draw_fade(const UiPicture *picture, float x, float y, float scale, float alpha_top,
+                          float alpha_bottom, bool flip)
+{
+    if (!picture || !picture->sub.width) return false;
+    Tex3DS_SubTexture sub = picture->sub;
+    if (flip) {
+        sub.top = picture->sub.bottom;
+        sub.bottom = picture->sub.top;
+    }
+    const C2D_Image image = { (C3D_Tex *)&picture->tex, &sub };
+    C2D_ImageTint tint;
+    const u32 top = C2D_Color32f(1, 1, 1, alpha_top), bottom = C2D_Color32f(1, 1, 1, alpha_bottom);
+    C2D_SetImageTint(&tint, C2D_TopLeft, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_TopRight, top, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotLeft, bottom, 0.0f);
+    C2D_SetImageTint(&tint, C2D_BotRight, bottom, 0.0f);
+    return C2D_DrawImageAt(image, x, y, 0.0f, &tint, scale, scale);
 }
 
 bool ui_image_fade(UiImage image, float x, float y, float w, float h, float alpha_top, float alpha_bottom,
@@ -699,11 +721,6 @@ bool ui_image_part(UiImage image, float x, float y, float w, float h, float u0, 
     return C2D_DrawImageAt(part, x, y, 0.0f, alpha < 1.0f ? &tint : NULL, w / sub.width, h / sub.height);
 }
 
-bool ui_image_fit(UiImage image, float x, float y, float w, float h, float alpha)
-{
-    return ui_image_fade(image, x, y, w, h, alpha, alpha, false);
-}
-
 bool ui_icon(UiImage image, float cx, float cy, float size, u32 color)
 {
     if (image >= UI_IMAGE_COUNT || !g_sheets[image]) return false;
@@ -717,6 +734,12 @@ bool ui_icon(UiImage image, float cx, float cy, float size, u32 color)
 void ui_gradient(float x, float y, float w, float h, u32 top, u32 bottom)
 {
     if (w > 0 && h > 0) C2D_DrawRectangle(x, y, 0.0f, w, h, top, top, bottom, bottom);
+}
+
+void ui_gradient_corners(float x, float y, float w, float h, u32 top_left, u32 top_right,
+                         u32 bottom_left, u32 bottom_right)
+{
+    if (w > 0 && h > 0) C2D_DrawRectangle(x, y, 0.0f, w, h, top_left, top_right, bottom_left, bottom_right);
 }
 
 void ui_texture(UiImage image, float x, float y, float w, float h, u32 color)
@@ -748,57 +771,12 @@ bool ui_image_tint(UiImage image, float x, float y, float scale, u32 color)
                            0.0f, &tint, scale, scale);
 }
 
-u32 ui_with_alpha(u32 color, u8 alpha) { return (color & 0x00FFFFFFu) | ((u32)alpha << 24); }
-
-u32 ui_mix(u32 a, u32 b, float t)
-{
-    if (t <= 0.0f) return a;
-    if (t >= 1.0f) return b;
-    u32 out = 0;
-    for (unsigned shift = 0; shift < 32; shift += 8) {
-        const float ca = (float)((a >> shift) & 0xFF), cb = (float)((b >> shift) & 0xFF);
-        out |= (u32)(ca + (cb - ca) * t + 0.5f) << shift;
-    }
-    return out;
-}
-
 void ui_rect(float x, float y, float w, float h, u32 color)
 {
     if (w > 0 && h > 0) C2D_DrawRectSolid(x, y, 0.0f, w, h, color);
 }
 
-void ui_rect_r(UiRect r, u32 color) { ui_rect(r.x, r.y, r.w, r.h, color); }
-
-void ui_outline(float x, float y, float w, float h, float t, u32 color)
-{
-    ui_rect(x, y, w, t, color);
-    ui_rect(x, y + h - t, w, t, color);
-    ui_rect(x, y + t, t, h - 2 * t, color);
-    ui_rect(x + w - t, y + t, t, h - 2 * t, color);
-}
-
-void ui_rounded(float x, float y, float w, float h, float r, u32 color)
-{
-    if (r * 2 > h) r = h / 2;
-    if (r * 2 > w) r = w / 2;
-    ui_rect(x + r, y, w - 2 * r, h, color);
-    ui_rect(x, y + r, r, h - 2 * r, color);
-    ui_rect(x + w - r, y + r, r, h - 2 * r, color);
-    C2D_DrawCircleSolid(x + r, y + r, 0.0f, r, color);
-    C2D_DrawCircleSolid(x + w - r, y + r, 0.0f, r, color);
-    C2D_DrawCircleSolid(x + r, y + h - r, 0.0f, r, color);
-    C2D_DrawCircleSolid(x + w - r, y + h - r, 0.0f, r, color);
-}
-
-void ui_hline(float x, float y, float w, u32 color) { ui_rect(x, y, w, 1.0f, color); }
-void ui_vline(float x, float y, float h, u32 color) { ui_rect(x, y, 1.0f, h, color); }
 void ui_circle(float cx, float cy, float r, u32 color) { C2D_DrawCircleSolid(cx, cy, 0.0f, r, color); }
-
-void ui_ring(float cx, float cy, float r, float thickness, u32 color, u32 inside)
-{
-    ui_circle(cx, cy, r, color);
-    ui_circle(cx, cy, r - thickness, inside);
-}
 
 void ui_line(float x0, float y0, float x1, float y1, float thickness, u32 color)
 {
@@ -819,7 +797,6 @@ static float glyph_advance(u32 code_point)
     return info ? (float)info->charWidth : 0.0f;
 }
 
-static bool contains_japanese(const char *text);
 static float japanese_size(const char *text, float size, float *dy);
 
 /* Every text drawn or measured here goes through i18n_text first, so the
@@ -850,14 +827,6 @@ float ui_text_width(const char *text, float size)
 
 bool ui_has_japanese(void) { return g_has_japanese; }
 
-/* Kana and CJK ideographs are encoded with UTF-8 lead bytes E3-E9. */
-static bool contains_japanese(const char *text)
-{
-    for (const unsigned char *p = (const unsigned char *)text; *p; ++p)
-        if (*p >= 0xE3 && *p <= 0xE9) return true;
-    return false;
-}
-
 /* The system font's glyphs are 30 px. Kanji shrunk to 11-13 px (a 0.37-0.43
  * scale) blur their strokes together; exactly half size samples cleanly.
  * Small Japanese text is therefore drawn at 15 px, and full-size text
@@ -866,7 +835,7 @@ static bool contains_japanese(const char *text)
 static float japanese_size(const char *text, float size, float *dy)
 {
     *dy = 0.0f;
-    if (!contains_japanese(text)) return size;
+    if (!ui_text_is_japanese(text)) return size;
     float clean = size;
     if (size >= 10.5f && size < 15.0f) clean = 15.0f;
     else if (size >= 24.0f && size < 30.0f) clean = 30.0f;
@@ -878,7 +847,7 @@ float ui_text(float x, float y, float size, u32 color, UiAlign align, const char
 {
     if (!text || !text[0]) return 0.0f;
     text = i18n_text(text);
-    if (!g_has_japanese && contains_japanese(text)) return 0.0f;
+    if (!g_has_japanese && ui_text_is_japanese(text)) return 0.0f;
     float dy;
     size = japanese_size(text, size, &dy);
     y += dy;
@@ -893,528 +862,4 @@ float ui_text(float x, float y, float size, u32 color, UiAlign align, const char
     C2D_DrawText(&parsed, C2D_WithColor, floorf(x + 0.5f), floorf(y + 0.5f), 0.0f,
                  scale, scale, color);
     return width;
-}
-
-float ui_textf(float x, float y, float size, u32 color, UiAlign align, const char *format, ...)
-{
-    char buffer[256];
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), i18n_text(format), args);
-    va_end(args);
-    return ui_text(x, y, size, color, align, buffer);
-}
-
-static size_t utf8_back(const char *text, size_t length)
-{
-    while (length > 0 && (((unsigned char)text[length - 1]) & 0xC0) == 0x80) --length;
-    return length > 0 ? length - 1 : 0;
-}
-
-void ui_text_fit(float x, float y, float size, u32 color, UiAlign align,
-                 float max_width, const char *text)
-{
-    if (!text) return;
-    text = i18n_text(text);
-    if (ui_text_width(text, size) <= max_width) {
-        ui_text(x, y, size, color, align, text);
-        return;
-    }
-    char buffer[256];
-    size_t length = strlen(text);
-    if (length > sizeof(buffer) - 4) length = sizeof(buffer) - 4;
-    const float ellipsis = ui_text_width("...", size);
-    while (length > 0) {
-        length = utf8_back(text, length);
-        memcpy(buffer, text, length);
-        buffer[length] = '\0';
-        if (ui_text_width(buffer, size) + ellipsis <= max_width) break;
-    }
-    while (length > 0 && buffer[length - 1] == ' ') buffer[--length] = '\0';
-    memcpy(buffer + length, "...", 4);
-    ui_text(x, y, size, color, align, buffer);
-}
-
-int ui_text_wrap(float x, float y, float size, u32 color, UiAlign align,
-                 float max_width, int max_lines, float line_height, const char *text)
-{
-    if (!text) return 0;
-    text = i18n_text(text);
-    int lines = 0;
-    const char *cursor = text;
-    char line[256];
-    while (*cursor && lines < max_lines) {
-        while (*cursor == ' ') ++cursor;
-        if (!*cursor) break;
-        size_t best = 0;
-        /* Grow word by word until the next word would overflow. */
-        for (;;) {
-            size_t next = best;
-            while (cursor[next] == ' ') ++next;
-            if (!cursor[next] || cursor[next] == '\n') break;
-            while (cursor[next] && cursor[next] != ' ' && cursor[next] != '\n') ++next;
-            if (next >= sizeof(line)) break;
-            memcpy(line, cursor, next);
-            line[next] = '\0';
-            if (ui_text_width(line, size) > max_width) break;
-            best = next;
-        }
-        if (best == 0) {
-            /* A single word wider than the line: hard-break it. */
-            while (cursor[best] && cursor[best] != '\n' && best < sizeof(line) - 2) {
-                memcpy(line, cursor, best + 1);
-                line[best + 1] = '\0';
-                if (ui_text_width(line, size) > max_width && best > 0) break;
-                ++best;
-            }
-        }
-        const bool last = lines == max_lines - 1 && cursor[best] && cursor[best] != '\n';
-        memcpy(line, cursor, best);
-        line[best] = '\0';
-        if (last) ui_text_fit(x, y + lines * line_height, size, color, align, max_width, cursor);
-        else ui_text(x, y + lines * line_height, size, color, align, line);
-        cursor += best;
-        if (*cursor == '\n') ++cursor;
-        ++lines;
-    }
-    return lines;
-}
-
-void ui_label(float x, float y, float size, u32 color, UiAlign align, const char *text)
-{
-    /* Hand-spaced capitals: one code point at a time with a tracking gap. */
-    if (!text) return;
-    text = i18n_text(text);
-    const float tracking = size * 0.10f;
-    char upper[128];
-    size_t n = 0;
-    for (const unsigned char *p = (const unsigned char *)text; *p && n < sizeof(upper) - 1; ++p) {
-        unsigned char c = *p;
-        if (c >= 'a' && c <= 'z') c -= 32;
-        /* Latin-1 small letters (C3 A0..BE, not the division sign) have
-         * their capital 0x20 below: e acute -> E acute, for French, German... */
-        else if (p > (const unsigned char *)text && p[-1] == 0xC3 && c >= 0xA0 && c <= 0xBE && c != 0xB7) c -= 0x20;
-        upper[n++] = (char)c;
-    }
-    upper[n] = '\0';
-    float width = 0.0f;
-    char glyph[5];
-    for (const char *p = upper; *p;) {
-        size_t len = 1;
-        while ((((unsigned char)p[len]) & 0xC0) == 0x80 && len < 4) ++len;
-        memcpy(glyph, p, len);
-        glyph[len] = '\0';
-        p += len;
-        width += ui_text_width(glyph, size) + (*p ? tracking : 0.0f);
-    }
-    if (align == UI_ALIGN_CENTER) x -= width / 2.0f;
-    else if (align == UI_ALIGN_RIGHT) x -= width;
-    for (const char *p = upper; *p;) {
-        size_t len = 1;
-        while ((((unsigned char)p[len]) & 0xC0) == 0x80 && len < 4) ++len;
-        memcpy(glyph, p, len);
-        glyph[len] = '\0';
-        p += len;
-        x += ui_text_width(glyph, size) + tracking;
-        ui_text(x - ui_text_width(glyph, size) - tracking, y, size, color, UI_ALIGN_LEFT, glyph);
-    }
-}
-
-/* ---- Components ---------------------------------------------------------- */
-
-void ui_panel(UiRect r, u32 accent)
-{
-    ui_surface(r, UI_LINE, UI_SURFACE);
-    ui_rect(r.x + r.w / 2.0f - 12.0f, r.y, 24.0f, 2.0f, accent);
-}
-
-float ui_pill(float x, float y, u32 color, UiAlign align, const char *text)
-{
-    const float w = ui_text_width(text, 11.0f) + 12.0f;
-    if (align == UI_ALIGN_CENTER) x -= w / 2.0f;
-    else if (align == UI_ALIGN_RIGHT) x -= w;
-    ui_rect(x, y, w, 16.0f, color);
-    ui_rect(x + 1.0f, y + 1.0f, w - 2.0f, 14.0f, UI_BG);
-    ui_text(x + w / 2.0f, y + 1.5f, 11.0f, color, UI_ALIGN_CENTER, text);
-    return w;
-}
-
-void ui_dots(float cx, float cy, unsigned count, unsigned active, u32 on, u32 off)
-{
-    const float gap = 9.0f;
-    float x = cx - gap * (float)(count - 1) / 2.0f;
-    for (unsigned i = 0; i < count; ++i, x += gap) {
-        if (i == active) ui_rounded(x - 3.5f, cy - 2.0f, 7.0f, 4.0f, 2.0f, on);
-        else ui_circle(x, cy, 1.6f, off);
-    }
-}
-
-void ui_section(float x, float y, float w, const char *jp, const char *en)
-{
-    float cursor = x;
-    /* In Japanese the kanji heading says it all. */
-    if (g_has_japanese && i18n_get() == LANG_JA && jp && jp[0]) {
-        ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp);
-    } else if (g_has_japanese) {
-        cursor += ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp) + 6.0f;
-        ui_label(cursor, y + 1.0f, 11.0f, UI_TEXT_FAINT, UI_ALIGN_LEFT, en);
-    } else {
-        ui_label(cursor, y + 1.0f, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, en);
-    }
-    ui_hline(x, y + 15.0f, w, UI_LINE);
-}
-
-void ui_seal(float x, float y, float size)
-{
-    /* Hanko: celadon stamp with 霞 (kasumi, mist) cut out of it. */
-    /* GPU downscaling without mipmaps aliases badly, so small seals use
-     * copies pre-shrunk with a high-quality filter. */
-    const UiImage art = size <= 20.0f ? UI_IMAGE_SEAL_16 : size <= 48.0f ? UI_IMAGE_SEAL_40 : UI_IMAGE_SEAL;
-    const float native = art == UI_IMAGE_SEAL_16 ? 16.0f : art == UI_IMAGE_SEAL_40 ? 40.0f : 64.0f;
-    if (ui_image(art, x, y, size / native, 1.0f)) return;
-    ui_rounded(x, y, size, size, size * 0.16f, UI_ACCENT);
-    ui_outline(x + size * 0.09f, y + size * 0.09f, size * 0.82f, size * 0.82f,
-               size > 30 ? 2.0f : 1.0f, UI_BG);
-    if (g_has_japanese)
-        ui_text(x + size / 2.0f, y + size * 0.14f, size * 0.72f, UI_BG, UI_ALIGN_CENTER, "霞");
-    else
-        ui_ring(x + size / 2.0f, y + size / 2.0f, size * 0.26f, size > 30 ? 3.0f : 1.5f,
-                UI_BG, UI_ACCENT);
-}
-
-void ui_enso(float cx, float cy, float r, u32 color)
-{
-    /* A brush circle that chases itself: a bright head and a fading tail. */
-    const unsigned dots = 36;
-    const float phase = (float)(ui_ticks() % 1400) / 1400.0f * 2.0f * (float)M_PI;
-    /* The brush ring in the art has a radius of about 58 of its 128 px. */
-    if (ui_image_rotated(UI_IMAGE_ENSO, cx, cy, r / 58.0f, phase, 1.0f)) return;
-    for (unsigned i = 0; i < dots; ++i) {
-        const float t = (float)i / (float)dots;
-        const float angle = phase - t * 1.6f * (float)M_PI;
-        const float thickness = 2.6f - t * 1.6f;
-        const u8 alpha = (u8)(255.0f * (1.0f - t) * (1.0f - t));
-        ui_circle(cx + cosf(angle) * r, cy + sinf(angle) * r, thickness,
-                  ui_with_alpha(color, alpha));
-    }
-    /* Faint guide circle underneath the brush stroke. */
-    for (unsigned i = 0; i < 72; ++i) {
-        const float angle = (float)i / 72.0f * 2.0f * (float)M_PI;
-        ui_circle(cx + cosf(angle) * r, cy + sinf(angle) * r, 0.8f, ui_with_alpha(color, 0x30));
-    }
-}
-
-void ui_seigaiha(float x, float y, float w, float h, float radius, u32 line, u32 fill)
-{
-    /* 青海波: overlapping concentric half-circles, drawn back row to front. */
-    const float row_step = radius * 0.5f;
-    const int rows = (int)(h / row_step) + 2;
-    for (int row = 0; row < rows; ++row) {
-        const float cy = y + row * row_step + radius;
-        const float offset = (row & 1) ? radius : 0.0f;
-        for (float cx = x - radius + offset; cx < x + w + radius; cx += radius * 2.0f) {
-            for (int ring = 0; ring < 4; ++ring) {
-                const float rr = radius * (1.0f - ring * 0.24f);
-                ui_circle(cx, cy, rr, line);
-                ui_circle(cx, cy, rr - 1.2f, fill);
-            }
-        }
-    }
-}
-
-void ui_wifi_icon(float x, float y, unsigned bars, u32 on, u32 off)
-{
-    for (unsigned i = 0; i < 3; ++i) {
-        const float bar_h = 4.0f + i * 3.0f;
-        ui_rect(x + i * 5.0f, y + 10.0f - bar_h, 3.0f, bar_h, i < bars ? on : off);
-    }
-}
-
-void ui_battery_icon(float x, float y, unsigned level, bool charging)
-{
-    ui_outline(x, y, 20.0f, 10.0f, 1.0f, UI_TEXT_DIM);
-    ui_rect(x + 20.0f, y + 3.0f, 2.0f, 4.0f, UI_TEXT_DIM);
-    if (level > 5) level = 5;
-    const u32 color = charging ? UI_ACCENT : level <= 1 ? UI_DANGER : UI_TEXT;
-    ui_rect(x + 2.0f, y + 2.0f, 16.0f * (float)level / 5.0f, 6.0f, color);
-}
-
-/* The system font has no arrow glyphs (they came out as boxes): arrow
- * chips are drawn. "◀ ▶" left and right, "▲ ▼" up and down. */
-static int arrow_chip(const char *button)
-{
-    if (!strcmp(button, "◀ ▶") || !strcmp(button, "◀▶")) return 1;
-    if (!strcmp(button, "▲ ▼") || !strcmp(button, "▲▼")) return 2;
-    return 0;
-}
-
-static void draw_arrows(float cx, float cy, int kind, float s, u32 color)
-{
-    const float gap = s * 1.4f;
-    if (kind == 1) {
-        ui_triangle(cx - gap + s * 0.5f, cy - s, cx - gap + s * 0.5f, cy + s, cx - gap - s * 0.7f, cy, color);
-        ui_triangle(cx + gap - s * 0.5f, cy - s, cx + gap - s * 0.5f, cy + s, cx + gap + s * 0.7f, cy, color);
-    } else {
-        ui_triangle(cx - gap - s, cy + s * 0.5f, cx - gap + s, cy + s * 0.5f, cx - gap, cy - s * 0.7f, color);
-        ui_triangle(cx + gap - s, cy - s * 0.5f, cx + gap + s, cy - s * 0.5f, cx + gap, cy + s * 0.7f, color);
-    }
-}
-
-static bool round_chip(const char *button)
-{
-    return strlen(button) == 1 && strchr("ABXY", button[0]);
-}
-
-float ui_button_chip(float x, float y, const char *button, u32 color)
-{
-    /* Face buttons are circles; shoulders and system buttons are pills. */
-    if (round_chip(button)) {
-        ui_ring(x + 7.5f, y + 7.5f, 7.5f, 1.2f, color, UI_BG);
-        ui_text(x + 7.5f, y + 1.5f, 12.0f, color, UI_ALIGN_CENTER, button);
-        return 15.0f;
-    }
-    const int arrows = arrow_chip(button);
-    const float width = arrows ? 28.0f : ui_text_width(button, 10.0f) + 10.0f;
-    ui_rounded(x, y + 0.5f, width, 14.0f, 7.0f, color);
-    ui_rounded(x + 1.0f, y + 1.5f, width - 2.0f, 12.0f, 6.0f, UI_BG);
-    if (arrows) draw_arrows(x + width / 2.0f, y + 7.5f, arrows, 3.2f, color);
-    else ui_text(x + width / 2.0f, y + 2.0f, 10.0f, color, UI_ALIGN_CENTER, button);
-    return width;
-}
-
-/* Hint rows: the system font is sharp only at 30 px and exactly half that,
- * so a row is set at 15 px when it fits and at 12 px when it doesn't.
- * Big chips: a filled disc for face buttons, an outlined pill otherwise. */
-static float hint_chip_width(const char *button, bool big)
-{
-    if (!big) return round_chip(button) ? 15.0f : arrow_chip(button) ? 28.0f : ui_text_width(button, 10.0f) + 10.0f;
-    if (round_chip(button)) return 17.0f;
-    if (arrow_chip(button)) return 32.0f;
-    return ui_text_width(button, 15.0f) + 12.0f;
-}
-
-static void hint_chip(float x, float y, const char *button, u32 color)
-{
-    const float h = 17.0f, w = hint_chip_width(button, true);
-    if (round_chip(button)) {
-        ui_circle(x + h / 2, y + h / 2, h / 2, color);
-        ui_text(x + h / 2, y + 1.0f, 15.0f, UI_BG, UI_ALIGN_CENTER, button);
-        return;
-    }
-    ui_rounded(x, y, w, h, h / 2, color);
-    ui_rounded(x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, h / 2 - 1.0f, UI_BG);
-    const int arrows = arrow_chip(button);
-    if (arrows) draw_arrows(x + w / 2, y + h / 2, arrows, 3.8f, color);
-    else ui_text(x + w / 2, y + 1.0f, 15.0f, color, UI_ALIGN_CENTER, button);
-}
-
-static float hint_width(const char *button, const char *label, bool big)
-{
-    return hint_chip_width(button, big) + (big ? 6.0f : 5.0f) + ui_text_width(label, big ? 15.0f : 12.0f);
-}
-
-float ui_hint(float x, float y, const char *button, const char *label, bool measure_only)
-{
-    const float total = hint_width(button, label, false);
-    if (!measure_only) {
-        ui_button_chip(x, y, button, UI_TEXT_DIM);
-        ui_text(x + hint_chip_width(button, false) + 5.0f, y + 1.0f, 12.0f, UI_TEXT, UI_ALIGN_LEFT, label);
-    }
-    return total;
-}
-
-void ui_hint_row(float center_x, float y, const char *const *pairs)
-{
-    unsigned count = 0;
-    float big_total = 0.0f;
-    for (const char *const *p = pairs; p[0] && p[1]; p += 2, ++count) big_total += hint_width(p[0], p[1], true);
-    if (!count) return;
-    const float big_gap = 14.0f;
-    big_total += big_gap * (float)(count - 1);
-    /* The row is centred on its screen: the room is the screen less margins. */
-    const bool big = big_total <= center_x * 2.0f - 24.0f;
-    if (big) {
-        float x = floorf(center_x - big_total / 2.0f);
-        for (const char *const *p = pairs; p[0] && p[1]; p += 2) {
-            hint_chip(x, y - 1.0f, p[0], UI_TEXT_DIM);
-            const float chip = hint_chip_width(p[0], true);
-            ui_text(x + chip + 6.0f, y - 1.0f, 15.0f, UI_TEXT, UI_ALIGN_LEFT, p[1]);
-            x += hint_width(p[0], p[1], true) + big_gap;
-        }
-        return;
-    }
-    const float gap = 16.0f;
-    float total = 0.0f;
-    for (const char *const *p = pairs; p[0] && p[1]; p += 2) total += ui_hint(0, 0, p[0], p[1], true);
-    total += gap * (float)(count - 1);
-    float x = center_x - total / 2.0f;
-    for (const char *const *p = pairs; p[0] && p[1]; p += 2)
-        x += ui_hint(x, y, p[0], p[1], false) + gap;
-}
-
-/* Corner marks, like registration marks on a print: short L strokes
- * laid over the border at each corner. */
-/* Strokes never overlap: with a see-through colour a pixel drawn twice
- * comes out brighter, and every corner showed a dot (beta.30 test). */
-static void corner_marks(UiRect r, float len, u32 color)
-{
-    ui_rect(r.x, r.y, len, 1.0f, color);
-    ui_rect(r.x, r.y + 1.0f, 1.0f, len - 1.0f, color);
-    ui_rect(r.x + r.w - len, r.y, len, 1.0f, color);
-    ui_rect(r.x + r.w - 1.0f, r.y + 1.0f, 1.0f, len - 1.0f, color);
-    ui_rect(r.x, r.y + r.h - 1.0f, len, 1.0f, color);
-    ui_rect(r.x, r.y + r.h - len, 1.0f, len - 1.0f, color);
-    ui_rect(r.x + r.w - len, r.y + r.h - 1.0f, len, 1.0f, color);
-    ui_rect(r.x + r.w - 1.0f, r.y + r.h - len, 1.0f, len - 1.0f, color);
-}
-
-/* A 1 px frame whose sides don't overlap at the corners (see above). */
-static void frame(UiRect r, u32 color)
-{
-    ui_rect(r.x, r.y, r.w, 1.0f, color);
-    ui_rect(r.x, r.y + r.h - 1.0f, r.w, 1.0f, color);
-    ui_rect(r.x, r.y + 1.0f, 1.0f, r.h - 2.0f, color);
-    ui_rect(r.x + r.w - 1.0f, r.y + 1.0f, 1.0f, r.h - 2.0f, color);
-}
-
-/* Square and defined: a 1 px border and brighter marks at the corners.
- * (Washi fibres inside read as scratches on the 3DS screen, beta.30 test.) */
-void ui_surface(UiRect r, u32 border, u32 fill)
-{
-    const UiRect inner = { r.x + 1.0f, r.y + 1.0f, r.w - 2.0f, r.h - 2.0f };
-    if (ui_glass(inner)) {
-        /* Frosted glass over the wallpaper: a wash of the fill, a light
-         * edge, and a brighter rim along the top. */
-        ui_rect(inner.x, inner.y, inner.w, inner.h, ui_with_alpha(fill, 0x70));
-        frame(r, C2D_Color32(0xFF, 0xFF, 0xFF, 0x38));
-        ui_rect(inner.x, inner.y, inner.w, 1.0f, C2D_Color32(0xFF, 0xFF, 0xFF, 0x30));
-        /* Over the frame, not on top of it twice: the marks are opaque. */
-        corner_marks(r, 5.0f, C2D_Color32(0xB8, 0xB8, 0xB8, 0xFF));
-        return;
-    }
-    ui_rect_r(r, border);
-    ui_rect(inner.x, inner.y, inner.w, inner.h, fill);
-    corner_marks(r, 5.0f, UI_TEXT_FAINT);
-}
-
-/* Every pressable thing: a square key on a hard 2 px lip. Pressed, the
- * face drops onto the lip. A 1 px bevel along its top, a faint sheen on
- * its upper half, and corner marks like the cards'. Returns the face,
- * where the content goes (it moves with the press). */
-#define KEY_LIP 2.0f
-UiRect ui_key(UiRect r, UiButtonStyle style, bool pressed)
-{
-    u32 face = UI_RAISED, border = UI_LINE_STRONG, lip = C2D_Color32(0x2A, 0x2A, 0x31, 0xFF);
-    u32 tick = UI_TEXT_DIM;
-    u8 bevel = 0x22, sheen = 0x0C;
-    if (style == UI_BUTTON_PRIMARY) {
-        face = UI_ACCENT; border = UI_ACCENT; lip = UI_ACCENT_DEEP; tick = UI_ACCENT_INK;
-        bevel = 0x50; sheen = 0x22;
-    } else if (style == UI_BUTTON_DANGER) {
-        face = UI_DANGER_DEEP; border = UI_DANGER; lip = ui_mix(UI_DANGER, UI_BG, 0.55f); tick = UI_DANGER;
-    } else if (style == UI_BUTTON_ACTIVE) {
-        border = UI_ACCENT; lip = UI_ACCENT_DEEP; tick = UI_ACCENT;
-    }
-    if (pressed) face = ui_mix(face, UI_TEXT, 0.10f);
-    const float sink = pressed ? KEY_LIP : 0.0f;
-    const float face_h = r.h - KEY_LIP;
-    const UiRect top = { r.x, r.y + sink, r.w, face_h };
-    const UiRect inner = { top.x + 1.0f, top.y + 1.0f, top.w - 2.0f, top.h - 2.0f };
-    if (g_on_bottom && g_glass && g_backdrop_drawn) {
-        /* Liquid glass over the wallpaper: the blurred picture behind it,
-         * tinted by the key's colour (solid for the main action), a light
-         * rim, a sheen down from the top and a dark lip below. */
-        /* The lip only shows below the face, so draw just that strip. */
-        if (!pressed) ui_rect(r.x + 1.0f, r.y + face_h, r.w - 2.0f, KEY_LIP, C2D_Color32(0x00, 0x00, 0x00, 0xA0));
-        ui_glass(inner);
-        const u8 wash = style == UI_BUTTON_PRIMARY ? 0xE0 : style == UI_BUTTON_DANGER ? 0xB0 : 0x48;
-        ui_rect(inner.x, inner.y, inner.w, inner.h, ui_with_alpha(style == UI_BUTTON_NORMAL ? UI_SURFACE : face, wash));
-        if (style == UI_BUTTON_ACTIVE)
-            ui_rect(inner.x, inner.y, inner.w, inner.h, ui_with_alpha(UI_ACCENT, 0x30));
-        if (pressed) ui_rect(inner.x, inner.y, inner.w, inner.h, C2D_Color32(0xFF, 0xFF, 0xFF, 0x18));
-        frame(top, style == UI_BUTTON_NORMAL ? C2D_Color32(0xFF, 0xFF, 0xFF, 0x48) : ui_with_alpha(border, 0xE0));
-        C2D_DrawRectangle(inner.x, inner.y + 1.0f, 0.0f, inner.w, inner.h * 0.5f - 1.0f,
-                          C2D_Color32(0xFF, 0xFF, 0xFF, 0x1C), C2D_Color32(0xFF, 0xFF, 0xFF, 0x1C),
-                          C2D_Color32(0xFF, 0xFF, 0xFF, 0x00), C2D_Color32(0xFF, 0xFF, 0xFF, 0x00));
-        ui_rect(inner.x, inner.y, inner.w, 1.0f, C2D_Color32(0xFF, 0xFF, 0xFF, 0x60));
-        corner_marks(top, 5.0f, tick);
-        return top;
-    }
-    ui_rect(r.x, r.y + KEY_LIP, r.w, face_h, lip);
-    ui_rect_r(top, border);
-    ui_rect(top.x + 1.0f, top.y + 1.0f, top.w - 2.0f, top.h - 2.0f, face);
-    C2D_DrawRectangle(top.x + 1.0f, top.y + 1.0f, 0.0f, top.w - 2.0f, (top.h - 2.0f) * 0.5f,
-                      C2D_Color32(0xFF, 0xFF, 0xFF, sheen), C2D_Color32(0xFF, 0xFF, 0xFF, sheen),
-                      C2D_Color32(0xFF, 0xFF, 0xFF, 0x00), C2D_Color32(0xFF, 0xFF, 0xFF, 0x00));
-    ui_rect(top.x + 1.0f, top.y + 1.0f, top.w - 2.0f, 1.0f, C2D_Color32(0xFF, 0xFF, 0xFF, bevel));
-    corner_marks(top, 5.0f, tick);
-    return top;
-}
-
-void ui_button(UiRect r, const char *label, const char *jp, UiButtonStyle style, bool pressed)
-{
-    u32 text = UI_TEXT, sub = UI_TEXT_FAINT;
-    if (style == UI_BUTTON_PRIMARY) { text = UI_BG; sub = UI_ACCENT_INK; }
-    else if (style == UI_BUTTON_DANGER) sub = UI_DANGER;
-    else if (style == UI_BUTTON_ACTIVE) sub = UI_ACCENT;
-    const UiRect f = ui_key(r, style, pressed);
-    /* 15 px is half the font's size, the only small size that stays sharp:
-     * used whenever the label fits (the kanji line too, when there's room). */
-    const bool sharp = ui_text_width(label, 15.0f) <= f.w - 10.0f;
-    const float label_size = sharp ? 15.0f : r.h >= 40.0f ? 14.0f : 12.0f;
-    const float jp_size = sharp ? 15.0f : r.h >= 40.0f ? 12.0f : 11.0f;
-    const bool room = f.h >= label_size + 2.0f + jp_size + 2.0f || !sharp;
-    /* The kanji line repeats the label in Japanese: not when that is the language. */
-    if (i18n_get() == LANG_JA && g_has_japanese) jp = NULL;
-    if (jp && jp[0] && r.h >= 30.0f && room && (g_has_japanese || !contains_japanese(jp))) {
-        const float block = label_size + 2.0f + jp_size;
-        const float top = f.y + (f.h - block) / 2.0f;
-        ui_text_fit(f.x + f.w / 2.0f, top, label_size, text, UI_ALIGN_CENTER, f.w - 8.0f, label);
-        ui_text_fit(f.x + f.w / 2.0f, top + label_size + 2.0f, jp_size, sub,
-                    UI_ALIGN_CENTER, f.w - 8.0f, jp);
-    } else {
-        ui_text_fit(f.x + f.w / 2.0f, f.y + (f.h - label_size) / 2.0f - 1.0f, label_size,
-                    text, UI_ALIGN_CENTER, f.w - 8.0f, label);
-    }
-}
-
-bool ui_hit(UiRect r, int x, int y)
-{
-    return (float)x >= r.x && (float)x < r.x + r.w && (float)y >= r.y && (float)y < r.y + r.h;
-}
-
-void ui_ps_triangle(float cx, float cy, float s, u32 color)
-{
-    const float h = s * 0.87f;
-    ui_triangle(cx, cy - h * 0.62f, cx - s / 2, cy + h * 0.38f, cx + s / 2, cy + h * 0.38f, color);
-    const float inner = s - 5.0f;
-    const float ih = inner * 0.87f;
-    ui_triangle(cx, cy - ih * 0.62f + 0.6f, cx - inner / 2, cy + ih * 0.38f + 0.6f,
-                cx + inner / 2, cy + ih * 0.38f + 0.6f, UI_BG);
-}
-
-void ui_xbox_face(float cx, float cy, float s, char letter, u32 color)
-{
-    ui_circle(cx, cy, s / 2 + 1.0f, color);
-    const char text[2] = { letter, '\0' };
-    const float size = s * 0.9f;
-    ui_text(cx, cy - size / 2, size, UI_BG, UI_ALIGN_CENTER, text);
-}
-
-void ui_ps_circle(float cx, float cy, float s, u32 color)
-{
-    ui_ring(cx, cy, s / 2, 2.0f, color, UI_BG);
-}
-
-void ui_ps_cross(float cx, float cy, float s, u32 color)
-{
-    const float d = s * 0.38f;
-    ui_line(cx - d, cy - d, cx + d, cy + d, 2.2f, color);
-    ui_line(cx - d, cy + d, cx + d, cy - d, 2.2f, color);
-}
-
-void ui_ps_square(float cx, float cy, float s, u32 color)
-{
-    const float side = s * 0.8f;
-    ui_outline(cx - side / 2, cy - side / 2, side, side, 2.0f, color);
 }

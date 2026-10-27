@@ -1,6 +1,6 @@
 #include "http_client.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <curl/curl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -10,8 +10,101 @@
 
 #include "diagnostic.h"
 
+#ifdef __vita__
+#include <mbedtls/base64.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#endif
+
 extern const unsigned char _binary_romfs_cacert_pem_start[];
 extern const unsigned char _binary_romfs_cacert_pem_end[];
+
+#ifdef __vita__
+/* The Vita's curl is built on OpenSSL 1.1.1, which turned down the bundle
+ * handed over whole (CURLOPT_CAINFO_BLOB: "Problem with the SSL CA cert"),
+ * so no sign-in could start. The certificates are decoded here one by one,
+ * once, and added to each connection's store. */
+#define CA_MAX 256
+static X509 *g_ca[CA_MAX];
+static unsigned g_ca_count, g_ca_failed;
+
+static void load_ca_bundle(void)
+{
+    const char *p = (const char *)_binary_romfs_cacert_pem_start;
+    const char *const end = (const char *)_binary_romfs_cacert_pem_end;
+    static const char begin_tag[] = "-----BEGIN CERTIFICATE-----", end_tag[] = "-----END CERTIFICATE-----";
+    static unsigned char der[8192];
+    unsigned failed = 0;
+    while (g_ca_count < CA_MAX) {
+        const char *begin = NULL;
+        for (const char *q = p; q + sizeof(begin_tag) - 1 <= end; ++q)
+            if (!memcmp(q, begin_tag, sizeof(begin_tag) - 1)) {
+                begin = q + sizeof(begin_tag) - 1;
+                break;
+            }
+        if (!begin) break;
+        const char *stop = NULL;
+        for (const char *q = begin; q + sizeof(end_tag) - 1 <= end; ++q)
+            if (!memcmp(q, end_tag, sizeof(end_tag) - 1)) {
+                stop = q;
+                break;
+            }
+        if (!stop) break;
+        p = stop + sizeof(end_tag) - 1;
+        /* Base64 without the line breaks. */
+        static char text[12288];
+        size_t length = 0;
+        for (const char *q = begin; q < stop && length < sizeof(text); ++q)
+            if (*q != '\n' && *q != '\r' && *q != ' ') text[length++] = *q;
+        size_t der_length = 0;
+        if (mbedtls_base64_decode(der, sizeof(der), &der_length, (const unsigned char *)text, length) != 0) {
+            ++failed;
+            continue;
+        }
+        const unsigned char *cursor = der;
+        X509 *cert = d2i_X509(NULL, &cursor, (long)der_length);
+        if (cert) g_ca[g_ca_count++] = cert;
+        else ++failed;
+    }
+    ERR_clear_error();
+    g_ca_failed = failed;
+}
+
+static CURLcode add_ca_bundle(CURL *curl, void *ssl_ctx, void *context)
+{
+    (void)curl;
+    (void)context;
+    X509_STORE *store = SSL_CTX_get_cert_store((SSL_CTX *)ssl_ctx);
+    unsigned added = 0;
+    for (unsigned i = 0; i < g_ca_count; ++i)
+        if (X509_STORE_add_cert(store, g_ca[i])) ++added;
+    ERR_clear_error();
+    /* Here, not at load: the log is not open yet when the bundle loads. */
+    static bool logged;
+    if (!logged) {
+        logged = true;
+        diagnostic_log("http", "CA bundle: %u certificates trusted, %u unreadable", added, g_ca_failed);
+    }
+    return added ? CURLE_OK : CURLE_SSL_CACERT_BADFILE;
+}
+#endif
+
+void http_use_ca_bundle(void *handle)
+{
+    CURL *curl = handle;
+#ifdef __vita__
+    curl_easy_setopt(curl, CURLOPT_SSL_CTX_FUNCTION, add_ca_bundle);
+    curl_easy_setopt(curl, CURLOPT_SSL_CTX_DATA, NULL);
+#else
+    struct curl_blob ca_bundle = {
+        .data = (void *)_binary_romfs_cacert_pem_start,
+        .len = (size_t)(_binary_romfs_cacert_pem_end - _binary_romfs_cacert_pem_start),
+        .flags = CURL_BLOB_NOCOPY,
+    };
+    curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca_bundle);
+#endif
+}
 /* The network worker's requests. Keep a bounded connection/TLS cache between calls. */
 static CURL *g_http;
 static volatile bool g_cancel;
@@ -47,7 +140,7 @@ static CURLcode gentle_perform(CURL *curl)
     int running = 1;
     while (running) {
         if (curl_multi_perform(g_gentle_multi, &running) != CURLM_OK) break;
-        if (running) svcSleepThread(2000000LL);
+        if (running) plat_sleep_ns(2000000LL);
     }
     CURLMsg *message;
     int left;
@@ -122,7 +215,11 @@ static size_t write_body(char *data, size_t size, size_t count, void *userdata)
 
 bool http_global_init(void)
 {
-    return curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) return false;
+#ifdef __vita__
+    load_ca_bundle();
+#endif
+    return true;
 }
 
 void http_art_cancel(void) { g_art_cancel = true; }
@@ -225,12 +322,7 @@ static bool perform(CURL **handle, volatile bool *cancel, long timeout, HttpProg
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    struct curl_blob ca_bundle = {
-        .data = (void *)_binary_romfs_cacert_pem_start,
-        .len = (size_t)(_binary_romfs_cacert_pem_end - _binary_romfs_cacert_pem_start),
-        .flags = CURL_BLOB_NOCOPY,
-    };
-    curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca_bundle);
+    http_use_ca_bundle(curl);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
     if (header_list) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);

@@ -45,6 +45,10 @@ bool shortcut_used_wide_art(void);
 bool shortcut_preview_banner(float x, float y, float scale);
 bool shortcut_preview_icon(float x, float y, float scale);
 
+/* Why shortcuts can't be made on this copy of Kasumi (shown as a notice),
+ * or NULL when they can. */
+const char *shortcut_unavailable(void);
+
 /* Installed shortcut for this game (from shortcuts.json). */
 bool shortcut_exists(const char *app_id);
 /* UI thread: make (or remake) one for `game`, launching store `variant`. */

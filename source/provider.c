@@ -1,7 +1,7 @@
 #include "provider.h"
+#include "platform.h"
 #include "i18n.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -15,7 +15,7 @@
 #define PROVIDERS_PATH APP_DATA_DIR "/providers.json"
 #define SERVICE_URLS "https://pcs.geforcenow.com/v1/serviceUrls"
 
-static LightLock g_lock = 1;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static GfnProvider g_list[PROVIDER_MAX];
 static unsigned g_count;
 static char g_recommended[12];
@@ -114,13 +114,13 @@ static bool from_json(json_t *entry, GfnProvider *out)
 static void save(void)
 {
     json_t *list = json_array();
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     for (unsigned i = 0; i < g_count; ++i)
         json_array_append_new(list, json_pack("{s:s,s:s,s:s,s:s}", "code", g_list[i].code, "name", g_list[i].name,
                                               "idp", g_list[i].idp, "url", g_list[i].url));
     json_t *root = json_pack("{s:o,s:s,s:s,s:b}", "providers", list, "recommended", g_recommended,
                              "country", g_country, "partner_only", g_partner_only);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (root) json_dump_file(root, PROVIDERS_PATH, JSON_COMPACT);
     json_decref(root);
 }
@@ -220,31 +220,31 @@ bool providers_fetch(void)
                    recommended[0] ? recommended : "-");
     json_decref(root);
     if (!count) return false;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     memcpy(g_list, fresh, sizeof(GfnProvider) * count);
     g_count = count;
     snprintf(g_recommended, sizeof(g_recommended), "%s", recommended);
     country_code(g_country, country);
     g_partner_only = only;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     save();
     return true;
 }
 
 unsigned providers_count(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const unsigned count = g_count;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return count;
 }
 
 bool providers_get(unsigned index, GfnProvider *out)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const bool ok = index < g_count;
     if (ok) *out = g_list[index];
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return ok;
 }
 
@@ -256,31 +256,31 @@ bool providers_find(const char *code, GfnProvider *out)
         return true;
     }
 
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     bool found = false;
     for (unsigned i = 0; i < g_count && !found; ++i)
         if (!strcasecmp(g_list[i].code, code)) {
             *out = g_list[i];
             found = true;
         }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return found;
 }
 
 void providers_recommended(GfnProvider *out)
 {
     char code[12];
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(code, sizeof(code), "%s", g_recommended);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (!providers_find(code, out)) provider_nvidia(out);
 }
 
 void providers_country(char *out, size_t size)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(out, size, "%s", g_country);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* Countries named in messages: where partners sell GeForce NOW. */
@@ -306,9 +306,9 @@ const char *providers_country_name(const char *code)
 bool providers_partner_here(GfnProvider *partner, bool *only)
 {
     providers_recommended(partner);
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (only) *only = g_partner_only;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return strcmp(partner->code, PROVIDER_NVIDIA) != 0;
 }
 
@@ -317,18 +317,18 @@ void provider_set_active(const GfnProvider *provider)
     GfnProvider p;
     if (provider && valid(provider)) p = *provider;
     else provider_nvidia(&p);
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_active = p;
     g_active_set = true;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void provider_active(GfnProvider *out)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     if (g_active_set) *out = g_active;
     else provider_nvidia(out);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void provider_base_url(char *out, size_t size)

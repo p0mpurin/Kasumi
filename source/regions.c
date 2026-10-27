@@ -1,6 +1,6 @@
 #include "regions.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,7 +22,7 @@
  * least this much faster: measurements wobble by a few ms. */
 #define REGIONS_MARGIN_MS 15
 
-static LightLock g_lock = 1;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static Region g_regions[REGION_MAX];
 static unsigned g_count;
 static char g_measured_ssid[40];
@@ -60,52 +60,48 @@ static const char *default_label(void)
 
 void regions_avoid_once(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_avoid_once = true;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void regions_last_used(char *name, size_t size)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(name, size, "%s", g_last_used);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 static void set_last_used(const char *name)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(g_last_used, sizeof(g_last_used), "%s", name);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 static void current_ssid(char *out, size_t size)
 {
-    char ssid[64];
-    memset(ssid, 0, sizeof(ssid));
-    if (R_FAILED(ACU_GetSSID(ssid))) ssid[0] = '\0';
-    ssid[32] = '\0';
-    snprintf(out, size, "%s", ssid);
+    plat_wifi_ssid(out, size);
 }
 
 static void save(void)
 {
     json_t *list = json_array();
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     for (unsigned i = 0; i < g_count; ++i)
         json_array_append_new(list, json_pack("{s:s,s:s,s:i}", "name", g_regions[i].name,
                                               "url", g_regions[i].url, "ms", g_regions[i].ms));
     json_t *root = json_pack("{s:i,s:o,s:s,s:s,s:I,s:s}", "version", REGIONS_VERSION, "regions", list,
                              "local", g_local, "ssid", g_measured_ssid,
                              "measured_at", (json_int_t)g_measured_at, "provider", g_provider);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (root) json_dump_file(root, REGIONS_PATH, JSON_INDENT(1));
     json_decref(root);
 }
 
 void regions_load(void)
 {
-    LightLock_Init(&g_lock);
+    plat_lock_init(&g_lock);
     json_error_t error;
     json_t *root = json_load_file(REGIONS_PATH, 0, &error);
     json_t *list = json_is_object(root) ? json_object_get(root, "regions") : NULL;
@@ -177,7 +173,7 @@ bool regions_update(void)
         diagnostic_log("REGION", "list empty");
         return false;
     }
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     check_provider_locked();
     /* Keep earlier measurements for regions that are still listed. */
     for (unsigned i = 0; i < count; ++i)
@@ -186,7 +182,7 @@ bool regions_update(void)
     memcpy(g_regions, fresh, sizeof(Region) * count);
     g_count = count;
     if (local[0]) snprintf(g_local, sizeof(g_local), "%s", local);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     diagnostic_log("REGION", "list %u regions, NVIDIA's region for this address: %s", count,
                    local[0] ? local : "unknown");
     save();
@@ -210,9 +206,9 @@ static int ping_ms(const char *base)
     int best = -1;
     for (int i = 0; i < 2; ++i) {
         http_next_request(5, NULL, NULL);
-        const u64 began = osGetTime();
+        const u64 began = plat_time_ms();
         const bool ok = http_request("GET", url, "Kasumi-3DS", headers, 1, NULL, 64 * 1024, &response);
-        const int ms = (int)(osGetTime() - began);
+        const int ms = (int)(plat_time_ms() - began);
         const bool good = ok && response.status == 200;
         http_response_free(&response);
         if (good && (best < 0 || ms < best)) best = ms;
@@ -242,11 +238,11 @@ void regions_measure(void)
 {
     Region list[REGION_MAX];
     char local[40];
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const unsigned count = g_count;
     memcpy(list, g_regions, sizeof(Region) * count);
     snprintf(local, sizeof(local), "%s", g_local);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (!count) return;
     /* Only the regions on NVIDIA's guessed continent: far ones cannot win,
      * and every region costs a TLS handshake. */
@@ -267,7 +263,7 @@ void regions_measure(void)
     }
     bool reached = false;
     for (unsigned i = 0; i < count; ++i) reached = reached || list[i].ms >= 0;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     for (unsigned i = 0; i < count && i < g_count; ++i)
         if (!strcmp(g_regions[i].url, list[i].url)) g_regions[i].ms = list[i].ms;
     /* Nothing answered (Wi-Fi dropped mid-way, beta.21 report 7QE6TZ): don't
@@ -276,7 +272,7 @@ void regions_measure(void)
         current_ssid(g_measured_ssid, sizeof(g_measured_ssid));
         g_measured_at = (int64_t)time(NULL);
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     const int best = regions_fastest();
     Region chosen;
     if (best >= 0 && regions_get((unsigned)best, &chosen))
@@ -289,33 +285,33 @@ void regions_measure(void)
 
 unsigned regions_count(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     check_provider_locked();
     const unsigned count = g_count;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return count;
 }
 
 bool regions_get(unsigned index, Region *out)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const bool ok = index < g_count;
     if (ok) *out = g_regions[index];
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return ok;
 }
 
 int regions_fastest(void)
 {
     int best = -1, local = -1;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     for (unsigned i = 0; i < g_count; ++i) {
         if (g_regions[i].ms < 0) continue;
         if (!strcmp(g_regions[i].name, g_local)) local = (int)i;
         if (best < 0 || g_regions[i].ms < g_regions[best].ms) best = (int)i;
     }
     if (local >= 0 && best >= 0 && g_regions[local].ms <= g_regions[best].ms + REGIONS_MARGIN_MS) best = local;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return best;
 }
 
@@ -323,26 +319,26 @@ bool regions_measured_here(void)
 {
     char ssid[40];
     current_ssid(ssid, sizeof(ssid));
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const int64_t age = (int64_t)time(NULL) - g_measured_at;
     const bool here = g_measured_at && age >= 0 && age < REGIONS_MAX_AGE && !strcmp(ssid, g_measured_ssid);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return here;
 }
 
 void regions_set_choice(const char *choice)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(g_choice, sizeof(g_choice), "%s", choice ? choice : "");
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 void regions_resolve(char *url, size_t size)
 {
     char choice[40];
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(choice, sizeof(choice), "%s", g_choice);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     provider_base_url(url, size);
     if (!strcmp(choice, REGION_CHOICE_NVIDIA)) {
         diagnostic_log("REGION", "server=%s", default_label());
@@ -350,22 +346,22 @@ void regions_resolve(char *url, size_t size)
         return;
     }
     if (choice[0]) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         bool found = false;
         for (unsigned i = 0; i < g_count && !found; ++i) {
             if (strcmp(g_regions[i].name, choice)) continue;
             snprintf(url, size, "%s", g_regions[i].url);
             found = true;
         }
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         diagnostic_log("REGION", "server=%s%s", choice, found ? "" : " (not listed; default)");
         set_last_used(found ? choice : default_label());
         return;
     }
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const bool avoid = g_avoid_once;
     g_avoid_once = false;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (avoid) {
         diagnostic_log("REGION", "server=auto: last session there failed; %s this time", default_label());
         set_last_used(default_label());
@@ -379,9 +375,9 @@ void regions_resolve(char *url, size_t size)
     const int best = regions_fastest();
     Region region;
     char local[40];
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     snprintf(local, sizeof(local), "%s", g_local);
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (best >= 0 && regions_get((unsigned)best, &region) && !strcmp(region.name, local)) {
         /* NVIDIA's own region is the fastest: go through NVIDIA's normal
          * address, which balances the queue across its servers. Queued

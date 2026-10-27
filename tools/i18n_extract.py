@@ -14,12 +14,23 @@ import re
 import sys
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
+# Shared code, then each console's own (platform.h's backends).
+SOURCE_DIRS = ["source", os.path.join("source", "3ds"), os.path.join("source", "vita")]
+
+
+def source_paths(name):
+    """Every console's copy: screens.c and ui.c are in source/3ds and source/vita."""
+    return [os.path.join(ROOT, folder, name) for folder in SOURCE_DIRS
+            if os.path.exists(os.path.join(ROOT, folder, name))]
+
+
 # Files whose strings reach the screen (menus, notices, status lines).
 FILES = [
-    "screens.c", "main.c", "ui.c", "gfn_client.c", "xcloud.c", "steam_link.c", "steam_remote.c",
+    "screens.c", "screens_model.c", "main.c", "ui.c", "gfn_client.c", "xcloud.c", "steam_link.c", "steam_remote.c",
     "steam_session.c", "updater.c", "webrtc_transport.c", "nvst_signal.c", "remote_keyboard.c",
     "shortcut.c", "shortcut_cia.c", "gfn_input.c", "gallery.c", "net_worker.c", "report.c",
     "audio_output.c", "mic_capture.c", "game_prefs.c", "screenshot.c", "providers.c", "provider.c",
+    "render.c", "system.c", "package.c",
 ]
 # Lines that never show text to the player.
 SKIP_LINE = re.compile(
@@ -109,12 +120,11 @@ def wanted(s):
 def main():
     seen = {}
     for name in FILES:
-        path = os.path.join(ROOT, "source", name)
-        if not os.path.exists(path):
-            continue
-        for s, line in literals(path):
-            if wanted(s) and s not in seen:
-                seen[s] = f"{name}:{line}"
+        for path in source_paths(name):
+            where = os.path.relpath(path, os.path.join(ROOT, "source")).replace(os.sep, "/")
+            for s, line in literals(path):
+                if wanted(s) and s not in seen:
+                    seen[s] = f"{where}:{line}"
     os.makedirs(os.path.join(ROOT, "i18n"), exist_ok=True)
     with open(os.path.join(ROOT, "i18n", "strings.txt"), "w", encoding="utf-8", newline="\n") as f:
         for s in seen:

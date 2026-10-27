@@ -43,11 +43,11 @@ typedef struct {
     int64_t checked_at;
 } UpdateInfo;
 
-/* Reads update.json; self_path is argv[0] (the .3dsx path when homebrew). */
+/* Reads update.json; self_path is argv[0] (package_init). */
 void updater_init(const char *self_path);
 UpdateInfo updater_info(void);
-/* True when installing replaces a .3dsx rather than the installed CIA. */
-bool updater_is_3dsx(void);
+/* What this copy installs as, for Settings ("CIA", ".3dsx"). */
+const char *updater_package_label(void);
 /* The last check went to a dev server (dev_server.txt). */
 bool updater_dev_mode(void);
 /* Auto-check is due (at most every 12 hours). */
@@ -57,7 +57,8 @@ bool updater_check_due(void);
 bool updater_check(bool include_beta);
 bool updater_install(void);
 
-/* UI: after an install, restart into the new version (CIA only). */
+/* UI: after an install, restart into the new version (where the console
+ * allows it: the 3DS's CIA). */
 bool updater_can_relaunch(void);
 void updater_relaunch(void);
 /* The first start of a new version: its release notes, once. */

@@ -1,6 +1,6 @@
 #include "sfx.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <opus/opus.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +12,7 @@
 #define FIRST_CHANNEL 11
 #define CHANNELS 3
 /* Half of Opus's 48 kHz: the effects were made at 32 kHz, and this halves
- * the linear memory (about 0.8 MB for all of them). */
+ * the sound memory (about 0.8 MB for all of them). */
 #define RATE 24000
 #define MAX_SECONDS 3
 #define VOLUME 0.8f
@@ -46,7 +46,7 @@ static const struct {
 
 static s16 *g_pcm[SFX_COUNT];
 static unsigned g_frames[SFX_COUNT];
-static ndspWaveBuf g_buf[CHANNELS];
+static PlatAudioBuffer g_buf[CHANNELS];
 static unsigned g_next;
 static bool g_ready, g_enabled = true;
 
@@ -110,10 +110,9 @@ static bool decode(Sfx sfx, OpusDecoder *decoder, s16 *scratch, unsigned capacit
     }
     if (frames <= skip) return false;
     frames -= skip;
-    g_pcm[sfx] = linearAlloc(frames * 2 * sizeof(s16));
+    g_pcm[sfx] = plat_audio_alloc(frames * 2 * sizeof(s16));
     if (!g_pcm[sfx]) return false;
     memcpy(g_pcm[sfx], scratch + skip * 2, frames * 2 * sizeof(s16));
-    DSP_FlushDataCache(g_pcm[sfx], frames * 2 * sizeof(s16));
     g_frames[sfx] = frames;
     return true;
 }
@@ -121,7 +120,7 @@ static bool decode(Sfx sfx, OpusDecoder *decoder, s16 *scratch, unsigned capacit
 void sfx_init(void)
 {
     if (g_ready || !audio_system_ready()) return;
-    const u64 started = osGetTime();
+    const u64 started = plat_time_ms();
     int error = OPUS_OK;
     OpusDecoder *decoder = opus_decoder_create(RATE, 2, &error);
     const unsigned capacity = RATE * MAX_SECONDS;
@@ -131,16 +130,10 @@ void sfx_init(void)
         for (unsigned i = 0; i < SFX_COUNT; ++i) loaded += decode((Sfx)i, decoder, scratch, capacity);
     free(scratch);
     if (decoder) opus_decoder_destroy(decoder);
-    for (unsigned c = 0; c < CHANNELS; ++c) {
-        ndspChnReset(FIRST_CHANNEL + c);
-        ndspChnSetInterp(FIRST_CHANNEL + c, NDSP_INTERP_LINEAR);
-        ndspChnSetRate(FIRST_CHANNEL + c, RATE);
-        ndspChnSetFormat(FIRST_CHANNEL + c, NDSP_FORMAT_STEREO_PCM16);
-        g_buf[c].status = NDSP_WBUF_DONE;
-    }
+    for (unsigned c = 0; c < CHANNELS; ++c) plat_audio_channel_open(FIRST_CHANNEL + c, RATE, 2, false);
     g_ready = loaded > 0;
     diagnostic_log("SFX", "%u of %u sounds ready in %llu ms (linear free %lu KiB)", loaded, (unsigned)SFX_COUNT,
-                   (unsigned long long)(osGetTime() - started), (unsigned long)(linearSpaceFree() / 1024));
+                   (unsigned long long)(plat_time_ms() - started), (unsigned long)(plat_device_memory_free() / 1024));
 }
 
 void sfx_set_enabled(bool enabled) { g_enabled = enabled; }
@@ -151,13 +144,11 @@ bool sfx_play_always(Sfx sfx)
     const unsigned c = g_next;
     g_next = (g_next + 1) % CHANNELS;
     const int channel = FIRST_CHANNEL + (int)c;
-    ndspChnWaveBufClear(channel);
-    float mix[12] = { VOLUME, VOLUME };
-    ndspChnSetMix(channel, mix);
-    memset(&g_buf[c], 0, sizeof(g_buf[c]));
-    g_buf[c].data_pcm16 = g_pcm[sfx];
-    g_buf[c].nsamples = g_frames[sfx];
-    ndspChnWaveBufAdd(channel, &g_buf[c]);
+    plat_audio_channel_clear(channel);
+    plat_audio_channel_volume(channel, VOLUME, VOLUME);
+    g_buf[c].data = g_pcm[sfx];
+    g_buf[c].frames = g_frames[sfx];
+    plat_audio_queue(channel, &g_buf[c]);
     return true;
 }
 
@@ -169,9 +160,9 @@ void sfx_play(Sfx sfx)
 void sfx_exit(void)
 {
     if (audio_system_ready())
-        for (unsigned c = 0; c < CHANNELS; ++c) ndspChnWaveBufClear(FIRST_CHANNEL + c);
+        for (unsigned c = 0; c < CHANNELS; ++c) plat_audio_channel_clear(FIRST_CHANNEL + c);
     for (unsigned i = 0; i < SFX_COUNT; ++i) {
-        if (g_pcm[i]) linearFree(g_pcm[i]);
+        if (g_pcm[i]) plat_audio_free(g_pcm[i]);
         g_pcm[i] = NULL;
     }
     g_ready = false;

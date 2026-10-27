@@ -1,4 +1,5 @@
 #include "gfn_client.h"
+#include "platform.h"
 #include "i18n.h"
 #include "app_paths.h"
 #include "http_client.h"
@@ -8,7 +9,6 @@
 #include "xcloud.h"
 #include "steam_link.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +28,8 @@ static void active_clear(void);
 static const char *DEVICE_CLIENT_ID = "q61ddeJrVt7O90Nl-P-N7I36yctih4Ml6FyXLrb6j-U";
 static const char *DEVICE_UA = "Mozilla/5.0 (X11; Linux x86_64; Steam Deck) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 static const char *GFN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 NVIDIACEFClient/HEAD/debb5919f6 GFN-PC/2.0.87.131";
+/* CloudMatch session calls present the web client (see cloudmatch_headers). */
+static const char *CLOUDMATCH_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36";
 /* CloudMatch sessions belong to the client id that made them. Beta.18 made a
  * new random one per launch, so a later launch could neither list nor DELETE
  * an earlier one (every stop: 404). OpenNOW desktop sends this fixed id. */
@@ -49,16 +51,12 @@ static bool cloudmatch_status_is_transient(long status)
  * worst at busy hours, gone when someone else's game ended. */
 static void random_fill(unsigned char *bytes, size_t size)
 {
-    if (R_SUCCEEDED(psInit())) {
-        const Result rc = PS_GenerateRandomBytes(bytes, size);
-        psExit();
-        if (R_SUCCEEDED(rc)) return;
-    }
+    if (plat_random_bytes(bytes, size)) return;
     diagnostic_log("APP", "hardware random unavailable; using the clock");
     for (size_t i = 0; i < size; ++i) {
-        const u64 tick = svcGetSystemTick();
-        bytes[i] = (unsigned char)(tick ^ (tick >> 8) ^ (tick >> 16) ^ (osGetTime() * 2654435761u));
-        svcSleepThread(1000 + (tick & 0x3ff));
+        const u64 tick = plat_ticks();
+        bytes[i] = (unsigned char)(tick ^ (tick >> 8) ^ (tick >> 16) ^ (plat_time_ms() * 2654435761u));
+        plat_sleep_ns(1000 + (tick & 0x3ff));
     }
 }
 
@@ -92,7 +90,7 @@ static bool copy_json_string_if_present(char *destination, size_t size,
 
 static bool save_session(const GfnClient *client)
 {
-    mkdir("sdmc:/3ds", 0777);
+    mkdir(APP_ROOT_DIR, 0777);
     mkdir(DATA_DIR, 0777);
     json_t *root = json_object();
     if (!root) return false;
@@ -154,7 +152,7 @@ static void get_device_id(char output[40])
         }
         fclose(file);
     }
-    mkdir("sdmc:/3ds", 0777);
+    mkdir(APP_ROOT_DIR, 0777);
     mkdir(DATA_DIR, 0777);
     generate_uuid(output);
     diagnostic_log("AUTH", "new device id made (one per console)");
@@ -294,7 +292,7 @@ static bool request_tokens(GfnClient *client, const char *form, bool polling)
                             headers, ARRAY_SIZE(headers), form, 128 * 1024, &response);
         if ((sent && !token_status_transient(response.status)) || attempt == attempts) break;
         if (sent) http_response_free(&response);
-        svcSleepThread(attempt == 1 ? 500000000LL : 1500000000LL);
+        plat_sleep_ns(attempt == 1 ? 500000000LL : 1500000000LL);
     }
     if (!sent) {
         g_token_transient = true;
@@ -460,7 +458,7 @@ static bool refresh_session(GfnClient *client)
 void gfn_client_init(GfnClient *client)
 {
     memset(client, 0, sizeof(*client));
-    srand((unsigned)(svcGetSystemTick() ^ osGetTime()));
+    srand((unsigned)(plat_ticks() ^ plat_time_ms()));
     /* The NVIDIA login sets its provider (partners) even while Xbox is the
      * service shown; then its tokens make way for Xbox's. */
     const bool nvidia_saved = load_session(client);
@@ -904,7 +902,7 @@ static bool fetch_catalog(GfnClient *client, const char *search_query, bool owne
 static uint32_t g_library_ids[LIBRARY_IDS_MAX];
 static unsigned g_library_id_count, g_library_games;
 static bool g_library_known;
-static LightLock g_library_lock = 1;
+static PlatLock g_library_lock = PLAT_LOCK_INIT;
 
 static uint32_t id_hash(const char *id)
 {
@@ -923,20 +921,20 @@ static void library_remember(const GfnClient *client)
         for (unsigned v = 0; v < g->variant_count && count < LIBRARY_IDS_MAX; ++v)
             ids[count++] = id_hash(g->variants[v].id);
     }
-    LightLock_Lock(&g_library_lock);
+    plat_lock(&g_library_lock);
     memcpy(g_library_ids, ids, count * sizeof(ids[0]));
     g_library_id_count = count;
     g_library_games = (unsigned)client->game_count;
     g_library_known = true;
-    LightLock_Unlock(&g_library_lock);
+    plat_unlock(&g_library_lock);
 }
 
 bool gfn_library_known(unsigned *games)
 {
-    LightLock_Lock(&g_library_lock);
+    plat_lock(&g_library_lock);
     const bool known = g_library_known;
     if (games) *games = g_library_games;
-    LightLock_Unlock(&g_library_lock);
+    plat_unlock(&g_library_lock);
     return known;
 }
 
@@ -948,11 +946,11 @@ bool gfn_in_library(const GfnGame *game)
     wanted[n++] = id_hash(game->app_id);
     for (unsigned v = 0; v < game->variant_count; ++v) wanted[n++] = id_hash(game->variants[v].id);
     bool found = false;
-    LightLock_Lock(&g_library_lock);
+    plat_lock(&g_library_lock);
     for (unsigned i = 0; i < g_library_id_count && !found; ++i)
         for (unsigned k = 0; k < n && !found; ++k)
             found = g_library_ids[i] == wanted[k];
-    LightLock_Unlock(&g_library_lock);
+    plat_unlock(&g_library_lock);
     return found;
 }
 
@@ -1042,13 +1040,13 @@ bool gfn_connection_test(GfnClient *client)
     static const char *const range_headers[] = { "Accept: */*", "Range: bytes=0-786431" };
     static const char *const plain_headers[] = { "Accept: application/json" };
     client->conn_failed = true;
-    client->conn_bars = osGetWifiStrength();
+    client->conn_bars = plat_wifi_strength();
     HttpResponse response;
     unsigned best = 100000;
     for (int i = 0; i < 3; ++i) {
-        const u64 start = osGetTime();
+        const u64 start = plat_time_ms();
         const bool ok = http_request("GET", info_url, GFN_UA, plain_headers, 1, NULL, 64 * 1024, &response);
-        const unsigned ms = (unsigned)(osGetTime() - start);
+        const unsigned ms = (unsigned)(plat_time_ms() - start);
         http_response_free(&response);
         if (!ok) {
             snprintf(client->status, sizeof(client->status), i18n_text("Connection check: NVIDIA unreachable"));
@@ -1062,9 +1060,9 @@ bool gfn_connection_test(GfnClient *client)
         return false;
     }
     http_response_free(&response);
-    const u64 start = osGetTime();
+    const u64 start = plat_time_ms();
     http_request("GET", cdn_url, GFN_UA, range_headers, 2, NULL, 768 * 1024, &response);
-    const u64 ms = osGetTime() - start;
+    const u64 ms = plat_time_ms() - start;
     const size_t bytes = response.size;
     http_response_free(&response);
     if (bytes < 256 * 1024 || !ms) return false;
@@ -1127,7 +1125,10 @@ static char *build_session_body(const GfnGame *game, const char *device_id)
     json_object_set_new(request, "clientIdentification", json_string("GFN-PC"));
     json_object_set_new(request, "deviceHashId", json_string(device_id));
     json_object_set_new(request, "clientVersion", json_string("30.0"));
-    json_object_set_new(request, "clientPlatformName", json_string("windows"));
+    /* "browser", as play.geforcenow.com sends. Since 2026-10-27 a "windows"
+     * request asking for a WebRTC streamer gets a rig whose streamer never
+     * joins signaling, so no SDP offer ever arrives (report G5EP53). */
+    json_object_set_new(request, "clientPlatformName", json_string("browser"));
     json_object_set_new(request, "availableSupportedControllers", json_array());
     json_object_set_new(request, "sdkVersion", json_string("1.0"));
     json_object_set_new(request, "streamerVersion", json_integer(1));
@@ -1139,7 +1140,7 @@ static char *build_session_body(const GfnGame *game, const char *device_id)
     json_object_set_new(request, "remoteControllersBitmap", json_integer(1));
     json_object_set_new(request, "clientTimezoneOffset", json_integer(0));
     json_object_set_new(request, "enhancedStreamMode", json_integer(1));
-    json_object_set_new(request, "appLaunchMode", json_integer(2));
+    json_object_set_new(request, "appLaunchMode", json_integer(1));
     json_object_set_new(request, "secureRTSPSupported", json_false());
     json_object_set_new(request, "partnerCustomData", json_string(""));
     json_object_set_new(request, "accountLinked", json_true());
@@ -1239,12 +1240,15 @@ static int parse_session_status(json_t *value)
 static const char *connection_ip(json_t *connection)
 {
     json_t *ip = json_object_get(connection, "ip");
-    if (json_is_string(ip)) return json_string_value(ip);
-    if (json_is_array(ip) && json_array_size(ip)) {
+    const char *value = "";
+    if (json_is_string(ip)) value = json_string_value(ip);
+    else if (json_is_array(ip) && json_array_size(ip)) {
         json_t *first = json_array_get(ip, 0);
-        if (json_is_string(first)) return json_string_value(first);
+        if (json_is_string(first)) value = json_string_value(first);
     }
-    return "";
+    /* While queued, CloudMatch lists ".cloudmatchbeta.nvidiagrid.net": the
+     * seat's name with its address part still empty. Not a usable host. */
+    return value[0] == '.' ? "" : value;
 }
 
 static int connection_port(json_t *connection)
@@ -1276,9 +1280,19 @@ static int connection_port(json_t *connection)
 
 static void parse_session_network(GfnClient *client, json_t *session)
 {
+    /* Queue responses can already contain an endpoint, then move the seat
+     * before it becomes ready. Resolve each response independently: an old
+     * nonempty URL must not hide the new usage-14 connection. Preserve the
+     * previous endpoint only when this response supplies no replacement. */
+    char signaling[sizeof(client->signaling_url)] = {0};
+    /* Which kind of usage-14 endpoint NVIDIA gave: "rtsp" means a classic
+     * native streamer that will never answer WebRTC signaling. */
+    const char *endpoint_kind = "none";
+    char media[sizeof(client->media_ip)] = {0};
+    int media_port = 0;
     copy_json_string_if_present(client->session_token, sizeof(client->session_token), session, "sessionToken");
     copy_json_string_if_present(client->server_ip, sizeof(client->server_ip), session, "serverIp");
-    copy_json_string_if_present(client->signaling_url, sizeof(client->signaling_url), session, "signalingUrl");
+    copy_json_string_if_present(signaling, sizeof(signaling), session, "signalingUrl");
     json_t *connections = json_object_get(session, "connectionInfo");
     const int media_priorities[] = {2, 17, 14};
     for (size_t p = 0; p < sizeof(media_priorities) / sizeof(media_priorities[0]); ++p) {
@@ -1291,13 +1305,13 @@ static void parse_session_network(GfnClient *client, json_t *session)
             const char *ip = connection_ip(connection);
             const int port = connection_port(connection);
             if (port > 0 && (ip[0] || client->server_ip[0])) {
-                snprintf(client->media_ip, sizeof(client->media_ip), "%s",
+                snprintf(media, sizeof(media), "%s",
                          ip[0] ? ip : client->server_ip);
-                client->media_port = port;
+                media_port = port;
                 break;
             }
         }
-        if (client->media_ip[0] && client->media_port > 0) break;
+        if (media[0] && media_port > 0) break;
     }
     size_t index; json_t *connection;
     json_array_foreach(connections, index, connection) {
@@ -1310,22 +1324,37 @@ static void parse_session_network(GfnClient *client, json_t *session)
         if (json_is_string(path_value)) path = json_string_value(path_value);
         const char *ip = connection_ip(connection);
         if (ip[0]) snprintf(client->server_ip, sizeof(client->server_ip), "%s", ip);
-        if (!client->signaling_url[0]) {
+        if (!signaling[0]) {
             if (!strncmp(path, "wss://", 6)) {
-                snprintf(client->signaling_url, sizeof(client->signaling_url), "%s", path);
+                endpoint_kind = "wss";
+                snprintf(signaling, sizeof(signaling), "%s", path);
             } else if (!strncmp(path, "https://", 8)) {
-                snprintf(client->signaling_url, sizeof(client->signaling_url), "wss://%s", path + 8);
+                endpoint_kind = "https";
+                snprintf(signaling, sizeof(signaling), "wss://%s", path + 8);
             } else if (!strncmp(path, "rtsps://", 8) || !strncmp(path, "rtsp://", 7)) {
+                endpoint_kind = "rtsp";
                 const char *host = strstr(path, "://");
                 host = host ? host + 3 : path;
                 size_t host_len = strcspn(host, "/:");
-                snprintf(client->signaling_url, sizeof(client->signaling_url), "wss://%.*s/nvst/", (int)host_len, host);
+                snprintf(signaling, sizeof(signaling), "wss://%.*s/nvst/", (int)host_len, host);
             } else if (client->server_ip[0]) {
-                snprintf(client->signaling_url, sizeof(client->signaling_url), "wss://%s:443%s",
+                endpoint_kind = "nvst";
+                snprintf(signaling, sizeof(signaling), "wss://%s:443%s",
                          client->server_ip, path[0] == '/' ? path : "/nvst/");
             }
         }
         break;
+    }
+    if (signaling[0]) {
+        if (strcmp(signaling, client->signaling_url))
+            diagnostic_log("CLOUDMATCH", "signaling endpoint %s (status=%d kind=%s)",
+                           client->signaling_url[0] ? "changed" : "received", client->session_status,
+                           endpoint_kind);
+        snprintf(client->signaling_url, sizeof(client->signaling_url), "%s", signaling);
+    }
+    if (media[0] && media_port > 0) {
+        snprintf(client->media_ip, sizeof(client->media_ip), "%s", media);
+        client->media_port = media_port;
     }
 }
 
@@ -1783,10 +1812,15 @@ static size_t cloudmatch_headers(GfnClient *client, const char **headers,
              "Authorization: GFNJWT %s", gfn_bearer_token(client));
     snprintf(client_header, 80, "nv-client-id: %s", client->session_client_id);
     snprintf(device_header, 80, "x-device-id: %s", client->session_device_id);
+    /* The web client's identity, as play.geforcenow.com 2.0.89.154 sends it.
+     * Since 2026-10-27 NVIDIA picks the rig's streamer from these headers:
+     * NATIVE/NVIDIA-CLASSIC gets a classic RTSP streamer (rtsps:// endpoints,
+     * appLevelProtocol 6) that never joins WebRTC signaling, so no SDP offer
+     * arrives. BROWSER/WEBRTC gets the WebRTC streamer (wss /nvst/, alp 5). */
     const char *values[] = {
         g_authorization_header, "Content-Type: application/json", client_header,
-        "nv-browser-type: CHROME", "nv-client-streamer: NVIDIA-CLASSIC",
-        "nv-client-type: NATIVE", "nv-client-version: 2.0.87.131",
+        "nv-browser-type: CHROME", "nv-client-streamer: WEBRTC",
+        "nv-client-type: BROWSER", "nv-client-version: 2.0.89.154",
         "nv-device-make: UNKNOWN", "nv-device-model: UNKNOWN",
         "nv-device-os: WINDOWS", "nv-device-type: DESKTOP", device_header,
         "Origin: https://play.geforcenow.com", "Referer: https://play.geforcenow.com/",
@@ -1912,7 +1946,7 @@ static unsigned cloudmatch_list_active(const char *base, const char **headers, s
     char url[384];
     snprintf(url, sizeof(url), "%s/v2/session", base);
     HttpResponse response;
-    if (!http_request("GET", url, GFN_UA, headers, header_count, NULL, 1024 * 1024, &response)) return 0;
+    if (!http_request("GET", url, CLOUDMATCH_UA, headers, header_count, NULL, 1024 * 1024, &response)) return 0;
     unsigned count = 0;
     if (response.status >= 200 && response.status < 300) {
         json_error_t error;
@@ -1940,7 +1974,7 @@ static bool cloudmatch_stop_anywhere(const CloudBases *bases, const char *id, co
         char url[512];
         snprintf(url, sizeof(url), "%s/v2/session/%s", bases->bases[i], id);
         HttpResponse response;
-        if (!http_request("DELETE", url, GFN_UA, headers, header_count, NULL, 256 * 1024, &response)) {
+        if (!http_request("DELETE", url, CLOUDMATCH_UA, headers, header_count, NULL, 256 * 1024, &response)) {
             diagnostic_log("CLOUDMATCH", "stop other session at server %u: no connection", i);
             continue;
         }
@@ -1958,7 +1992,7 @@ static bool cloudmatch_stop_anywhere(const CloudBases *bases, const char *id, co
 static void cloudmatch_wait_clear(const CloudBases *bases, const char **headers, size_t header_count)
 {
     for (int check = 1; check <= 8; ++check) {
-        svcSleepThread(3000000000LL);
+        plat_sleep_ns(3000000000LL);
         unsigned remaining = 0;
         for (unsigned i = 0; i < bases->base_count; ++i)
             remaining += cloudmatch_list_active(bases->bases[i], headers, header_count);
@@ -2113,7 +2147,7 @@ static bool cloudmatch_resume(GfnClient *client, const char *base, const char *a
     const char *headers[16]; char client_header[80], device_header[80];
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
-    const bool sent = http_request("PUT", url, GFN_UA, headers, count, body, 1024 * 1024, &response);
+    const bool sent = http_request("PUT", url, CLOUDMATCH_UA, headers, count, body, 1024 * 1024, &response);
     free(body);
     if (!sent) {
         diagnostic_log("CLOUDMATCH", "resume: no connection");
@@ -2236,7 +2270,7 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
     HttpResponse response;
     bool sent = false;
     for (int attempt = 1; attempt <= 3; ++attempt) {
-        sent = http_request("POST", url, GFN_UA, headers, count, body, 1024 * 1024, &response);
+        sent = http_request("POST", url, CLOUDMATCH_UA, headers, count, body, 1024 * 1024, &response);
         diagnostic_log("CLOUDMATCH", "create attempt=%d transport=%d http=%ld bytes=%lu",
                        attempt, sent ? 1 : 0, sent ? response.status : 0,
                        sent ? (unsigned long)response.size : 0);
@@ -2247,7 +2281,7 @@ bool gfn_start_session(GfnClient *client, const GfnGame *game)
             break;
         http_response_free(&response);
         snprintf(client->status, sizeof(client->status), i18n_text("CloudMatch HTTP retry %d/3"), attempt + 1);
-        svcSleepThread((s64)attempt * 2000000000LL);
+        plat_sleep_ns((s64)attempt * 2000000000LL);
     }
     free(body);
     if (!sent) {
@@ -2366,7 +2400,7 @@ bool gfn_claim_conflict(GfnClient *client)
         char url[512];
         snprintf(url, sizeof(url), "%s/v2/session/%s", bases.bases[i], conflict.id);
         HttpResponse response;
-        if (!http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response)) continue;
+        if (!http_request("GET", url, CLOUDMATCH_UA, headers, count, NULL, 1024 * 1024, &response)) continue;
         const long http = response.status;
         const bool found = http >= 200 && http < 300 && apply_session_response(client, &response, "Claim");
         http_response_free(&response);
@@ -2415,7 +2449,7 @@ bool gfn_recover_session(GfnClient *client, const GfnGame *game)
     char url[512];
     snprintf(url, sizeof(url), "%s/v2/session/%s", session_control(client), client->session_id);
     HttpResponse response;
-    if (!http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response)) {
+    if (!http_request("GET", url, CLOUDMATCH_UA, headers, count, NULL, 1024 * 1024, &response)) {
         snprintf(client->status, sizeof(client->status), i18n_text("Reconnect: no connection to NVIDIA yet"));
         diagnostic_log("CLOUDMATCH", "recover: no connection");
         return false;
@@ -2478,29 +2512,37 @@ bool gfn_recover_session(GfnClient *client, const GfnGame *game)
 static void answer_queue_ads(GfnClient *client, const char **headers, size_t count)
 {
     while (client->ads_answered < client->ads_pending_count) {
-        const char *id = client->ads_pending[client->ads_answered++];
-        char base[256];
-        if (!rig_base(client->server_ip, base, sizeof(base)))
-            snprintf(base, sizeof(base), "%s", session_control(client));
+        const char *id = client->ads_pending[client->ads_answered];
+        /* The web client answers at the session's control server, the one
+         * it polls. The queued seat has no usable host of its own yet. */
         char url[512];
-        snprintf(url, sizeof(url), "%s/v2/session/%s", base, client->session_id);
-        json_t *root = json_pack("{s:i,s:[{s:s,s:i,s:I,s:s}]}", "action", 6, "adUpdates",
+        snprintf(url, sizeof(url), "%s/v2/session/%s", session_control(client), client->session_id);
+        /* The web client's own answer when it cannot show an ad (2.0.89.154,
+         * 2026-10-27); NVIDIA then lets the queue carry on. A free account
+         * that reports nothing is held near the front of the queue. */
+        json_t *root = json_pack("{s:i,s:[{s:s,s:i,s:I,s:s,s:i,s:i,s:i}]}", "action", 6, "adUpdates",
                                  "adId", id, "adAction", 5, "clientTimestamp", (json_int_t)time(NULL),
-                                 "cancelReason", "error");
+                                 "cancelReason", "FAILED_TO_REQUEST_ADS", "watchedTimeInMs", 0,
+                                 "pausedTimeInMs", 0, "adDurationInMs", 0);
         char *body = root ? json_dumps(root, JSON_COMPACT) : NULL;
         json_decref(root);
         if (!body) return;
         HttpResponse response;
-        const bool sent = http_request("PUT", url, GFN_UA, headers, count, body, 1024 * 1024, &response);
+        const bool sent = http_request("PUT", url, CLOUDMATCH_UA, headers, count, body, 1024 * 1024, &response);
         free(body);
         if (!sent) {
+            /* Not counted as answered: the next poll tries again. */
             diagnostic_log("QUEUEAD", "ad answer: no connection");
             return;
         }
         cloudmatch_log_response("ad-answer", &response);
-        if (response.status >= 200 && response.status < 300)
+        const bool ok = response.status >= 200 && response.status < 300;
+        if (ok) {
+            ++client->ads_answered;
             apply_session_response(client, &response, "Ad");
+        }
         http_response_free(&response);
+        if (!ok) return;
     }
 }
 
@@ -2522,7 +2564,7 @@ void gfn_session_tick(GfnClient *client)
     const char *headers[16]; char client_header[80], device_header[80];
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
-    if (!http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response)) {
+    if (!http_request("GET", url, CLOUDMATCH_UA, headers, count, NULL, 1024 * 1024, &response)) {
         snprintf(client->status, sizeof(client->status), i18n_text("Session poll network: %.124s"), response.error);
         diagnostic_log("CLOUDMATCH", "poll transport failure; session retained");
         return;
@@ -2629,7 +2671,7 @@ bool gfn_stop_session(GfnClient *client)
     const char *headers[16]; char client_header[80], device_header[80];
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
-    if (!http_request("DELETE", url, GFN_UA, headers, count, NULL, 256 * 1024, &response)) {
+    if (!http_request("DELETE", url, CLOUDMATCH_UA, headers, count, NULL, 256 * 1024, &response)) {
         snprintf(client->status, sizeof(client->status), i18n_text("Session stop network: %.124s"), response.error);
         return false;
     }
@@ -2637,7 +2679,7 @@ bool gfn_stop_session(GfnClient *client)
     http_response_free(&response);
     if (status == 404 && client->session_control_url[0] && strcmp(client->session_control_url, client->session_base_url)) {
         snprintf(url, sizeof(url), "%s/v2/session/%s", client->session_base_url, client->session_id);
-        if (http_request("DELETE", url, GFN_UA, headers, count, NULL, 256 * 1024, &response)) {
+        if (http_request("DELETE", url, CLOUDMATCH_UA, headers, count, NULL, 256 * 1024, &response)) {
             if (response.status != 404) status = response.status;
             http_response_free(&response);
         }
@@ -2647,7 +2689,7 @@ bool gfn_stop_session(GfnClient *client)
     char rig[160];
     if (status == 404 && rig_base(client->server_ip, rig, sizeof(rig)) && strcmp(rig, client->session_base_url)) {
         snprintf(url, sizeof(url), "%s/v2/session/%s", rig, client->session_id);
-        if (http_request("DELETE", url, GFN_UA, headers, count, NULL, 256 * 1024, &response)) {
+        if (http_request("DELETE", url, CLOUDMATCH_UA, headers, count, NULL, 256 * 1024, &response)) {
             diagnostic_log("CLOUDMATCH", "stop: 404 on its server, rig says http=%ld", response.status);
             if (response.status != 404) status = response.status;
             http_response_free(&response);
@@ -2746,7 +2788,7 @@ bool gfn_resume_check(GfnClient *client)
     const char *headers[16]; char client_header[80], device_header[80];
     const size_t count = cloudmatch_headers(client, headers, client_header, device_header);
     HttpResponse response;
-    const bool sent = http_request("GET", url, GFN_UA, headers, count, NULL, 1024 * 1024, &response);
+    const bool sent = http_request("GET", url, CLOUDMATCH_UA, headers, count, NULL, 1024 * 1024, &response);
     bool alive = sent && response.status >= 200 && response.status < 300 &&
                  apply_session_response(client, &response, "Resume") &&
                  client->session_state != GFN_SESSION_ERROR;

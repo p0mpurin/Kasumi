@@ -1,6 +1,6 @@
 #pragma once
 
-/* Voice chat: the 3DS microphone, encoded as Opus on its own thread and
+/* Voice chat: the console's microphone, encoded as Opus on its own thread and
  * sent to the game on the session's mic track (webrtc_transport_send_mic).
  * It starts muted; nothing is recorded or stored, and nothing is sent until
  * the player unmutes (silence frames keep the track's timing meanwhile). */

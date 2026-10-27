@@ -1,6 +1,6 @@
 #include "launch_stats.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,7 +30,7 @@ void launch_begin(bool resumed, bool weak, bool auto_weak)
     g_launch.resumed = resumed;
     g_launch.weak = weak;
     g_launch.auto_weak = auto_weak;
-    g_launch.started_at = osGetTime();
+    g_launch.started_at = plat_time_ms();
 }
 
 bool launch_active(void) { return g_launch.active; }
@@ -38,7 +38,7 @@ bool launch_active(void) { return g_launch.active; }
 void launch_track(const GfnClient *client)
 {
     if (!g_launch.active) return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (client->session_state == GFN_SESSION_QUEUED && client->queue_position > 0) {
         if (!g_launch.queued_at) g_launch.queued_at = now;
         if (!g_launch.first_place) g_launch.first_place = client->queue_position;
@@ -52,7 +52,7 @@ void launch_end(const char *outcome, const char *install_id)
 {
     if (!g_launch.active) return;
     g_launch.active = false;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     const unsigned queue_s = g_launch.queued_at
         ? (unsigned)(((g_launch.ready_at ? g_launch.ready_at : now) - g_launch.queued_at) / 1000) : 0;
     const unsigned ready_s = g_launch.ready_at ? (unsigned)((g_launch.ready_at - g_launch.started_at) / 1000) : 0;

@@ -1,6 +1,6 @@
 #include "net_memory.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <string.h>
@@ -32,12 +32,7 @@ bool net_memory_session_choppy(unsigned seconds, unsigned lost, unsigned repeate
 
 static bool current_ssid(char out[40])
 {
-    char ssid[64];
-    memset(ssid, 0, sizeof(ssid));
-    if (R_FAILED(ACU_GetSSID(ssid))) return false;
-    ssid[32] = '\0';
-    snprintf(out, 40, "%s", ssid);
-    return out[0] != '\0';
+    return plat_wifi_ssid(out, 40);
 }
 
 /* The file, kept in memory: read once at startup, written in the background.

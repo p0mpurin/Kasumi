@@ -1,7 +1,7 @@
 #include "updater.h"
+#include "platform.h"
 #include "i18n.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <limits.h>
 #include <stdarg.h>
@@ -15,6 +15,7 @@
 #include "app_paths.h"
 #include "diagnostic.h"
 #include "http_client.h"
+#include "package.h"
 
 #define RELEASES_URL "https://api.github.com/repos/" APP_REPOSITORY "/releases?per_page=10"
 #define STATE_PATH APP_DATA_DIR "/update.json"
@@ -23,9 +24,8 @@
 #define USER_AGENT APP_NAME "-3DS/" APP_VERSION
 #define MAX_PACKAGE (32u * 1024u * 1024u)
 
-static LightLock g_lock = 1;
+static PlatLock g_lock = PLAT_LOCK_INIT;
 static UpdateInfo g_info;
-static char g_self_path[256];
 static char g_package_url[512];
 static char g_sums_url[512];
 static char g_package_name[32];
@@ -34,7 +34,6 @@ static char g_dismissed[32];
  * memory, so after a restart the UPDATE badge vanished and the next
  * automatic check was up to 12 hours away (beta.12). */
 static char g_seen_newer[32];
-static bool g_installed_cia;
 /* Dev mode: the PC's address, the offered build's checksum (hex and raw)
  * and the checksum of the last build installed from it. */
 static bool g_dev;
@@ -66,9 +65,9 @@ static void save_state(const char *whats_new_version, const char *whats_new_note
 
 void updater_init(const char *self_path)
 {
-    LightLock_Init(&g_lock);
+    plat_lock_init(&g_lock);
     memset(&g_info, 0, sizeof(g_info));
-    snprintf(g_self_path, sizeof(g_self_path), "%s", self_path ? self_path : "");
+    package_init(self_path);
     json_error_t error;
     json_t *root = json_load_file(STATE_PATH, 0, &error);
     if (json_is_object(root)) {
@@ -87,18 +86,18 @@ void updater_init(const char *self_path)
 
 UpdateInfo updater_info(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const UpdateInfo copy = g_info;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return copy;
 }
 
 static void set_state(UpdateState state, unsigned progress)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_info.state = state;
     g_info.progress = progress;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 static bool fail(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -106,17 +105,17 @@ static bool fail(const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     vsnprintf(g_info.error, sizeof(g_info.error), format, args);
     g_info.state = UPDATE_FAILED;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     va_end(args);
     diagnostic_log("UPDATE", "failed: %s", g_info.error);
     remove(DOWNLOAD_PATH);
     return false;
 }
 
-bool updater_is_3dsx(void) { return envIsHomebrew(); }
+const char *updater_package_label(void) { return package_label(); }
 
 static bool parse_version(const char *text, long parts[4]);
 static int compare_versions(const long a[4], const long b[4]);
@@ -239,7 +238,7 @@ static bool dev_check(void)
         json_decref(root);
         return fail("Dev server answered HTTP %ld", status);
     }
-    const char *kind = updater_is_3dsx() ? "3dsx" : "cia";
+    const char *kind = package_kind();
     json_t *package = json_object_get(root, kind);
     const char *sha = json_string_value(json_object_get(package, "sha256"));
     const char *file = json_string_value(json_object_get(package, "file"));
@@ -252,7 +251,7 @@ static bool dev_check(void)
         if (sscanf(sha + i * 2, "%2x", &value) != 1) hash_ok = false;
         else g_dev_hash[i] = (unsigned char)value;
     }
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_info.checked_at = (int64_t)time(NULL);
     g_info.error[0] = '\0';
     const bool available = hash_ok && strcmp(sha, g_dev_installed) != 0;
@@ -274,7 +273,7 @@ static bool dev_check(void)
     g_info.state = available ? UPDATE_AVAILABLE : UPDATE_UP_TO_DATE;
     g_info.progress = 0;
     g_seen_newer[0] = '\0';
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     json_decref(root);
     save_state(NULL, NULL);
     diagnostic_log("UPDATE", "dev check build=%s available=%d", build ? build : "-", available);
@@ -319,8 +318,8 @@ bool updater_check(bool include_beta)
         }
     }
 
-    const char *const wanted = updater_is_3dsx() ? "Kasumi.3dsx" : "Kasumi.cia";
-    LightLock_Lock(&g_lock);
+    const char *const wanted = package_file();
+    plat_lock(&g_lock);
     g_info.checked_at = (int64_t)time(NULL);
     g_info.error[0] = '\0';
     bool available = false;
@@ -356,7 +355,7 @@ bool updater_check(bool include_beta)
     g_info.state = available ? UPDATE_AVAILABLE : UPDATE_UP_TO_DATE;
     g_info.progress = 0;
     snprintf(g_seen_newer, sizeof(g_seen_newer), "%s", available ? g_info.latest : "");
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     json_decref(root);
     save_state(NULL, NULL);
     diagnostic_log("UPDATE", "check current=%s latest=%s available=%d beta=%d",
@@ -402,12 +401,9 @@ static bool expected_hash(const char *sums, const char *name, unsigned char out[
 
 static bool battery_ok(char *why, size_t size)
 {
-    u8 level = 5, charging = 0;
-    if (R_SUCCEEDED(ptmuInit())) {
-        PTMU_GetBatteryLevel(&level);
-        PTMU_GetBatteryChargeState(&charging);
-        ptmuExit();
-    }
+    u8 level;
+    bool charging;
+    plat_battery(&level, &charging);
     if (level >= 2 || charging) return true;
     snprintf(why, size, i18n_text("Battery too low: charge the console first"));
     return false;
@@ -415,76 +411,13 @@ static bool battery_ok(char *why, size_t size)
 
 static bool sd_space_ok(unsigned long needed, char *why, size_t size)
 {
-    FS_ArchiveResource resource;
-    if (R_FAILED(FSUSER_GetSdmcArchiveResource(&resource))) return true;
-    const unsigned long long free_bytes = (unsigned long long)resource.freeClusters * resource.clusterSize;
+    const unsigned long long free_bytes = package_space_free();
     if (free_bytes >= (unsigned long long)needed * 3) return true;
     snprintf(why, size, i18n_text("Not enough SD card space (%llu MB free)"), free_bytes / (1024 * 1024));
     return false;
 }
 
-/* AM's answer when the CIA's content is exactly what is installed already
- * (a dev build that was just put on with FBI). */
-#define AM_ALREADY_INSTALLED ((Result)0xC8E083FC)
-static bool g_already_installed;
-
-static bool install_cia(const unsigned char *data, size_t size)
-{
-    g_already_installed = false;
-    if (R_FAILED(amInit())) return fail("Could not open the system installer (am)");
-    Handle cia;
-    Result rc = AM_StartCiaInstall(MEDIATYPE_SD, &cia);
-    if (R_FAILED(rc)) {
-        amExit();
-        return fail("Installer refused to start (0x%08lX)", (unsigned long)rc);
-    }
-    const size_t chunk = 128 * 1024;
-    for (size_t offset = 0; offset < size; offset += chunk) {
-        const size_t n = size - offset < chunk ? size - offset : chunk;
-        u32 written = 0;
-        rc = FSFILE_Write(cia, &written, offset, data + offset, (u32)n, 0);
-        if (R_FAILED(rc) || written != n) {
-            AM_CancelCIAInstall(cia);
-            amExit();
-            if (rc == AM_ALREADY_INSTALLED) {
-                g_already_installed = true;
-                return false;
-            }
-            return fail("Install write failed (0x%08lX); the old version is untouched", (unsigned long)rc);
-        }
-        set_state(UPDATE_INSTALLING, (unsigned)((offset + n) * 1000 / size));
-    }
-    rc = AM_FinishCiaInstall(cia);
-    amExit();
-    if (R_FAILED(rc)) return fail("Install could not finish (0x%08lX)", (unsigned long)rc);
-    g_installed_cia = true;
-    return true;
-}
-
-static bool install_3dsx(const unsigned char *data, size_t size)
-{
-    if (!g_self_path[0] || strncmp(g_self_path, "sdmc:/", 6))
-        return fail("Could not tell where Kasumi.3dsx is; update it by hand");
-    char next[300], old[300];
-    snprintf(next, sizeof(next), "%s.new", g_self_path);
-    snprintf(old, sizeof(old), "%s.old", g_self_path);
-    FILE *f = fopen(next, "wb");
-    if (!f) return fail("Could not write %s", next);
-    const bool written = fwrite(data, 1, size, f) == size;
-    fclose(f);
-    if (!written) { remove(next); return fail("SD card write failed"); }
-    set_state(UPDATE_INSTALLING, 500);
-    /* Keep the old file until the new one is in place. */
-    remove(old);
-    if (rename(g_self_path, old) != 0) { remove(next); return fail("Could not replace Kasumi.3dsx"); }
-    if (rename(next, g_self_path) != 0) {
-        rename(old, g_self_path);
-        return fail("Could not replace Kasumi.3dsx");
-    }
-    remove(old);
-    set_state(UPDATE_INSTALLING, 1000);
-    return true;
-}
+static void on_install_progress(unsigned permille) { set_state(UPDATE_INSTALLING, permille); }
 
 bool updater_install(void)
 {
@@ -534,22 +467,23 @@ bool updater_install(void)
                    (unsigned long)package.size);
 
     set_state(UPDATE_INSTALLING, 0);
-    const bool ok = updater_is_3dsx() ? install_3dsx((const unsigned char *)package.body, package.size)
-                                      : install_cia((const unsigned char *)package.body, package.size);
+    char error[96] = "";
+    const PackageResult result = package_install((const unsigned char *)package.body, package.size,
+                                                 on_install_progress, error, sizeof(error));
     http_response_free(&package);
-    if (!ok && g_already_installed) {
+    if (result == PACKAGE_ALREADY_INSTALLED) {
         /* Nothing to do: this exact build is the one running. */
         if (g_dev) snprintf(g_dev_installed, sizeof(g_dev_installed), "%s", g_dev_offered);
         save_state(NULL, NULL);
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         g_info.state = UPDATE_UP_TO_DATE;
         g_info.progress = 0;
         g_info.error[0] = '\0';
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         diagnostic_log("UPDATE", "%s is already installed", info.latest);
         return true;
     }
-    if (!ok) return false;
+    if (result != PACKAGE_INSTALLED) return fail("%s", error);
     /* The new version shows its notes once on its first start; a dev
      * build is remembered so the same one is not offered again. */
     if (g_dev) {
@@ -565,13 +499,8 @@ bool updater_install(void)
 
 /* ---- After install --------------------------------------------------------- */
 
-bool updater_can_relaunch(void) { return g_installed_cia; }
-
-void updater_relaunch(void)
-{
-    /* On exit, the system starts this title again: the new version. */
-    if (g_installed_cia) aptSetChainloaderToSelf();
-}
+bool updater_can_relaunch(void) { return package_can_relaunch(); }
+void updater_relaunch(void) { package_relaunch(); }
 
 bool updater_take_whats_new(char *version, unsigned version_size, char *notes, unsigned notes_size)
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <3ds.h>
+#include "platform.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -117,7 +117,7 @@ void gfn_input_set_touch_stick(float x, float y);
 /* While suppressed, reads return a neutral pad (menus and overlays). */
 void gfn_input_set_suppressed(bool suppressed);
 uint16_t gfn_input_buttons_for_keys(u32 keys);
-void gfn_input_read_3ds(GfnGamepadState *state);
+void gfn_input_read(GfnGamepadState *state);
 size_t gfn_input_encode_gamepad(uint8_t output[38], const GfnGamepadState *state,
                                 uint64_t timestamp_us);
 size_t gfn_input_encode_gamepad_wire(uint8_t output[50], const GfnGamepadState *state,

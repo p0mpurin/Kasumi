@@ -1,4 +1,5 @@
 #include "shortcut.h"
+#include "platform.h"
 #include "i18n.h"
 
 #include <3ds.h>
@@ -82,19 +83,19 @@ static u64 title_id_for(unsigned unique) { return 0x0004000000000000ULL | ((u64)
 /* Read once, then kept: the game page asks every frame. The worker writes
  * it, the UI reads it, so both go through the lock. */
 static json_t *g_map;
-static LightLock g_lock;
+static PlatLock g_lock;
 static bool g_lock_ready;
 
 static void lock(void)
 {
     if (!g_lock_ready) {
-        LightLock_Init(&g_lock);
+        plat_lock_init(&g_lock);
         g_lock_ready = true;
     }
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
 }
 
-static void unlock(void) { LightLock_Unlock(&g_lock); }
+static void unlock(void) { plat_unlock(&g_lock); }
 
 /* Under the lock. */
 static json_t *map(void)
@@ -169,6 +170,12 @@ static bool game_from_json(json_t *entry, GfnGame *game, unsigned *variant)
     if (*variant >= game->variant_count) *variant = 0;
     game->variant_selected = *variant;
     return game->app_id[0] != '\0';
+}
+
+const char *shortcut_unavailable(void)
+{
+    /* The shortcut jumps to the installed Kasumi title. */
+    return envIsHomebrew() ? "Shortcuts need Kasumi installed as a CIA (with FBI), not the .3dsx" : NULL;
 }
 
 bool shortcut_exists(const char *app_id)
@@ -254,7 +261,7 @@ bool shortcut_request(const GfnGame *game, unsigned variant)
     if (!g_wide_px) g_wide_px = linearAlloc(SHORTCUT_BANNER_WIDTH * SHORTCUT_BANNER_HEIGHT * 4);
     if (!g_preview_banner_px) g_preview_banner_px = linearAlloc(SHORTCUT_BANNER_WIDTH * SHORTCUT_BANNER_HEIGHT * 4);
     if (!g_preview_icon_px) g_preview_icon_px = linearAlloc(64 * 64 * 4);
-    g_requested_at = osGetTime();
+    g_requested_at = plat_time_ms();
     g_result[0] = '\0';
     lock();
     g_title_id = pick_title_id(map(), game->app_id);
@@ -617,7 +624,7 @@ void shortcut_frame(void)
     draw_icon();
     draw_probe();
     /* Without the cover yet, draw again next frame until it arrives. */
-    if (art || osGetTime() - g_requested_at >= ART_WAIT_MS) {
+    if (art || plat_time_ms() - g_requested_at >= ART_WAIT_MS) {
         if (!art) diagnostic_log("SHORTCUT", "cover not ready; drawing without it");
         g_drawn = true;
     }
@@ -764,7 +771,7 @@ bool shortcut_work(void)
     if (g_state == SHORTCUT_FETCH) {
         g_state = SHORTCUT_FETCHING;
         fetch_art();
-        g_requested_at = osGetTime();
+        g_requested_at = plat_time_ms();
         g_step = SHORTCUT_STEP_DRAW;
         g_progress = 0;
         g_state = SHORTCUT_DRAWING;

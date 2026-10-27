@@ -1,4 +1,5 @@
 #include "phone_keyboard.h"
+#include "platform.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -104,7 +105,7 @@ int phone_keyboard_qr(const unsigned char **modules)
 
 bool phone_keyboard_connected(void)
 {
-    return g_listener >= 0 && g_last_request_at && osGetTime() - g_last_request_at < 120000;
+    return g_listener >= 0 && g_last_request_at && plat_time_ms() - g_last_request_at < 120000;
 }
 
 static void set_nonblocking(int fd)
@@ -115,8 +116,10 @@ static void set_nonblocking(int fd)
 bool phone_keyboard_start(void)
 {
     if (g_listener >= 0) return true;
-    const u32 ip = (u32)gethostid();
-    if (!ip) return false;
+    /* This console's address, in network byte order like s_addr. */
+    u32 host_ip = 0;
+    if (!plat_ip_info(&host_ip, NULL, NULL) || !host_ip) return false;
+    const u32 ip = htonl(host_ip);
     const int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (fd < 0) return false;
     const int yes = 1;
@@ -138,7 +141,7 @@ bool phone_keyboard_start(void)
     for (int i = 0; i < MAX_CLIENTS; ++i) g_clients[i].fd = -1;
     /* A random path, so only someone who saw the QR code can type. */
     static const char letters[] = "abcdefghjkmnpqrstuvwxyz23456789";
-    u32 seed = (u32)svcGetSystemTick() ^ ((u32)osGetTime() * 2654435761u);
+    u32 seed = (u32)plat_ticks() ^ ((u32)plat_time_ms() * 2654435761u);
     for (int i = 0; i < 6; ++i) {
         seed = seed * 1103515245u + 12345u;
         g_token[i] = letters[(seed >> 16) % (sizeof(letters) - 1)];
@@ -226,7 +229,7 @@ static void respond(Client *c, const char *status, const char *type, const char 
                            status, type, (unsigned)c->body_length);
     c->head_length = n > 0 && (size_t)n < sizeof(c->head) ? (size_t)n : 0;
     c->state = CLIENT_SENDING;
-    c->state_at = osGetTime();
+    c->state_at = plat_time_ms();
 }
 
 /* As much of the answer as the socket takes now; false on an error. */
@@ -240,7 +243,7 @@ static bool pump_send(Client *c)
         if (sent > 0) {
             if (head) c->head_sent += (size_t)sent;
             else c->body_sent += (size_t)sent;
-            c->state_at = osGetTime();
+            c->state_at = plat_time_ms();
         } else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             return true;
         } else {
@@ -250,7 +253,7 @@ static bool pump_send(Client *c)
     /* All sent: say so, and close once the phone has read it. */
     shutdown(c->fd, SHUT_WR);
     c->state = CLIENT_CLOSING;
-    c->state_at = osGetTime();
+    c->state_at = plat_time_ms();
     return true;
 }
 
@@ -279,11 +282,11 @@ static void handle_request(Client *c, int header_length, int body_length)
     snprintf(page_slash, sizeof(page_slash), "/%s/", g_token);
     snprintf(command, sizeof(command), "/%s/k", g_token);
     if (!strcmp(method, "GET") && (!strcmp(path, page) || !strcmp(path, page_slash))) {
-        g_last_request_at = osGetTime();
+        g_last_request_at = plat_time_ms();
         if (!g_pages++) diagnostic_log("PHONE", "page opened");
         respond(c, "200 OK", "text/html; charset=utf-8", PAGE);
     } else if (!strcmp(method, "POST") && !strcmp(path, command)) {
-        g_last_request_at = osGetTime();
+        g_last_request_at = plat_time_ms();
         ++g_commands;
         run_command(c->buffer + header_length, body_length);
         respond(c, "200 OK", "text/plain", "ok");
@@ -345,7 +348,7 @@ static void serve_client(Client *c, u64 now)
 void phone_keyboard_tick(WebRtcTransport *t)
 {
     if (g_listener < 0) return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     for (int k = 0; k < MAX_CLIENTS; ++k) {
         struct sockaddr_in from;
         socklen_t from_length = sizeof(from);

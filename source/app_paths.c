@@ -6,7 +6,7 @@
 void app_paths_migrate(void)
 {
     static const char *const files[] = { "gfn-session.json", "device-id.txt", "settings.json" };
-    mkdir("sdmc:/3ds", 0777);
+    mkdir(APP_ROOT_DIR, 0777);
     mkdir(APP_DATA_DIR, 0777);
     for (unsigned i = 0; i < sizeof(files) / sizeof(files[0]); ++i) {
         char from[96], to[96];

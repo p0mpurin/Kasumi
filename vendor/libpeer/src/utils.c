@@ -7,6 +7,8 @@
 #include "mbedtls/md.h"
 #if defined(__3DS__)
 #include <3ds.h>
+#elif defined(__vita__)
+#include <psp2/kernel/rng.h>
 #endif
 
 void utils_random_string(char* s, const int len) {
@@ -27,6 +29,13 @@ void utils_random_string(char* s, const int len) {
       s[len] = '\0';
       return;
     }
+  }
+#elif defined(__vita__)
+  unsigned char random_bytes[64];
+  if (len <= (int)sizeof(random_bytes) && sceKernelGetRandomNumber(random_bytes, (SceSize)len) >= 0) {
+    for (i = 0; i < len; ++i) s[i] = alphanum[random_bytes[i] % (sizeof(alphanum) - 1)];
+    s[len] = '\0';
+    return;
   }
 #endif
   srand((unsigned)time(NULL));

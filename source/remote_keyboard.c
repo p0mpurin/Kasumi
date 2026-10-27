@@ -1,4 +1,5 @@
 #include "remote_keyboard.h"
+#include "platform.h"
 
 #include <math.h>
 #include <string.h>
@@ -137,7 +138,7 @@ static bool send_special(WebRtcTransport *t, uint16_t vk, uint16_t scan)
 static bool press(WebRtcTransport *t, const Key *key, int index)
 {
     g_flash = index;
-    g_flash_until = osGetTime() + 140;
+    g_flash_until = plat_time_ms() + 140;
     switch (key->kind) {
     case KEY_KIND_CHAR: {
         char c = key->character;
@@ -150,7 +151,7 @@ static bool press(WebRtcTransport *t, const Key *key, int index)
     }
     case KEY_KIND_SHIFT: {
         /* Tap once for one capital, twice quickly for caps lock. */
-        const u64 now = osGetTime();
+        const u64 now = plat_time_ms();
         if (g_shift == SHIFT_ONCE && now - g_last_shift_at < 400) g_shift = SHIFT_LOCK;
         else g_shift = g_shift == SHIFT_OFF ? SHIFT_ONCE : SHIFT_OFF;
         g_last_shift_at = now;
@@ -219,28 +220,28 @@ static void move_focus(const Key *keys, int count, int dx, int dy)
 bool remote_keyboard_buttons(WebRtcTransport *t, u32 down)
 {
     if (g_phone_open) {
-        if (down & (KEY_A | KEY_B | KEY_X)) g_phone_open = false;
+        if (down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_X)) g_phone_open = false;
         return false;
     }
     Key keys[MAX_KEYS];
     int count = build_layout(keys);
     if (g_focus < HEADER_KEYS || g_focus >= count) g_focus = FIRST_FOCUS;
-    if (down & KEY_DUP) move_focus(keys, count, 0, -1);
-    if (down & KEY_DDOWN) move_focus(keys, count, 0, 1);
-    if (down & KEY_DLEFT) move_focus(keys, count, -1, 0);
-    if (down & KEY_DRIGHT) move_focus(keys, count, 1, 0);
-    if (down & KEY_A) return press(t, &keys[g_focus], g_focus);
+    if (down & PLAT_KEY_DUP) move_focus(keys, count, 0, -1);
+    if (down & PLAT_KEY_DDOWN) move_focus(keys, count, 0, 1);
+    if (down & PLAT_KEY_DLEFT) move_focus(keys, count, -1, 0);
+    if (down & PLAT_KEY_DRIGHT) move_focus(keys, count, 1, 0);
+    if (down & PLAT_KEY_A) return press(t, &keys[g_focus], g_focus);
     for (int i = 0; i < count; ++i) {
         const KeyKind kind = keys[i].kind;
-        if (((down & KEY_B) && kind == KEY_KIND_BACKSPACE) ||
-            ((down & KEY_Y) && kind == KEY_KIND_SPACE) ||
-            ((down & KEY_START) && kind == KEY_KIND_ENTER) ||
-            ((down & KEY_L) && kind == KEY_KIND_SHIFT) ||
-            ((down & KEY_R) && kind == KEY_KIND_SYMBOLS) ||
-            ((down & KEY_ZL) && kind == KEY_KIND_TAB))
+        if (((down & PLAT_KEY_B) && kind == KEY_KIND_BACKSPACE) ||
+            ((down & PLAT_KEY_Y) && kind == KEY_KIND_SPACE) ||
+            ((down & PLAT_KEY_START) && kind == KEY_KIND_ENTER) ||
+            ((down & PLAT_KEY_L) && kind == KEY_KIND_SHIFT) ||
+            ((down & PLAT_KEY_R) && kind == KEY_KIND_SYMBOLS) ||
+            ((down & PLAT_KEY_ZL) && kind == KEY_KIND_TAB))
             press(t, &keys[i], i);
     }
-    return (down & (KEY_X | KEY_SELECT)) != 0;
+    return (down & (PLAT_KEY_X | PLAT_KEY_SELECT)) != 0;
 }
 
 /* The QR code for the phone page, how to use it, and whether a phone
@@ -262,12 +263,12 @@ static void draw_phone_sheet(void)
         const int border = 3;
         const float scale = floorf(150.0f / (float)(n + 2 * border));
         const float size = (float)(n + 2 * border) * scale, x0 = 10.0f, y0 = 36.0f;
-        ui_rect(x0, y0, size, size, C2D_Color32(0xFF, 0xFF, 0xFF, 0xFF));
+        ui_rect(x0, y0, size, size, UI_RGBA(0xFF, 0xFF, 0xFF, 0xFF));
         for (int y = 0; y < n; ++y)
             for (int x = 0; x < n; ++x)
                 if (modules[y * n + x])
                     ui_rect(x0 + (float)(x + border) * scale, y0 + (float)(y + border) * scale, scale, scale,
-                            C2D_Color32(0x00, 0x00, 0x00, 0xFF));
+                            UI_RGBA(0x00, 0x00, 0x00, 0xFF));
         static const char *const steps[3] = {
             "Put your phone on the same Wi-Fi as the 3DS.",
             "Scan the code with the phone's camera.",
@@ -296,7 +297,7 @@ void remote_keyboard_draw(const WebRtcTransport *t, bool touching, int tx, int t
     }
     Key keys[MAX_KEYS];
     const int count = build_layout(keys);
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
 
     /* Under the tool keys: whether keys get through, and the shortcuts. */
     ui_hline(0, 30.0f, UI_BOTTOM_WIDTH, UI_LINE);

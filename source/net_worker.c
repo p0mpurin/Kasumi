@@ -1,9 +1,9 @@
 #include "net_worker.h"
+#include "platform.h"
 #include "i18n.h"
 #include "shortcut.h"
 #include "queue_eta.h"
 
-#include <3ds.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,8 +30,8 @@ static GfnClient g_work;
 static GfnClient g_shared;
 static NvstSignal *g_signal;
 static unsigned g_version;
-static LightLock g_lock;
-static Thread g_thread;
+static PlatLock g_lock;
+static PlatThread g_thread;
 static volatile bool g_quit;
 
 static NetJobKind g_pending;
@@ -59,10 +59,10 @@ static void copy_client(GfnClient *to, const GfnClient *from)
 
 static void publish(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     copy_client(&g_shared, &g_work);
     ++g_version;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
 }
 
 /* The Kasumi HOME Menu theme by morrisonion (pull request #8). Themezer
@@ -206,7 +206,7 @@ static void worker_main(void *arg)
 {
     (void)arg;
     while (!g_quit) {
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         const NetJobKind kind = g_pending;
         char text[sizeof(g_pending_text)];
         GfnGame game;
@@ -217,20 +217,20 @@ static void worker_main(void *arg)
             g_running = kind;
             g_cancelled = false;
         }
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
 
         if (kind != NET_JOB_NONE) {
-            const u64 started = osGetTime();
+            const u64 started = plat_time_ms();
             const bool ok = run_job(kind, text, &game);
             diagnostic_log("WORKER", "job=%d ok=%d cancelled=%d ms=%llu", (int)kind, ok ? 1 : 0,
-                           g_cancelled ? 1 : 0, (unsigned long long)(osGetTime() - started));
-            LightLock_Lock(&g_lock);
+                           g_cancelled ? 1 : 0, (unsigned long long)(plat_time_ms() - started));
+            plat_lock(&g_lock);
             g_result.kind = kind;
             g_result.ok = ok;
             g_result.cancelled = g_cancelled;
             ++g_result.serial;
             g_running = NET_JOB_NONE;
-            LightLock_Unlock(&g_lock);
+            plat_unlock(&g_lock);
             publish();
             continue;
         }
@@ -241,9 +241,9 @@ static void worker_main(void *arg)
         /* The client snapshot is ~150 KiB; copying it 20 times a second
          * (and again on the UI thread) was wasted work during play. */
         static u64 last_publish;
-        if (osGetTime() - last_publish >= 200) {
+        if (plat_time_ms() - last_publish >= 200) {
             publish();
-            last_publish = osGetTime();
+            last_publish = plat_time_ms();
         }
         /* The GeForce NOW provider list, once per run when idle and no game
          * runs: the provider setting needs it before signing in. */
@@ -254,22 +254,21 @@ static void worker_main(void *arg)
             queue_eta_fetch();
         }
         /* Box art loads on its own thread now (game_art.c). */
-        svcSleepThread(WORKER_IDLE_NS);
+        plat_sleep_ns(WORKER_IDLE_NS);
     }
 }
 
 bool net_worker_start(const GfnClient *client, NvstSignal *signal)
 {
-    LightLock_Init(&g_lock);
+    plat_lock_init(&g_lock);
     memcpy(&g_work, client, sizeof(g_work));
     memcpy(&g_shared, client, sizeof(g_shared));
     g_signal = signal;
     g_quit = false;
-    s32 priority = 0x30;
-    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    const int priority = plat_thread_priority();
     /* One step below the UI thread on the same core: it runs whenever the UI
      * waits for vblank or naps between network polls, and never preempts it. */
-    g_thread = threadCreate(worker_main, NULL, WORKER_STACK_SIZE, priority + 1, -2, false);
+    g_thread = plat_thread_create(worker_main, NULL, WORKER_STACK_SIZE, priority + 1, -2, false);
     return g_thread != NULL;
 }
 
@@ -278,14 +277,13 @@ void net_worker_stop(void)
     if (!g_thread) return;
     g_quit = true;
     http_cancel();
-    threadJoin(g_thread, U64_MAX);
-    threadFree(g_thread);
+    plat_thread_join(g_thread);
     g_thread = NULL;
 }
 
 bool net_worker_submit(NetJobKind kind, const char *text, const GfnGame *game)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const bool accepted = g_pending == NET_JOB_NONE && g_running == NET_JOB_NONE;
     if (accepted) {
         g_pending = kind;
@@ -294,7 +292,7 @@ bool net_worker_submit(NetJobKind kind, const char *text, const GfnGame *game)
         /* Report busy immediately, before the worker picks the job up. */
         g_running = kind;
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return accepted;
 }
 
@@ -312,26 +310,26 @@ void net_worker_cancel(void)
 bool net_worker_sync(GfnClient *out)
 {
     static unsigned seen = ~0u;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const bool changed = g_version != seen;
     if (changed) {
         copy_client(out, &g_shared);
         seen = g_version;
     }
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return changed;
 }
 
 NetJobResult net_worker_last_result(void)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const NetJobResult result = g_result;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     return result;
 }
 
 void net_worker_wait_idle(unsigned timeout_ms)
 {
-    const u64 deadline = osGetTime() + timeout_ms;
-    while (net_worker_busy() && osGetTime() < deadline) svcSleepThread(10000000LL);
+    const u64 deadline = plat_time_ms() + timeout_ms;
+    while (net_worker_busy() && plat_time_ms() < deadline) plat_sleep_ns(10000000LL);
 }

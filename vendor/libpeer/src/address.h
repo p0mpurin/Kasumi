@@ -23,6 +23,10 @@ struct sockaddr_in6 {
 };
 static const struct in6_addr in6addr_any = {{0}};
 #endif
+#if defined(__vita__)
+/* The Vita's headers have the IPv6 types but not in6addr_any (all zero). */
+static const struct in6_addr in6addr_any;
+#endif
 
 #define ADDRSTRLEN INET6_ADDRSTRLEN
 

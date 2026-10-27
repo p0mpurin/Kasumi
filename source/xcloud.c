@@ -1,7 +1,7 @@
 #include "xcloud.h"
+#include "platform.h"
 #include "i18n.h"
 
-#include <3ds.h>
 #include <jansson.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -712,7 +712,7 @@ bool xcloud_start_session(GfnClient *c, const GfnGame *game)
     g.next_state_at = 0;
     g.keepalive_failures = 0;
     g.last_state[0] = '\0';
-    g.started_at = osGetTime();
+    g.started_at = plat_time_ms();
     g.provisioning_at = 0;
     g.wait_seconds = 0;
     snprintf(c->status, sizeof(c->status), i18n_text("Asking Xbox Cloud Gaming for a console..."));
@@ -793,7 +793,7 @@ static void session_failed(GfnClient *c, const char *why, const char *code)
 void xcloud_session_tick(GfnClient *c)
 {
     if (!c->session_id[0]) return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (c->session_state == GFN_SESSION_READY) {
         /* The service ends a session that hears nothing for a while. */
         if (now < g.next_keepalive_at) return;
@@ -923,8 +923,8 @@ bool xcloud_stop_session(GfnClient *c)
 /* GET until the service has the answer (204 while it works on it). */
 static json_t *poll_exchange(GfnClient *c, const char *path, unsigned timeout_ms)
 {
-    const u64 deadline = osGetTime() + timeout_ms;
-    while (osGetTime() < deadline) {
+    const u64 deadline = plat_time_ms() + timeout_ms;
+    while (plat_time_ms() < deadline) {
         HttpResponse r;
         if (!gs_request(c, "GET", path, NULL, &r)) return NULL;
         if (r.status == 200) {
@@ -949,7 +949,7 @@ static json_t *poll_exchange(GfnClient *c, const char *path, unsigned timeout_ms
             snprintf(c->status, sizeof(c->status), i18n_text("Xbox stream setup: HTTP %ld"), status);
             return NULL;
         }
-        svcSleepThread(400000000LL);
+        plat_sleep_ns(400000000LL);
     }
     snprintf(c->status, sizeof(c->status), i18n_text("Xbox stream setup timed out"));
     return NULL;
@@ -986,7 +986,7 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
 {
     nvst_signal_close(s);
     s->xcloud = true;
-    s->started_ms = osGetTime();
+    s->started_ms = plat_time_ms();
     s->state = NVST_SIGNAL_WAITING;
     snprintf(s->status, sizeof(s->status), i18n_text("Setting up the Xbox stream..."));
     /* gs_request reports into a client; keep the worker's copy untouched. */

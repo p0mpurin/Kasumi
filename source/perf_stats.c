@@ -1,4 +1,5 @@
 #include "perf_stats.h"
+#include "platform.h"
 
 #include <jansson.h>
 #include <stdio.h>
@@ -24,7 +25,7 @@ void perf_begin(const char *game, const char *region, bool weak, unsigned bitrat
 {
     memset(&g_perf, 0, sizeof(g_perf));
     g_perf.active = true;
-    g_perf.started_at = osGetTime();
+    g_perf.started_at = plat_time_ms();
     snprintf(g_perf.game, sizeof(g_perf.game), "%s", game ? game : "");
     snprintf(g_perf.region, sizeof(g_perf.region), "%s", region ? region : "");
     g_perf.weak = weak;

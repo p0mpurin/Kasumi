@@ -1,6 +1,6 @@
 #pragma once
 
-#include <3ds.h>
+#include "platform.h"
 #include <stdbool.h>
 
 /* Anonymous performance summary of one play session (Share performance

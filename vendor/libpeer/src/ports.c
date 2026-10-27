@@ -15,6 +15,10 @@
 #elif defined(__SWITCH__) || defined(__3DS__)
 #include <unistd.h>
 #include <netdb.h>
+#elif defined(__vita__)
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <psp2/net/netctl.h>
 #else
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -59,6 +63,13 @@ int ports_get_host_addr(Address* addr, const char* iface_prefix) {
   uint32_t ip = gethostid();
   if (ip != 0 && addr->family == AF_INET) {
       memcpy(&addr->sin.sin_addr, &ip, 4);
+      ret = 1;
+  }
+#elif defined(__vita__)
+  /* Kasumi: the Vita has no getifaddrs; NetCtl knows the Wi-Fi address. */
+  SceNetCtlInfo info;
+  if (addr->family == AF_INET && sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0 &&
+      inet_pton(AF_INET, info.ip_address, &addr->sin.sin_addr) == 1) {
       ret = 1;
   }
 #else

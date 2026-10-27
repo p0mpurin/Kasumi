@@ -1,6 +1,5 @@
 #include "net_probe.h"
 
-#include <3ds.h>
 
 #include <arpa/inet.h>
 #include <errno.h>

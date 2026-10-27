@@ -1,6 +1,6 @@
 #include "menu_audio.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <dirent.h>
 #include <math.h>
 #include <opus/opus.h>
@@ -22,7 +22,7 @@
 #include "../vendor/dr_libs/dr_mp3.h"
 #pragma GCC diagnostic pop
 
-/* The stream plays on NDSP channel 0 and the queue chime on 8. */
+/* The stream plays on channel 0 and the queue chime on 8. */
 #define MUSIC_CHANNEL 9
 #define VOICE_CHANNEL 10
 /* 8 x ~43 ms queued: enough to ride out a busy main loop. */
@@ -94,7 +94,7 @@ typedef struct {
     bool eof;
     /* Output. */
     s16 *pcm;
-    ndspWaveBuf wb[NBUF];
+    PlatAudioBuffer wb[NBUF];
     unsigned next;
     /* Loudness leveling (players' songs only). */
     bool level;
@@ -102,14 +102,14 @@ typedef struct {
 } Source;
 
 static Source g_music, g_voice;
-static Thread g_thread;
+static PlatThread g_thread;
 static volatile bool g_running;
 static volatile int g_mode = MENU_MUSIC_ON;
 static volatile int g_scene = MENU_SCENE_MENUS;
 static volatile int g_cue = -1;
 static volatile u64 g_cue_at;
 static volatile bool g_next;
-static LightLock g_title_lock;
+static PlatLock g_title_lock;
 static char g_title[96];
 static char g_title_copy[96];
 
@@ -129,9 +129,9 @@ static u32 random_next(void)
 
 static void set_title(const char *title)
 {
-    LightLock_Lock(&g_title_lock);
+    plat_lock(&g_title_lock);
     snprintf(g_title, sizeof(g_title), "%s", title ? title : "");
-    LightLock_Unlock(&g_title_lock);
+    plat_unlock(&g_title_lock);
 }
 
 /* ---- Decoding ------------------------------------------------------------ */
@@ -319,23 +319,15 @@ static bool source_open_file(Source *s, const char *path)
 
 static void set_volume(int channel, float volume)
 {
-    float mix[12] = { volume, volume };
-    ndspChnSetMix(channel, mix);
+    plat_audio_channel_volume(channel, volume, volume);
 }
 
 static void channel_begin(Source *s, float volume)
 {
-    ndspChnWaveBufClear(s->channel);
-    ndspChnReset(s->channel);
-    ndspChnSetInterp(s->channel, NDSP_INTERP_POLYPHASE);
-    ndspChnSetRate(s->channel, (float)s->rate);
-    ndspChnSetFormat(s->channel, NDSP_FORMAT_STEREO_PCM16);
+    plat_audio_channel_open(s->channel, (float)s->rate, 2, true);
     set_volume(s->channel, volume);
     memset(s->wb, 0, sizeof(s->wb));
-    for (unsigned i = 0; i < NBUF; ++i) {
-        s->wb[i].data_pcm16 = s->pcm + i * BUF_FRAMES * 2;
-        s->wb[i].status = NDSP_WBUF_DONE;
-    }
+    for (unsigned i = 0; i < NBUF; ++i) s->wb[i].data = s->pcm + i * BUF_FRAMES * 2;
     s->next = 0;
     s->fifo_len = s->fifo_pos = 0;
     s->eof = false;
@@ -345,8 +337,7 @@ static void channel_begin(Source *s, float volume)
 
 static void channel_end(Source *s)
 {
-    ndspChnWaveBufClear(s->channel);
-    ndspChnReset(s->channel);
+    plat_audio_channel_close(s->channel);
     source_close(s);
 }
 
@@ -354,18 +345,17 @@ static void channel_end(Source *s)
 static bool pump(Source *s)
 {
     for (unsigned k = 0; k < NBUF && !s->eof; ++k) {
-        ndspWaveBuf *w = &s->wb[s->next];
-        if (w->status != NDSP_WBUF_DONE && w->status != NDSP_WBUF_FREE) break;
-        const unsigned frames = fill(s, w->data_pcm16, BUF_FRAMES);
+        PlatAudioBuffer *w = &s->wb[s->next];
+        if (!plat_audio_buffer_idle(w)) break;
+        const unsigned frames = fill(s, w->data, BUF_FRAMES);
         if (!frames) break;
-        if (s->level) level(s, w->data_pcm16, frames);
-        DSP_FlushDataCache(w->data_pcm16, frames * 2 * sizeof(s16));
-        w->nsamples = frames;
-        ndspChnWaveBufAdd(s->channel, w);
+        if (s->level) level(s, w->data, frames);
+        w->frames = frames;
+        plat_audio_queue(s->channel, w);
         s->next = (s->next + 1) % NBUF;
     }
     for (unsigned i = 0; i < NBUF; ++i)
-        if (s->wb[i].status == NDSP_WBUF_QUEUED || s->wb[i].status == NDSP_WBUF_PLAYING) return true;
+        if (!plat_audio_buffer_idle(&s->wb[i])) return true;
     return !s->eof;
 }
 
@@ -435,9 +425,9 @@ static void audio_main(void *arg)
     (void)arg;
     float volume = 0.0f;
     bool fading_in = false, skipping = false, gave_up = false;
-    u64 next_song_at = 0, last = osGetTime();
+    u64 next_song_at = 0, last = plat_time_ms();
     while (g_running) {
-        const u64 now = osGetTime();
+        const u64 now = plat_time_ms();
         const float dt = fminf(0.2f, (float)(now - last) / 1000.0f);
         last = now;
 
@@ -490,7 +480,7 @@ static void audio_main(void *arg)
                 skipping = false;
             }
         }
-        svcSleepThread(10 * 1000000LL);
+        plat_sleep_ns(10 * 1000000LL);
     }
 }
 
@@ -499,23 +489,22 @@ static void audio_main(void *arg)
 void menu_audio_start(void)
 {
     if (g_thread || !audio_system_ready()) return;
-    LightLock_Init(&g_title_lock);
+    plat_lock_init(&g_title_lock);
     const size_t bytes = NBUF * BUF_FRAMES * 2 * sizeof(s16);
-    g_music.pcm = linearAlloc(bytes);
-    g_voice.pcm = linearAlloc(bytes);
+    g_music.pcm = plat_audio_alloc(bytes);
+    g_voice.pcm = plat_audio_alloc(bytes);
     if (!g_music.pcm || !g_voice.pcm) {
-        diagnostic_log("MUSIC", "linearAlloc failed: no menu music");
+        diagnostic_log("MUSIC", "sound memory allocation failed: no menu music");
         menu_audio_exit();
         return;
     }
     g_music.channel = MUSIC_CHANNEL;
     g_voice.channel = VOICE_CHANNEL;
-    g_rng = (u32)svcGetSystemTick() | 1u;
+    g_rng = (u32)plat_ticks() | 1u;
     g_running = true;
-    s32 priority = 0x30;
-    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    const int priority = plat_thread_priority();
     /* Above the main loop: it only wakes every 10 ms and decodes a little. */
-    g_thread = threadCreate(audio_main, NULL, 64 * 1024, priority - 1, -2, false);
+    g_thread = plat_thread_create(audio_main, NULL, 64 * 1024, priority - 1, -2, false);
     if (!g_thread) {
         g_running = false;
         diagnostic_log("MUSIC", "thread failed: no menu music");
@@ -532,7 +521,7 @@ void menu_audio_set(MenuMusicMode mode, MenuScene scene)
 void menu_audio_cue(MenuCue cue)
 {
     if (!g_thread || (unsigned)cue >= sizeof(CUES) / sizeof(CUES[0])) return;
-    g_cue_at = osGetTime() + (cue == MENU_CUE_OKAERI ? 700 : 0);
+    g_cue_at = plat_time_ms() + (cue == MENU_CUE_OKAERI ? 700 : 0);
     g_cue = cue;
 }
 
@@ -541,9 +530,9 @@ void menu_audio_next(void) { g_next = true; }
 const char *menu_audio_now_playing(void)
 {
     if (!g_thread) return "";
-    LightLock_Lock(&g_title_lock);
+    plat_lock(&g_title_lock);
     snprintf(g_title_copy, sizeof(g_title_copy), "%s", g_title);
-    LightLock_Unlock(&g_title_lock);
+    plat_unlock(&g_title_lock);
     return g_title_copy;
 }
 
@@ -551,8 +540,7 @@ void menu_audio_exit(void)
 {
     if (g_thread) {
         g_running = false;
-        threadJoin(g_thread, U64_MAX);
-        threadFree(g_thread);
+        plat_thread_join(g_thread);
         g_thread = NULL;
     }
     if (audio_system_ready()) {
@@ -561,7 +549,7 @@ void menu_audio_exit(void)
     }
     source_close(&g_music);
     source_close(&g_voice);
-    if (g_music.pcm) linearFree(g_music.pcm);
-    if (g_voice.pcm) linearFree(g_voice.pcm);
+    if (g_music.pcm) plat_audio_free(g_music.pcm);
+    if (g_voice.pcm) plat_audio_free(g_voice.pcm);
     g_music.pcm = g_voice.pcm = NULL;
 }

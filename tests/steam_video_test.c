@@ -141,6 +141,8 @@ void steam_ip_format(uint32_t ip, char *out, size_t size)
 { (void)ip; snprintf(out, size, "127.0.0.1"); }
 void diagnostic_log(const char *component, const char *format, ...)
 { (void)component; (void)format; }
+void diagnostic_flag(const char *code, const char *format, ...)
+{ (void)code; (void)format; }
 int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len, size_t *olen)
 {
     (void)data;

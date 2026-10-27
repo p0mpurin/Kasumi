@@ -12,7 +12,8 @@ include $(DEVKITARM)/3ds_rules
 
 TARGET := Kasumi
 BUILD := build
-SOURCES := source
+# Shared code, then this console's side of platform.h.
+SOURCES := source source/3ds
 INCLUDES := include
 
 APP_TITLE := Kasumi
@@ -23,7 +24,7 @@ APP_AUTHOR := p0mpurin
 # version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
 VERSION_MAJOR := 1
 VERSION_MINOR := 1
-VERSION_MICRO := 1
+VERSION_MICRO := 2
 VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 # makerom drops the minor number from the CIA's title version (1.1.0 came out
@@ -63,7 +64,7 @@ export TOPDIR := $(CURDIR)
 export APP_ICON := $(CURDIR)/resources/icon.png
 export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
-export CFILES := $(filter-out webrtc_peer.c,$(notdir $(wildcard $(SOURCES)/*.c)))
+export CFILES := $(filter-out webrtc_peer.c,$(notdir $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))))
 export OFILES_SOURCES := $(CFILES:.c=.o)
 export CACERT_OBJECT := $(CURDIR)/$(BUILD)/cacert_pem.o
 # UI art: gfx/NAME.png -> NAME.t3x (tex3ds) -> linked read-only data exposing

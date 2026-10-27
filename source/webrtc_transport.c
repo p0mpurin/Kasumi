@@ -1,4 +1,5 @@
 #include "webrtc_transport.h"
+#include "platform.h"
 #include "i18n.h"
 #include "stream_profile.h"
 #include "nvst_signal.h"
@@ -393,7 +394,7 @@ static bool request_video_keyframe(WebRtcTransport *t, const char *reason)
         if (!steam_session_request_keyframe(t->peer)) return false;
     }
     else result = peer_connection_request_video_keyframe(t->peer);
-    t->last_keyframe_request_at = osGetTime();
+    t->last_keyframe_request_at = plat_time_ms();
     t->keyframe_requests++;
     diagnostic_log("VIDEO", "PLI reason=%s attempt=%u result=%d",
                    reason, t->keyframe_requests, result);
@@ -425,7 +426,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
         }
     }
     t->video_bytes += packet->size;
-    uint64_t rate_now = osGetTime();
+    uint64_t rate_now = plat_time_ms();
     /* Where do cuts come from? RTP timestamps (90 kHz, one per frame) show
      * frames the server itself never sent; arrival gaps show Wi-Fi/queue
      * jitter. Both are summarised on the per-second rate line. */
@@ -506,7 +507,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     const bool decode_720p = t->xcloud && xcloud_decode_720p() &&
                              decode_width == 1280 && decode_height == 720;
     if (t->xcloud && !decode_720p) {
-        const uint64_t now = osGetTime();
+        const uint64_t now = plat_time_ms();
         if (decode_width <= 960 && decode_height <= 544) {
             t->xcloud_hd_since = 0;
         } else {
@@ -545,7 +546,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
              * and ~20 rebuilds in a run break MVD until Kasumi restarts
              * (report KA5BCU). A new size must hold 700 ms; meanwhile the
              * last picture stays, then a keyframe brings the new one. */
-            const uint64_t now = osGetTime();
+            const uint64_t now = plat_time_ms();
             if (t->pending_width != decode_width || t->pending_height != decode_height) {
                 t->pending_width = decode_width;
                 t->pending_height = decode_height;
@@ -566,7 +567,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
         mvd_video_close();
     }
     if (!mvd_video_active()) {
-        const uint64_t now = osGetTime();
+        const uint64_t now = plat_time_ms();
         /* A new decoder starts at a keyframe. Xbox's first frame is a P-frame
          * sent before its SPS: MVD answered D96170CA and took nothing more
          * (1.0.1 export: ~200 decoder-fatal flags, nearly all this). */
@@ -614,7 +615,7 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
     /* Say how a 720p start failed rather than stay black. */
     if (decode_720p && !t->no_reconnect) {
         const bool refused = mvd_video_failed();
-        if (refused || (!mvd_video_decoded_frames() && osGetTime() - t->decoder_started_at > 10000)) {
+        if (refused || (!mvd_video_decoded_frames() && plat_time_ms() - t->decoder_started_at > 10000)) {
             diagnostic_flag("xcloud-720p", "%s (%s)", refused ? "decoder refused 720p" :
                             "no 720p frame in 10 s", mvd_video_status());
             snprintf(t->status, sizeof(t->status), "%s",
@@ -675,7 +676,7 @@ static void on_data_open(void *userdata)
 {
     WebRtcTransport *t = userdata;
     t->data_open = true;
-    t->data_opened_at = osGetTime();
+    t->data_opened_at = plat_time_ms();
     snprintf(t->status, sizeof(t->status), i18n_text("WebRTC data channel open; input handshake"));
     diagnostic_log("INPUT", "data channel open");
 }
@@ -686,7 +687,7 @@ static void on_data_close(void *userdata)
     /* The rig ended the input association: nothing pressed reaches the
      * game any more, though video keeps playing. */
     diagnostic_flag("input-closed", "data channel closed after %llu s, reports=%u",
-                    (unsigned long long)((osGetTime() - t->connected_at) / 1000), t->input_reports);
+                    (unsigned long long)((plat_time_ms() - t->connected_at) / 1000), t->input_reports);
     t->data_open = false;
 }
 
@@ -696,7 +697,7 @@ static void on_state(PeerConnectionState state, void *userdata)
     diagnostic_log("WEBRTC", "peer_state=%s", peer_connection_state_to_string(state));
     if (state == PEER_CONNECTION_COMPLETED) {
         t->state = WEBRTC_CONNECTED;
-        t->connected_at = osGetTime();
+        t->connected_at = plat_time_ms();
         snprintf(t->status, sizeof(t->status), i18n_text("WebRTC ICE/DTLS/SRTP connected"));
         request_video_keyframe(t, "stream_start");
     } else if (state == PEER_CONNECTION_CONNECTED) {
@@ -720,20 +721,20 @@ static void on_state(PeerConnectionState state, void *userdata)
  * stalls over 25 ms in one session. The media thread runs libpeer's loop;
  * every other use of the peer, and presenting a decoded frame (the decoder
  * can be rebuilt from a packet callback), happens under g_peer_lock. */
-static RecursiveLock g_peer_lock;
-static LightEvent g_media_event;
-static Thread g_media_thread;
+static PlatRecursiveLock g_peer_lock;
+static PlatEvent g_media_event;
+static PlatThread g_media_thread;
 static volatile bool g_media_run;
 static volatile bool g_media_paused;
 
 void webrtc_transport_pause(bool paused) { g_media_paused = paused; }
 
-void webrtc_transport_lock(void) { RecursiveLock_Lock(&g_peer_lock); }
-void webrtc_transport_unlock(void) { RecursiveLock_Unlock(&g_peer_lock); }
+void webrtc_transport_lock(void) { plat_rlock(&g_peer_lock); }
+void webrtc_transport_unlock(void) { plat_runlock(&g_peer_lock); }
 
 /* Receive-path timing (beta.25 engine test): where does a packet's time go
  * between the radio and the decoder? Logged every 10 s while media flows. */
-#define TICKS_PER_US (SYSCLOCK_ARM11 / 1000000u)
+#define TICKS_PER_US (PLAT_TICKS_PER_SEC / 1000000u)
 typedef struct {
     unsigned polls, ready, packets, wakes, cap_hits, slow_reads, per_wake_max;
     uint64_t poll_ready_us, poll_ready_max, read_us, read_max, lock_max;
@@ -760,7 +761,7 @@ static void rx_stats_log(RxStats *s, unsigned seconds)
 static void media_main(void *arg)
 {
     WebRtcTransport *t = arg;
-    uint64_t last_loop = 0, last_stats = osGetTime();
+    uint64_t last_loop = 0, last_stats = plat_time_ms();
     RxStats stats;
     memset(&stats, 0, sizeof(stats));
     diagnostic_log("NET", "media socket receive buffer: %d bytes%s", udp_socket_rcvbuf_granted < 0
@@ -771,26 +772,26 @@ static void media_main(void *arg)
         bool readable = false;
         if (fd >= 0) {
             struct pollfd media = { .fd = fd, .events = POLLIN, .revents = 0 };
-            const uint64_t poll_start = svcGetSystemTick();
+            const uint64_t poll_start = plat_ticks();
             readable = poll(&media, 1, 4) > 0 && (media.revents & POLLIN);
             ++stats.polls;
             if (readable) {
-                const uint64_t us = (svcGetSystemTick() - poll_start) / TICKS_PER_US;
+                const uint64_t us = (plat_ticks() - poll_start) / TICKS_PER_US;
                 ++stats.ready;
                 stats.poll_ready_us += us;
                 if (us > stats.poll_ready_max) stats.poll_ready_max = us;
             }
         } else {
-            svcSleepThread(4000000LL);
+            plat_sleep_ns(4000000LL);
         }
         if (!g_media_run) break;
         if (g_media_paused) {
-            svcSleepThread(10000000LL);
+            plat_sleep_ns(10000000LL);
             continue;
         }
         /* Timers (ICE, DTLS, RTCP, re-requests) need a turn even when
          * quiet, as on the main loop before. */
-        const uint64_t now = osGetTime();
+        const uint64_t now = plat_time_ms();
         if (now - last_stats >= 60000) {
             rx_stats_log(&stats, (unsigned)((now - last_stats) / 1000));
             last_stats = now;
@@ -800,9 +801,9 @@ static void media_main(void *arg)
         /* One datagram per lock, so input and frames never wait long. */
         unsigned this_wake = 0, i = 0;
         for (; i < 64 && g_media_run; ++i) {
-            const uint64_t lock_start = svcGetSystemTick();
-            RecursiveLock_Lock(&g_peer_lock);
-            const uint64_t read_start = svcGetSystemTick();
+            const uint64_t lock_start = plat_ticks();
+            plat_rlock(&g_peer_lock);
+            const uint64_t read_start = plat_ticks();
             int handled;
             if (t->steam) {
                 handled = steam_session_receive(t->peer);
@@ -811,8 +812,8 @@ static void media_main(void *arg)
             } else {
                 handled = peer_connection_loop(t->peer);
             }
-            const uint64_t read_end = svcGetSystemTick();
-            RecursiveLock_Unlock(&g_peer_lock);
+            const uint64_t read_end = plat_ticks();
+            plat_runlock(&g_peer_lock);
             const uint64_t lock_us = (read_start - lock_start) / TICKS_PER_US;
             if (lock_us > stats.lock_max) stats.lock_max = lock_us;
             if (handled <= 0) break;
@@ -826,16 +827,15 @@ static void media_main(void *arg)
         ++stats.wakes;
         stats.packets += this_wake;
         if (this_wake > stats.per_wake_max) stats.per_wake_max = this_wake;
-        LightEvent_Signal(&g_media_event);
+        plat_event_signal(&g_media_event);
     }
 }
 
 static void media_thread_start(WebRtcTransport *t)
 {
-    s32 priority = 0x30;
-    svcGetThreadPriority(&priority, CUR_THREAD_HANDLE);
+    const int priority = plat_thread_priority();
     g_media_run = true;
-    g_media_thread = threadCreate(media_main, t, 32 * 1024, priority - 1, 2, false);
+    g_media_thread = plat_thread_create(media_main, t, 32 * 1024, priority - 1, 2, false);
     t->media_threaded = g_media_thread != NULL;
     if (!t->media_threaded) g_media_run = false;
     http_set_gentle(true);
@@ -847,8 +847,7 @@ static void media_thread_stop(WebRtcTransport *t)
     http_set_gentle(false);
     if (!g_media_thread) return;
     g_media_run = false;
-    threadJoin(g_media_thread, U64_MAX);
-    threadFree(g_media_thread);
+    plat_thread_join(g_media_thread);
     g_media_thread = NULL;
     t->media_threaded = false;
 }
@@ -856,12 +855,12 @@ static void media_thread_stop(WebRtcTransport *t)
 void webrtc_transport_wait(WebRtcTransport *t, int timeout_ms)
 {
     if (t->media_threaded) {
-        LightEvent_WaitTimeout(&g_media_event, (s64)timeout_ms * 1000000LL);
+        plat_event_wait_timeout(&g_media_event, (s64)timeout_ms * 1000000LL);
         return;
     }
     const int fd = webrtc_transport_socket(t);
     if (fd < 0) {
-        svcSleepThread((s64)timeout_ms * 1000000LL);
+        plat_sleep_ns((s64)timeout_ms * 1000000LL);
         return;
     }
     struct pollfd media = { .fd = fd, .events = POLLIN, .revents = 0 };
@@ -877,8 +876,8 @@ void webrtc_transport_init(WebRtcTransport *t)
     g_owner = t;
     static bool once;
     if (!once) {
-        RecursiveLock_Init(&g_peer_lock);
-        LightEvent_Init(&g_media_event, RESET_ONESHOT);
+        plat_rlock_init(&g_peer_lock);
+        plat_event_init(&g_media_event, false);
         once = true;
     }
     memset(t, 0, sizeof(*t));
@@ -906,14 +905,14 @@ static bool start_xcloud(WebRtcTransport *t, NvstSignal *signal)
     signal->xcloud_peer = NULL;
     t->xcloud = true;
     xcloud_stream_reset();
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     t->peer = pc;
     /* The service's answer: its ICE credentials, fingerprint and media; its
      * candidates follow from the signal (apply_candidates). */
     peer_connection_set_remote_description(pc, signal->offer_sdp, SDP_TYPE_ANSWER);
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     t->state = WEBRTC_ANSWER_SENT;
-    t->answer_sent_at = osGetTime();
+    t->answer_sent_at = plat_time_ms();
     diagnostic_log("WEBRTC", "xcloud answer applied (%lu bytes), %u remote candidates",
                    (unsigned long)signal->offer_size, signal->remote_ice_count);
     snprintf(t->status, sizeof(t->status), i18n_text("Connecting to the Xbox"));
@@ -970,9 +969,9 @@ static bool start_steam(WebRtcTransport *t, NvstSignal *signal)
     const SteamSessionCallbacks callbacks = { steam_video_start, steam_video, steam_audio, steam_activity, t };
     t->steam = true;
     t->input_protocol_version = 2;
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     t->peer = steam_session_open(&config, &callbacks);
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     if (!t->peer) {
         t->steam = false;
         t->state = WEBRTC_FAILED;
@@ -980,7 +979,7 @@ static bool start_steam(WebRtcTransport *t, NvstSignal *signal)
         return false;
     }
     t->state = WEBRTC_ANSWER_SENT;
-    t->answer_sent_at = osGetTime();
+    t->answer_sent_at = plat_time_ms();
     snprintf(t->status, sizeof(t->status), i18n_text("Connecting to your PC"));
     media_thread_start(t);
     return true;
@@ -1013,7 +1012,7 @@ static void steam_pad_from(const GfnGamepadState *state, SteamPad *pad)
 static void steam_tick(WebRtcTransport *t)
 {
     SteamSession *s = t->peer;
-    const uint64_t now = osGetTime();
+    const uint64_t now = plat_time_ms();
     if (!t->media_threaded) {
         for (unsigned i = 0; i < 64 && steam_session_receive(s) > 0; ++i) {}
         steam_session_tick(s);
@@ -1060,7 +1059,7 @@ static void steam_tick(WebRtcTransport *t)
         request_video_keyframe(t, "decoder_stalled");
 
     GfnGamepadState pad_state;
-    gfn_input_read_3ds(&pad_state);
+    gfn_input_read(&pad_state);
     if (t->pointer_mode && !t->keyboard_mode) {
         /* The right stick moves the PC's mouse, at the same speed as on
          * GeForce NOW (per 16 ms step); A clicks (main.c). */
@@ -1070,7 +1069,7 @@ static void steam_tick(WebRtcTransport *t)
             t->last_mouse_move_at = now;
         }
         pad_state.right_x = pad_state.right_y = 0;
-        pad_state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(KEY_A | KEY_B | KEY_X);
+        pad_state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_X);
     }
     if (t->keyboard_mode) memset(&pad_state, 0, sizeof(pad_state));
     SteamPad pad;
@@ -1140,7 +1139,7 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
         "a=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\n"
         "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\n"
         "a=max-message-size:262144\r\n",
-        (unsigned long)(svcGetSystemTick() & 0x7fffffff), ice, video_ice, fmtp, ice);
+        (unsigned long)(plat_ticks() & 0x7fffffff), ice, video_ice, fmtp, ice);
     if (cap) diagnostic_log("WEBRTC", "xcloud offer bandwidth cap=%u kbps", cap);
     /* The candidates libpeer gathered, for the ICE exchange. */
     for (const char *p = local; n > 0 && n < SDP_LIMIT && (p = strstr(p, "a=candidate:")) != NULL;) {
@@ -1228,11 +1227,11 @@ bool webrtc_transport_start(WebRtcTransport *t, NvstSignal *signal,
     }
     free(offer);
     t->mic_negotiated = mic_added;
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     g_mic_transport = mic_added ? t : NULL;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     t->state = WEBRTC_ANSWER_SENT;
-    t->answer_sent_at = osGetTime();
+    t->answer_sent_at = plat_time_ms();
     send_local_candidates(t, signal);
     diagnostic_log("ICE", "answer sent local_trickle=%u/%u",
                    t->sent_local_candidates, t->local_candidates);
@@ -1302,10 +1301,10 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal);
 void webrtc_transport_tick(WebRtcTransport *t, NvstSignal *signal)
 {
     if (!t->peer) return;
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     if (t->steam) steam_tick(t);
     else transport_tick(t, signal);
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
 }
 
 static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
@@ -1315,7 +1314,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
     /* GFN sends video in short bursts. Drain enough datagrams per vblank to
      * keep those bursts out of the kernel queue, while retaining a hard cap
      * so input and app lifecycle work cannot starve. */
-    const uint64_t now = osGetTime();
+    const uint64_t now = plat_time_ms();
     if (!t->media_threaded && (t->media_readable || now - t->last_media_poll_at >= 16)) {
         for (unsigned i = 0; i < 64 && peer_connection_loop(t->peer) > 0; ++i) {}
         t->last_media_poll_at = now;
@@ -1368,7 +1367,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
         &t->gather_sent, &t->gather_received, &t->checks_sent,
         &t->udp_received, &t->stun_received, &t->valid_responses,
         &t->checks_attempted, &t->send_failures, &t->last_send_errno);
-    const uint64_t now_diag = osGetTime();
+    const uint64_t now_diag = plat_time_ms();
     if (now_diag - t->last_diagnostic_at >= (t->video_access_units ? 10000u : 1000u)) {
         t->last_diagnostic_at = now_diag;
         diagnostic_log("ICE", "pairs total=%d frozen=%d run=%d ok=%d fail=%d local=%u/%u remote=%u/%u mediaPort=%d remotePort=%d manual=%u checks=%lu/%lu sendFail=%lu errno=%d udpRx=%lu stunRx=%lu valid=%lu rtt=%d hold=%lu",
@@ -1395,7 +1394,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
                                                     label, protocol, 0) >= 0)
             t->input_channel_requested = true;
     }
-    const uint64_t now_input = osGetTime();
+    const uint64_t now_input = plat_time_ms();
     if (t->data_open && !t->input_ready && now_input - t->data_opened_at >= 1500) {
         t->input_ready = true;
         t->input_protocol_version = 2;
@@ -1421,7 +1420,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
     }
 
     GfnGamepadState state;
-    gfn_input_read_3ds(&state);
+    gfn_input_read(&state);
     const uint64_t timestamp_us = (now_input - t->connected_at) * 1000ULL;
     if (t->pointer_mode && !t->keyboard_mode) {
         /* Mouse speed is per 16 ms step, independent of the poll rate. */
@@ -1444,7 +1443,7 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
         }
         state.right_x = state.right_y = 0;
         /* Physical A clicks the mouse; keep B and X out of the game too. */
-        state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(KEY_A | KEY_B | KEY_X);
+        state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_X);
     }
     if (t->keyboard_mode) {
         /* Physical keyboard shortcuts must not also press gamepad buttons. */
@@ -1506,10 +1505,10 @@ static void transport_tick(WebRtcTransport *t, NvstSignal *signal)
 int webrtc_transport_steam_quit_game(WebRtcTransport *t)
 {
     if (!t || !t->peer || !t->steam) return -1;
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     const bool running = steam_session_game_running(t->peer);
     const bool sent = running && steam_session_stop_game(t->peer);
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     return sent ? 1 : running ? -1 : 0;
 }
 
@@ -1545,22 +1544,22 @@ static unsigned hid_usage_for_vk(uint16_t vk)
 bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
 {
     if (t && t->peer && t->steam && t->input_ready) {
-        RecursiveLock_Lock(&g_peer_lock);
+        plat_rlock(&g_peer_lock);
         steam_session_mouse_move(t->peer, dx, dy);
-        RecursiveLock_Unlock(&g_peer_lock);
+        plat_runlock(&g_peer_lock);
         t->mouse_moves++;
         return true;
     }
     if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam || (!dx && !dy)) return false;
     uint8_t packet[34];
-    const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
+    const uint64_t timestamp_us = (plat_time_ms() - t->connected_at) * 1000ULL;
     const size_t size = gfn_input_encode_mouse_move(packet, dx, dy,
         timestamp_us, t->input_protocol_version);
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     /* Lossy, as above; clicks and keys stay reliable. */
     const bool ok = peer_connection_datachannel_send_binary_lossy_sid(t->peer,
         (char *)packet, size, 0) >= 0;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     if (ok) t->mouse_moves++;
     return ok;
 }
@@ -1568,21 +1567,21 @@ bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
 bool webrtc_transport_mouse_button(WebRtcTransport *t, bool pressed)
 {
     if (t && t->peer && t->steam && t->input_ready) {
-        RecursiveLock_Lock(&g_peer_lock);
+        plat_rlock(&g_peer_lock);
         const bool ok = steam_session_mouse_button(t->peer, pressed);
-        RecursiveLock_Unlock(&g_peer_lock);
+        plat_runlock(&g_peer_lock);
         if (ok && !pressed) t->mouse_clicks++;
         return ok;
     }
     if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam) return false;
     uint8_t packet[28];
-    const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
+    const uint64_t timestamp_us = (plat_time_ms() - t->connected_at) * 1000ULL;
     const size_t size = gfn_input_encode_mouse_button(packet, pressed,
         timestamp_us, t->input_protocol_version);
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     const bool ok = peer_connection_datachannel_send_binary_sid(t->peer,
         (char *)packet, size, 0) >= 0;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     if (ok && !pressed) t->mouse_clicks++;
     diagnostic_log("INPUT", "mouse button %s sent=%u count=%u",
                    pressed ? "down" : "up", ok ? 1 : 0, t->mouse_clicks);
@@ -1597,29 +1596,29 @@ bool webrtc_transport_send_key(WebRtcTransport *t, uint16_t keycode,
         if (!usage) return false;
         /* Shift is a key of its own on the PC (left shift, usage 225). */
         const bool shift = (modifiers & 1) != 0;
-        RecursiveLock_Lock(&g_peer_lock);
+        plat_rlock(&g_peer_lock);
         SteamSession *s = t->peer;
         bool ok = !shift || steam_session_key(s, 225, true, 1);
         ok = ok && steam_session_key(s, usage, true, shift ? 1 : 0);
         ok = steam_session_key(s, usage, false, shift ? 1 : 0) && ok;
         if (shift) steam_session_key(s, 225, false, 0);
-        RecursiveLock_Unlock(&g_peer_lock);
+        plat_runlock(&g_peer_lock);
         if (ok) t->keyboard_keys++;
         return ok;
     }
     if (!t || !t->peer || !t->input_ready || t->xcloud || t->steam) return false;
     uint8_t packet[28];
-    const uint64_t timestamp_us = (osGetTime() - t->connected_at) * 1000ULL;
+    const uint64_t timestamp_us = (plat_time_ms() - t->connected_at) * 1000ULL;
     size_t size = gfn_input_encode_key(packet, keycode, scancode, modifiers,
         true, timestamp_us, t->input_protocol_version);
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     const bool down = peer_connection_datachannel_send_binary_sid(t->peer,
         (char *)packet, size, 0) >= 0;
     size = gfn_input_encode_key(packet, keycode, scancode, modifiers,
         false, timestamp_us + 1000, t->input_protocol_version);
     const bool up = peer_connection_datachannel_send_binary_sid(t->peer,
         (char *)packet, size, 0) >= 0;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     if (down && up) t->keyboard_keys++;
     /* Never log keys, characters, or login text. */
     return down && up;
@@ -1646,12 +1645,12 @@ void webrtc_transport_close(WebRtcTransport *t)
     if (!t) return;
     media_thread_stop(t);
     /* Under the lock: the mic thread may be sending on this peer. */
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     if (g_mic_transport == t) g_mic_transport = NULL;
     if (t->peer && t->steam) steam_session_close(t->peer);
     else if (t->peer) peer_connection_destroy(t->peer);
     t->peer = NULL;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     audio_output_close();
     mvd_video_close();
     memset(t, 0, sizeof(*t));
@@ -1659,10 +1658,10 @@ void webrtc_transport_close(WebRtcTransport *t)
 
 bool webrtc_transport_send_mic(const uint8_t *opus, size_t size)
 {
-    RecursiveLock_Lock(&g_peer_lock);
+    plat_rlock(&g_peer_lock);
     WebRtcTransport *t = g_mic_transport;
     const bool ok = t && t->peer && t->state == WEBRTC_CONNECTED &&
                     peer_connection_send_audio(t->peer, opus, size) == 0;
-    RecursiveLock_Unlock(&g_peer_lock);
+    plat_runlock(&g_peer_lock);
     return ok;
 }

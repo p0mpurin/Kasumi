@@ -1,4 +1,5 @@
 #include "gfn_input.h"
+#include "platform.h"
 
 #include <math.h>
 #include <stdbool.h>
@@ -8,8 +9,6 @@ static GfnInputConfig g_config = { GFN_LAYOUT_POSITION, 12, false, GFN_GYRO_OFF,
 static uint16_t g_virtual_buttons;
 static bool g_suppressed;
 static bool g_gyro_enabled;
-/* Raw gyro units per degree per second (HID reports 14.375). */
-static float g_gyro_raw_per_dps = 14.375f;
 static float g_gyro_bias_yaw, g_gyro_bias_pitch;
 static float g_gyro_smooth_x, g_gyro_smooth_y;
 static unsigned g_gyro_calibration;
@@ -24,8 +23,8 @@ static bool g_toggled[GFN_INPUT_COUNT];
 static bool g_xbox_names;
 
 static const u32 INPUT_KEYS[GFN_INPUT_COUNT] = {
-    KEY_A, KEY_B, KEY_X, KEY_Y, KEY_L, KEY_R, KEY_ZL, KEY_ZR, KEY_START, KEY_SELECT,
-    KEY_DUP, KEY_DDOWN, KEY_DLEFT, KEY_DRIGHT
+    PLAT_KEY_A, PLAT_KEY_B, PLAT_KEY_X, PLAT_KEY_Y, PLAT_KEY_L, PLAT_KEY_R, PLAT_KEY_ZL, PLAT_KEY_ZR, PLAT_KEY_START, PLAT_KEY_SELECT,
+    PLAT_KEY_DUP, PLAT_KEY_DDOWN, PLAT_KEY_DLEFT, PLAT_KEY_DRIGHT
 };
 static const char *const INPUT_NAMES[GFN_INPUT_COUNT] = {
     "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "START", "SELECT", "UP", "DOWN", "LEFT", "RIGHT"
@@ -158,19 +157,12 @@ void gfn_input_configure(const GfnInputConfig *config)
     if (g_config.camera_invert > 2) g_config.camera_invert = 0;
     /* The gyroscope draws power, so it only runs while gyro aim is on. */
     const bool want = g_config.gyro_mode != GFN_GYRO_OFF;
-    if (want && !g_gyro_enabled && R_SUCCEEDED(HIDUSER_EnableGyroscope())) {
+    if (want && !g_gyro_enabled && plat_gyro_enable(true)) {
         g_gyro_enabled = true;
-        /* Build 67-69 multiplied by this coefficient; it is raw units per
-         * dps, so readings came out ~200x too large and the camera spun. */
-        float coefficient = 0.0f;
-        if (R_SUCCEEDED(HIDUSER_GetGyroscopeRawToDpsCoefficient(&coefficient)) &&
-            coefficient > 1.0f && coefficient < 100.0f)
-            g_gyro_raw_per_dps = coefficient;
         g_gyro_bias_yaw = g_gyro_bias_pitch = 0.0f;
         g_gyro_calibration = 0;
     } else if (!want && g_gyro_enabled) {
-        HIDUSER_DisableGyroscope();
-        g_gyro_enabled = false;
+        g_gyro_enabled = plat_gyro_enable(false);
     }
 }
 
@@ -185,11 +177,8 @@ static void apply_gyro(GfnGamepadState *state, u32 held)
 {
     g_gyro_active = false;
     if (!g_gyro_enabled) return;
-    angularRate rate;
-    hidGyroRead(&rate);
-    /* libctru: x = roll, y = pitch, z = yaw. */
-    const float yaw = (float)rate.z / g_gyro_raw_per_dps;
-    const float pitch = (float)rate.y / g_gyro_raw_per_dps;
+    float yaw, pitch;
+    plat_gyro_read(&yaw, &pitch);
     /* The first half second after enabling calibrates the resting drift
      * quickly; afterwards it is tracked slowly whenever the console is
      * nearly still, so a steady turn is never mistaken for drift. */
@@ -207,7 +196,7 @@ static void apply_gyro(GfnGamepadState *state, u32 held)
     /* A light low-pass hides sensor noise and hand tremor. */
     g_gyro_smooth_x += (-(yaw - g_gyro_bias_yaw) - g_gyro_smooth_x) * 0.5f;
     g_gyro_smooth_y += ((pitch - g_gyro_bias_pitch) - g_gyro_smooth_y) * 0.5f;
-    const u32 aim_key = g_config.swap_shoulders ? KEY_L : KEY_ZL;
+    const u32 aim_key = g_config.swap_shoulders ? PLAT_KEY_L : PLAT_KEY_ZL;
     if (g_config.gyro_mode == GFN_GYRO_WHILE_AIMING && !(held & aim_key)) return;
     g_gyro_active = true;
     /* Degrees per second for full deflection: low, medium, high. */
@@ -258,28 +247,28 @@ uint16_t gfn_input_buttons_for_keys(u32 keys)
                 buttons |= OUTPUT_BITS[g_custom_map.out[i]] | OUTPUT_BITS[g_custom_map.also[i]];
         return buttons;
     }
-    if (keys & KEY_DUP) buttons |= GFN_PAD_DPAD_UP;
-    if (keys & KEY_DDOWN) buttons |= GFN_PAD_DPAD_DOWN;
-    if (keys & KEY_DLEFT) buttons |= GFN_PAD_DPAD_LEFT;
-    if (keys & KEY_DRIGHT) buttons |= GFN_PAD_DPAD_RIGHT;
-    if (keys & KEY_START) buttons |= GFN_PAD_START;
-    if (keys & KEY_SELECT) buttons |= GFN_PAD_BACK;
-    const u32 left_shoulder = g_config.swap_shoulders ? KEY_ZL : KEY_L;
-    const u32 right_shoulder = g_config.swap_shoulders ? KEY_ZR : KEY_R;
+    if (keys & PLAT_KEY_DUP) buttons |= GFN_PAD_DPAD_UP;
+    if (keys & PLAT_KEY_DDOWN) buttons |= GFN_PAD_DPAD_DOWN;
+    if (keys & PLAT_KEY_DLEFT) buttons |= GFN_PAD_DPAD_LEFT;
+    if (keys & PLAT_KEY_DRIGHT) buttons |= GFN_PAD_DPAD_RIGHT;
+    if (keys & PLAT_KEY_START) buttons |= GFN_PAD_START;
+    if (keys & PLAT_KEY_SELECT) buttons |= GFN_PAD_BACK;
+    const u32 left_shoulder = g_config.swap_shoulders ? PLAT_KEY_ZL : PLAT_KEY_L;
+    const u32 right_shoulder = g_config.swap_shoulders ? PLAT_KEY_ZR : PLAT_KEY_R;
     if (keys & left_shoulder) buttons |= GFN_PAD_LEFT_SHOULDER;
     if (keys & right_shoulder) buttons |= GFN_PAD_RIGHT_SHOULDER;
     if (g_config.layout == GFN_LAYOUT_LABEL) {
-        if (keys & KEY_A) buttons |= GFN_PAD_A;
-        if (keys & KEY_B) buttons |= GFN_PAD_B;
-        if (keys & KEY_X) buttons |= GFN_PAD_X;
-        if (keys & KEY_Y) buttons |= GFN_PAD_Y;
+        if (keys & PLAT_KEY_A) buttons |= GFN_PAD_A;
+        if (keys & PLAT_KEY_B) buttons |= GFN_PAD_B;
+        if (keys & PLAT_KEY_X) buttons |= GFN_PAD_X;
+        if (keys & PLAT_KEY_Y) buttons |= GFN_PAD_Y;
     } else {
         /* 3DS diamond: X top, A right, B bottom, Y left. PlayStation/Xbox:
          * Triangle/Y top, Circle/B right, Cross/A bottom, Square/X left. */
-        if (keys & KEY_X) buttons |= GFN_PAD_Y;
-        if (keys & KEY_A) buttons |= GFN_PAD_B;
-        if (keys & KEY_B) buttons |= GFN_PAD_A;
-        if (keys & KEY_Y) buttons |= GFN_PAD_X;
+        if (keys & PLAT_KEY_X) buttons |= GFN_PAD_Y;
+        if (keys & PLAT_KEY_A) buttons |= GFN_PAD_B;
+        if (keys & PLAT_KEY_B) buttons |= GFN_PAD_A;
+        if (keys & PLAT_KEY_Y) buttons |= GFN_PAD_X;
     }
     return buttons;
 }
@@ -326,7 +315,7 @@ static void push_stick(unsigned sticks, int16_t *x, int16_t *y)
 /* The custom map's buttons for what is held, with turbo and toggles. */
 static unsigned apply_custom_map(GfnGamepadState *state, u32 held)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     unsigned sticks = 0;
     for (unsigned i = 0; i < GFN_INPUT_COUNT; ++i) {
         const bool is_held = (held & INPUT_KEYS[i]) != 0;
@@ -349,38 +338,38 @@ static unsigned apply_custom_map(GfnGamepadState *state, u32 held)
     return sticks;
 }
 
-void gfn_input_read_3ds(GfnGamepadState *state)
+void gfn_input_read(GfnGamepadState *state)
 {
     memset(state, 0, sizeof(*state));
     if (g_suppressed) return;
-    const u32 held = hidKeysHeld();
+    const PlatInput *in = plat_input();
+    const u32 held = in->held;
     unsigned sticks = 0;
     if (g_custom_map_on) {
         sticks = apply_custom_map(state, held);
         state->buttons |= g_virtual_buttons;
     } else {
         state->buttons = gfn_input_buttons_for_keys(held) | g_virtual_buttons;
-        const u32 left_trigger = g_config.swap_shoulders ? KEY_L : KEY_ZL;
-        const u32 right_trigger = g_config.swap_shoulders ? KEY_R : KEY_ZR;
+        const u32 left_trigger = g_config.swap_shoulders ? PLAT_KEY_L : PLAT_KEY_ZL;
+        const u32 right_trigger = g_config.swap_shoulders ? PLAT_KEY_R : PLAT_KEY_ZR;
         if (held & left_trigger) state->left_trigger = 255;
         if (held & right_trigger) state->right_trigger = 255;
     }
+    /* Stick clicks, where the console has them: sent as they are. */
+    if (held & PLAT_KEY_L3) state->buttons |= GFN_PAD_LEFT_THUMB;
+    if (held & PLAT_KEY_R3) state->buttons |= GFN_PAD_RIGHT_THUMB;
     /* The 3D slider as a button: held while it is past halfway (no slider
      * on a 2DS: it reads 0, so nothing is pressed). */
-    if (g_slider_output && osGet3DSliderState() > 0.5f) press_output(state, g_slider_output, &sticks);
-    circlePosition circle;
-    circlePosition cstick;
-    hidCircleRead(&circle);
-    hidCstickRead(&cstick);
-    /* The Circle Pad reaches about 150 at its rim; the C-Stick is shorter. */
-    scale_stick(circle.dx, circle.dy, 150, 1.0f, &state->left_x, &state->left_y);
+    if (g_slider_output && in->slider_3d > 0.5f) press_output(state, g_slider_output, &sticks);
+    scale_stick(in->lstick_x, in->lstick_y, PLAT_LSTICK_REACH, 1.0f, &state->left_x, &state->left_y);
     /* Camera speed: Slow tops out at 70 %; Fast and Fastest reach a full
      * turn with a lighter push on the short C-Stick. */
     static const float camera_gain[] = { 0.7f, 1.0f, 1.3f, 1.6f };
     /* The touch camera's stick joins the C-Stick before scaling, so it
      * has the same deadzone, curve and speed. */
-    const int cx = cstick.dx + (int)(g_touch_stick_x * 140.0f), cy = cstick.dy + (int)(g_touch_stick_y * 140.0f);
-    scale_stick(cx, cy, 140, camera_gain[g_config.camera_speed], &state->right_x, &state->right_y);
+    const int cx = in->rstick_x + (int)(g_touch_stick_x * (float)PLAT_RSTICK_REACH);
+    const int cy = in->rstick_y + (int)(g_touch_stick_y * (float)PLAT_RSTICK_REACH);
+    scale_stick(cx, cy, PLAT_RSTICK_REACH, camera_gain[g_config.camera_speed], &state->right_x, &state->right_y);
     if (g_touch_look_x != 0.0f || g_touch_look_y != 0.0f) {
         const float gain = camera_gain[g_config.camera_speed] * 32767.0f;
         float rx = (float)state->right_x + g_touch_look_x * gain;

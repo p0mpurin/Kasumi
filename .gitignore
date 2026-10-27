@@ -3,11 +3,15 @@ build/
 build-host/
 build-transport/
 build-aecm/
+build-vita/
+build-transport-vita/
+build-aecm-vita/
 *.elf
 *.3dsx
 *.smdh
 *.map
 *.cia
+*.vpk
 # The HOME Menu shortcut template is linked into Kasumi (shortcut/Makefile).
 !resources/shortcut.cia
 *.log
@@ -43,3 +47,11 @@ resources/sfx/
 
 # Theme wallpaper sources (tools/themes/make_themes.py): check licences before committing
 resources/themes/
+
+# Test CIAs handed out for console testing
+test-builds/
+
+# Local tools and settings
+.claude/
+dev_server.txt
+linkbypass/

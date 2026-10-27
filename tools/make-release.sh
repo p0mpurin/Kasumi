@@ -30,7 +30,16 @@ out="dist/v$version"
 rm -rf "$out"
 mkdir -p "$out"
 cp Kasumi.cia Kasumi.3dsx "$out/"
-(cd "$out" && sha256sum Kasumi.cia Kasumi.3dsx > SHA256SUMS)
+# The PS Vita's VPK too, where VitaSDK is installed (tools/build-vita.sh).
+packages="Kasumi.cia Kasumi.3dsx"
+if [ -d "${VITASDK:-/c/vitasdk}" ]; then
+    bash tools/build-vita.sh
+    cp Kasumi.vpk "$out/"
+    packages="$packages Kasumi.vpk"
+else
+    echo "Skipping the Vita VPK: VitaSDK not found (set VITASDK)" >&2
+fi
+(cd "$out" && sha256sum $packages > SHA256SUMS)
 
 # QR code for FBI's Remote install, pointing at this release's CIA. It goes
 # into the README, so commit docs/assets/install-qr.png with the release.
@@ -52,5 +61,7 @@ echo "Release files in $out:"
 ls -l "$out"
 echo
 echo "Publish with:"
-echo "  gh release create v$version $out/Kasumi.cia $out/Kasumi.3dsx $out/SHA256SUMS \\"
+assets=""
+for file in $packages; do assets="$assets $out/$file"; done
+echo "  gh release create v$version$assets $out/SHA256SUMS \\"
 echo "    --title \"Kasumi $version\" --notes-file $notes $prerelease"

@@ -1,9 +1,10 @@
 #include "nvst_signal.h"
+#include "nvst_protocol.h"
+#include "platform.h"
 #include "i18n.h"
 #include "diagnostic.h"
-#include "stream_profile.h"
+#include "http_client.h"
 #include "webrtc_transport.h"
-#include <3ds.h>
 #include <curl/curl.h>
 #include <jansson.h>
 #include <mbedtls/base64.h>
@@ -16,8 +17,6 @@
 #include <string.h>
 
 #define SIGNAL_USER_AGENT "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-extern const unsigned char _binary_romfs_cacert_pem_start[];
-extern const unsigned char _binary_romfs_cacert_pem_end[];
 typedef struct {
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context drbg;
@@ -29,7 +28,7 @@ static void record(NvstSignal *s, const char *event)
     snprintf(s->last_event, sizeof(s->last_event), "%s", event);
     if (s->diagnostic_lines++ >= 64) return;
     diagnostic_log("NVST", "event=%s elapsed=%llu frames=%u json=%u ack=%u hb=%u peer=%u offer=%lu ice=%u empty=%u close=%u",
-        event, (unsigned long long)(osGetTime() - s->started_ms),
+        event, (unsigned long long)(plat_time_ms() - s->started_ms),
         s->parser.frames, s->messages, s->acknowledgements, s->heartbeats,
         s->peer_assigned ? 1 : 0, (unsigned long)s->offer_size, s->remote_ice_count,
         s->empty_polls, s->close_code);
@@ -71,7 +70,7 @@ static void transport_error(NvstSignal *s, const char *stage, CURLcode code)
     s->state = NVST_SIGNAL_ERROR;
     snprintf(s->status, sizeof(s->status),
         "%s curl=%d os=%ld errno=%d after %us; rx=%u offer=%lu. %.45s",
-        stage, (int)code, os_error, e, (unsigned)((osGetTime()-s->started_ms)/1000),
+        stage, (int)code, os_error, e, (unsigned)((plat_time_ms()-s->started_ms)/1000),
         s->messages, (unsigned long)s->offer_size, curl_easy_strerror(code));
     record(s, "transport-error");
     diagnostic_log("NVST", "transport stage=%s curl=%d os=%ld errno=%d text=%s",
@@ -91,15 +90,15 @@ static bool would_block(CURLcode code)
 static bool send_raw(NvstSignal *s, const void *data, size_t length)
 {
     size_t offset = 0;
-    uint64_t deadline = osGetTime() + 3000;
+    uint64_t deadline = plat_time_ms() + 3000;
     while (offset < length) {
         size_t sent = 0;
         errno = 0; s->curl_error[0] = 0;
         CURLcode code = curl_easy_send((CURL *)s->curl,
             (const char *)data + offset, length - offset, &sent);
         if (would_block(code)) {
-            if (osGetTime() >= deadline) return fail(s, "NVST send timeout (3s)");
-            svcSleepThread(1000000); continue;
+            if (plat_time_ms() >= deadline) return fail(s, "NVST send timeout (3s)");
+            plat_sleep_ns(1000000); continue;
         }
         if (code != CURLE_OK) { transport_error(s, "Send", code); return false; }
         if (!sent) return fail(s, "NVST send stalled");
@@ -136,28 +135,10 @@ static bool send_json(NvstSignal *s, json_t *value)
     return ok;
 }
 
-static bool peer_info(NvstSignal *s)
-{
-    /* Vita uses role 1 here; Switch uses 0. Preserve Vita's complete
-     * registration shape rather than guessing which field caused a reset. */
-    char resolution[32];
-    snprintf(resolution, sizeof(resolution), "%ux%u",
-             stream_profile_width(), stream_profile_height());
-    json_t *hello = json_pack("{s:i,s:{s:s,s:s,s:b,s:i,s:s,s:i,s:s,s:i}}",
-        "ackid", (int)++s->ack_counter, "peer_info",
-        "browser", "Chrome", "browserVersion", "131", "connected", 1,
-        "id", (int)s->local_peer_id, "name", s->peer_name,
-        "peerRole", 1, "resolution", resolution, "version", 2);
-    bool ok = send_json(s, hello); json_decref(hello);
-    s->last_peer_info_ms = osGetTime();
-    if (ok) record(s, "peer-info-sent");
-    return ok;
-}
-
 static bool heartbeat(NvstSignal *s)
 {
     const char text[] = "{\"hb\":1}";
-    s->last_heartbeat_ms = osGetTime();
+    s->last_heartbeat_ms = plat_time_ms();
     return send_frame(s, 1, text, sizeof(text)-1);
 }
 
@@ -190,6 +171,16 @@ static bool incoming(void *context, unsigned opcode, const uint8_t *data, size_t
     if (name && !strcmp(name, s->peer_name) && json_is_integer(id)) {
         s->local_peer_id = (uint32_t)json_integer_value(id);
         s->peer_assigned = true; record(s, "peer-assigned");
+    } else if (json_is_integer(id)) {
+        /* Only NVIDIA's streamer (peer_role 0, "OneSdkServer-...") is the
+         * remote side; a stale client peer of ours must not take its place. */
+        json_t *role = json_object_get(info, "peer_role");
+        if (json_is_integer(role) && json_integer_value(role) == 0) {
+            s->remote_peer_id = (uint32_t)json_integer_value(id);
+            record(s, "remote-peer-announced");
+        } else {
+            record(s, "other-client-peer");
+        }
     }
     json_t *ackid = json_object_get(root, "ackid");
     if (json_is_integer(ackid) && !(json_is_integer(id) &&
@@ -290,12 +281,12 @@ static bool upgrade(NvstSignal *s, const char *url, const char *session_id)
     if (!send_raw(s, request, (size_t)length)) return false;
     memset(request, 0, sizeof(request));
     size_t used = 0;
-    uint64_t deadline = osGetTime() + 12000;
-    while (osGetTime() < deadline && used < sizeof(response)-1) {
+    uint64_t deadline = plat_time_ms() + 12000;
+    while (plat_time_ms() < deadline && used < sizeof(response)-1) {
         size_t received = 0;
         errno = 0; s->curl_error[0] = 0;
         CURLcode code = curl_easy_recv((CURL *)s->curl, response+used, sizeof(response)-used-1, &received);
-        if (would_block(code)) { ++s->empty_polls; svcSleepThread(10000000); continue; }
+        if (would_block(code)) { ++s->empty_polls; plat_sleep_ns(10000000); continue; }
         if (code != CURLE_OK) { transport_error(s, "Upgrade recv", code); return false; }
         if (!received) return fail(s, "EOF during WebSocket upgrade");
         used += received; response[used] = 0;
@@ -330,7 +321,7 @@ void nvst_signal_init(NvstSignal *s) { memset(s, 0, sizeof(*s)); }
 bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_id)
 {
     nvst_signal_close(s);
-    s->started_ms = osGetTime();
+    s->started_ms = plat_time_ms();
     diagnostic_log("NVST", "start signaling");
     if (!base_url || strncmp(base_url, "wss://", 6) || !session_id || !session_id[0])
         return fail(s, "Invalid secure signaling endpoint");
@@ -365,14 +356,14 @@ bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_
     size_t len = strlen(base);
     while (len && base[len-1] == '/') base[--len] = 0;
     if (len >= 8 && !strcmp(base+len-8, "/sign_in")) base[len-8] = 0;
-    snprintf(url, sizeof(url), "%s/sign_in?peer_id=%s&version=2&peer_role=1&pairing_id=%s", base, s->peer_name, session_id);
+    if (!nvst_sign_in_url(url, sizeof(url), base, s->peer_name, session_id, g_name_reused))
+        return fail(s, "NVST sign-in URL too large");
+    diagnostic_log("NVST", "protocol=3.0 reconnect=%d", g_name_reused ? 1 : 0);
     snprintf(connection, sizeof(connection), "https://%s", url+6);
     CURL *curl = curl_easy_init();
     if (!curl) return fail(s, "NVST curl allocation failed");
     s->curl = curl;
     s->remote_peer_id = 1;
-    struct curl_blob ca = {(void *)_binary_romfs_cacert_pem_start,
-        (size_t)(_binary_romfs_cacert_pem_end-_binary_romfs_cacert_pem_start), CURL_BLOB_NOCOPY};
     curl_easy_setopt(curl, CURLOPT_URL, connection);
     curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, s->curl_error);
     curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 1L);
@@ -382,13 +373,15 @@ bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
-    curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &ca);
+    http_use_ca_bundle(curl);
     errno = 0;
     CURLcode code = curl_easy_perform(curl);
     if (code != CURLE_OK) { transport_error(s, "TLS connect", code); return false; }
     record(s, "tls-connected");
     if (!upgrade(s, url, session_id)) return false;
-    if (!peer_info(s) || !heartbeat(s)) return false;
+    /* v3 sign_in registers the peer. Do not send/repeat a legacy v2
+     * peer_info message after the server has already assigned its ID. */
+    if (!heartbeat(s)) return false;
     if (!s->offer_size) snprintf(s->status, sizeof(s->status), "NVST verified; waiting for SDP offer");
     return true;
 }
@@ -396,8 +389,7 @@ bool nvst_signal_start(NvstSignal *s, const char *base_url, const char *session_
 void nvst_signal_tick(NvstSignal *s)
 {
     if (!nvst_signal_active(s)) return;
-    if (osGetTime()-s->last_heartbeat_ms >= 5000 && !heartbeat(s)) return;
-    if (!s->offer_size && osGetTime()-s->last_peer_info_ms >= 2000 && !peer_info(s)) return;
+    if (plat_time_ms()-s->last_heartbeat_ms >= 5000 && !heartbeat(s)) return;
     for (unsigned i = 0; i < 8; ++i) {
         uint8_t chunk[2048]; size_t n = 0;
         errno = 0; s->curl_error[0] = 0;
@@ -417,7 +409,7 @@ void nvst_signal_tick(NvstSignal *s)
      * old connection go, ~20 s after the drop (beta.36 export: 36 new-name
      * tries gave up at 12 s, the ones that waited longer got through). */
     const u64 offer_wait = !s->reconnect ? 30000 : g_name_reused ? 12000 : 22000;
-    if (!s->offer_size && osGetTime()-s->started_ms >= offer_wait)
+    if (!s->offer_size && plat_time_ms()-s->started_ms >= offer_wait)
         fail(s, !s->reconnect ? "No SDP offer within 30s; see NVST counters" :
                 g_name_reused ? "No SDP offer within 12s after reconnecting" :
                                 "No SDP offer within 22s after reconnecting (new peer)");

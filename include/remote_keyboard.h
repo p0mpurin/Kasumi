@@ -3,7 +3,7 @@
 /* Bottom-screen keyboard that types into the remote game over the input
  * data channel. Nothing typed is stored or logged. */
 
-#include <3ds.h>
+#include "platform.h"
 #include <stdbool.h>
 
 #include "webrtc_transport.h"

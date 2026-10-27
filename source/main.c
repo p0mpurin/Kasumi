@@ -1,6 +1,6 @@
-#include <3ds.h>
+#include "platform.h"
+#include "platform.h"
 
-#include <malloc.h>
 #include <math.h>
 #include <poll.h>
 #include <stdarg.h>
@@ -44,42 +44,30 @@
 #include "remote_keyboard.h"
 #include "settings.h"
 #include "stream_profile.h"
+#include "render.h"
 #include "ui.h"
 #include "webrtc_transport.h"
 #include "xcloud.h"
 #include "steam_link.h"
 
-#define SOC_BUFFER_SIZE (0x100000)
-#define SOC_BUFFER_ALIGNMENT (0x1000)
 #define MENU_COMBO_HOLD_MS 800
 
-static u32 *g_soc_buffer;
-static bool g_soc_ready;
-static bool g_ac_ready;
-static bool g_ptm_ready;
-/* ndm:u: exclusive Wi-Fi while a game runs (see wifi_exclusive). */
-static bool g_ndm_ready, g_ndm_exclusive;
 /* Keep the bounded token/catalog state out of the small 3DSX main stack. */
 GfnClient g_client;
 NvstSignal g_signal;
 static WebRtcTransport g_transport;
 static App g_app;
 static GfnGame g_current_game;
-static SwkbdState g_search_keyboard;
 static bool g_quit;
 static const char *g_busy_message;
 static bool g_leave_pending;
 /* When a launch waiting for a free session slot last went out. */
 static u64 g_limit_last_try;
-static bool g_screenshot_requested;
 static void show_notice(const char *text);
 static void finish_history(void);
 static void log_session_end(const char *by);
 static void apply_game_options(const GamePrefs *prefs);
 static void launch_with_options(const GfnGame *base, unsigned variant);
-/* Main-loop health while streaming: the longest iteration and how many took
- * over 25 ms (a stalled loop delays packets, input and presents alike). */
-static unsigned g_loop_max_ms, g_loop_slow;
 static char g_notice[96];
 static u64 g_notice_until;
 
@@ -107,39 +95,12 @@ static void shutdown_services(void)
     diagnostic_log("APP", REPORT_CLEAN_EXIT);
     diagnostic_close();
     http_global_exit();
-    if (g_soc_ready) socExit();
-    free(g_soc_buffer);
-    if (g_ptm_ready) ptmuExit();
-    if (g_ndm_exclusive) {
-        NDMU_UnlockState();
-        NDMU_LeaveExclusiveState();
-        g_ndm_exclusive = false;
-    }
-    if (g_ndm_ready) ndmuExit();
-    if (g_ac_ready) acExit();
+    plat_services_exit();
 }
 
 static bool init_services(char *error, size_t error_size)
 {
-    Result result = acInit();
-    if (R_SUCCEEDED(result)) g_ac_ready = true;
-    else {
-        snprintf(error, error_size, i18n_text("ac:u init 0x%08lX"), (unsigned long)result);
-        return false;
-    }
-    g_ptm_ready = R_SUCCEEDED(ptmuInit());
-    g_ndm_ready = R_SUCCEEDED(ndmuInit());
-    g_soc_buffer = memalign(SOC_BUFFER_ALIGNMENT, SOC_BUFFER_SIZE);
-    if (!g_soc_buffer) {
-        snprintf(error, error_size, "1 MiB SOC buffer allocation failed");
-        return false;
-    }
-    result = socInit(g_soc_buffer, SOC_BUFFER_SIZE);
-    if (R_FAILED(result)) {
-        snprintf(error, error_size, i18n_text("soc:u init 0x%08lX"), (unsigned long)result);
-        return false;
-    }
-    g_soc_ready = true;
+    if (!plat_services_init(error, error_size)) return false;
     if (!http_global_init()) {
         snprintf(error, error_size, "libcurl global init failed");
         return false;
@@ -147,293 +108,12 @@ static bool init_services(char *error, size_t error_size)
     return true;
 }
 
-/* ---- Rendering ----------------------------------------------------------- */
-
-/* Frames put on the screen. The FPS readout counted decoded frames, so a
- * picture held back by the pacer or a stalled loop still read "30" while it
- * looked like 5 (player report, 2026-10-10). */
-static unsigned g_shown_frames;
-
-static void present_video(void)
-{
-    static unsigned last_frame;
-    const unsigned frame = mvd_video_decoded_frames();
-    if (frame == last_frame) return;
-    last_frame = frame;
-    ++g_shown_frames;
-    /* MVD frames are copied into the single-buffered top framebuffer by the
-     * CPU; flush them to memory and re-present that buffer. */
-    u16 width = 0, height = 0;
-    u8 *framebuffer = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-    if (framebuffer) GSPGPU_FlushDataCache(framebuffer, (u32)width * height * 2);
-    gfxScreenSwapBuffers(GFX_TOP, false);
-}
-
-/* Frame pacing for wide video. The top LCD refreshes at ~60 Hz and the
- * stream is 30 fps, so a frame is shown for exactly two vblanks. Frames are
- * shown in decode order; up to two wait in reserve to absorb network jitter,
- * a late frame repeats the previous one, and beyond two queued the oldest is
- * skipped so latency cannot grow. Presentation is double-buffered, so each
- * frame appears whole at a vblank (no tearing). */
-static void render_wide_video(bool draw_bottom)
-{
-    static u32 last_seen_vblank, last_present_vblank;
-    static u64 present_ticks, present_max;
-    static unsigned presented, repeated, skipped, drained, last_log_frames;
-    static unsigned backlog_streak, depth_sum;
-    /* Spare frames kept against late arrivals. Build 64 logged ~2 frames a
-     * second arriving 50-140 ms after the previous one (Wi-Fi bunching),
-     * which one spare (33 ms) cannot cover. Two repeats within 20 s raise
-     * the reserve to two spares (+33 ms delay); a calm minute lowers it. */
-    static unsigned reserve = 1;
-    static u64 last_repeat_at;
-    /* Surplus frames (the 30.00 vs 29.92 fps drift) are not dropped the
-     * moment they are confirmed: the pacer waits up to ~3 s for a frame
-     * whose encoded size says little moved, and drops that one instead. */
-    static unsigned drop_wait, quiet_drops;
-    static float avg_bytes;
-    /* How long shown frames waited after decoding: input lag of our own. */
-    static u64 wait_sum_us;
-    static unsigned wait_max_us, hd_shifts;
-    static float hd_wait_ms;
-    static u64 last_hd_shift;
-    bool present = false;
-    /* citro3d counts top-screen vblanks in its own GSP handler (only one
-     * handler per event is allowed, so we must not register another). */
-    const u32 vblank = C3D_FrameCounter(0);
-    if (vblank != last_seen_vblank) {
-        const u32 since = vblank - last_present_vblank;
-        last_seen_vblank = vblank;
-        const u64 now_ms = osGetTime();
-        /* Weak / hotspot keeps one more spare frame (+33 ms) against the
-         * longer, burstier gaps of mobile data. */
-        const unsigned reserve_low = stream_profile_weak() ? 2 : 1;
-        if (reserve < reserve_low) reserve = reserve_low;
-        if (reserve > reserve_low && now_ms - last_repeat_at >= 60000) reserve = reserve_low;
-        /* The decoder can be rebuilt from core 2 (a new stream size):
-         * frames are only looked at under the transport lock. */
-        webrtc_transport_lock();
-        unsigned ready = mvd_video_ready_frames();
-        /* The rate NVIDIA really sends, not the one asked for: a 60 fps test
-         * that got 30 showed every frame twice as "repeated" and grew the
-         * reserve (test report ZUFZFS). Decoded frames over ~2 s. */
-        static unsigned rate_frames;
-        static u64 rate_since;
-        static bool sixty;
-        const unsigned decoded_now = mvd_video_decoded_frames();
-        if (!rate_since || decoded_now < rate_frames) {
-            /* Until measured, trust the rate asked for (the first 2 s of a
-             * 60 fps stream paced as 30 skipped 62 frames). */
-            sixty = stream_profile_fps() >= 60 && !mvd_video_hd();
-            rate_since = now_ms;
-            rate_frames = decoded_now;
-        } else if (now_ms - rate_since >= 2000) {
-            const unsigned fps = (unsigned)((decoded_now - rate_frames) * 1000ull / (now_ms - rate_since));
-            const bool was = sixty;
-            /* Xbox's 720p stays at a steady 30. Shrunk to 800x480 it decoded
-             * at ~45 a second and the cadence flipped 30/60 every 2 s (reports
-             * 62AEG4, FURPBY). At half size it decodes 60 in 14.5 ms while
-             * shown at 30, but showing all 60 slowed MVD to ~18 ms a frame:
-             * it fell behind and dropped to a keyframe every 6 s (build 147,
-             * report 7XXNYS). */
-            sixty = stream_profile_fps() >= 60 && fps >= 45 && !mvd_video_hd();
-            if (sixty != was) diagnostic_log("VIDEO", "pacing %s (%u fps arriving)", sixty ? "60" : "30", fps);
-            rate_since = now_ms;
-            rate_frames = decoded_now;
-        }
-        /* Decoded frames waiting to be shown are input lag: at 60 fps keep
-         * one beyond the reserve (~33-50 ms in all), not three (report
-         * EM7YGV felt the 30 fps cap as lag at 60). Xbox 720p comes in at
-         * 60 but mvd_video keeps every second frame, so it is paced like
-         * any 30 fps stream. */
-        while (ready > reserve + (sixty ? 1u : 3u)) {
-            mvd_video_skip_oldest_frame();
-            --ready;
-            ++skipped;
-            ++g_perf.skipped;
-        }
-        /* Strict cadence, two vblanks at 30 fps and one at 60: a frame is
-         * never shown for a shorter time than the others (that reads as a
-         * hitch too); overflow is trimmed above. */
-        const u32 cadence = sixty ? 1 : 2;
-        if (ready && since >= cadence) {
-            present = true;
-        } else if (!ready && since == cadence) {
-            ++repeated;
-            ++g_perf.repeated;
-            if (last_repeat_at && now_ms - last_repeat_at < 20000) reserve = reserve_low + 1;
-            last_repeat_at = now_ms;
-        }
-        /* The spare frames must stay. NVIDIA sends 30.00 fps but the 3DS
-         * LCD shows 29.92, so one surplus frame builds up every ~12 s and a
-         * late frame leaves one behind too. Only a frame beyond the reserve
-         * that has sat for a whole second is dropped (build 62 dropped the
-         * reserve itself every ~4 s and was choppy). */
-        if (present) {
-            const unsigned age = mvd_video_ready_frame_age_us(0);
-            wait_sum_us += age;
-            if (age > wait_max_us) wait_max_us = age;
-            depth_sum += ready;
-        }
-        /* Xbox's 60 fps against the LCD's 59.83 Hz: the 30 kept frames come
-         * a little faster than they are shown, so each waits longer than the
-         * last until a whole spare frame (+33 ms) builds up, which the drain
-         * below lets sit for up to 5 s. Instead, once frames wait more than
-         * ~28 ms on average, the next 60 fps frame is kept rather than the
-         * one after: 17 ms less wait, one 50 ms step in the game instead of
-         * 33. Kept clear of repeats, which a wait near 0 would bring. */
-        /* Only while 60 is halved: a 30 fps game (issue #12) is paced like
-         * GeForce NOW's 30, surplus drain included. */
-        const bool xbox_hd = !sixty && mvd_video_hd_halving();
-        if (present && xbox_hd) {
-            const float age_ms = (float)mvd_video_ready_frame_age_us(0) / 1000.0f;
-            hd_wait_ms = hd_wait_ms > 0.0f ? hd_wait_ms * 0.9f + age_ms * 0.1f : age_ms;
-            if ((hd_wait_ms > 28.0f || ready >= 2) && now_ms - last_hd_shift >= 500 &&
-                now_ms - last_repeat_at >= 2000) {
-                mvd_video_hd_skip_one();
-                hd_wait_ms -= 16.7f;
-                last_hd_shift = now_ms;
-                ++hd_shifts;
-            }
-        }
-        if (present && !xbox_hd) {
-            const float bytes = (float)mvd_video_ready_frame_bytes(0);
-            avg_bytes = avg_bytes > 0.0f ? avg_bytes * 0.95f + bytes * 0.05f : bytes;
-            backlog_streak = ready >= reserve + 2 ? backlog_streak + 1 : 0;
-            if (backlog_streak >= 30 || drop_wait) {
-                /* Candidates exclude the frame about to be shown. */
-                unsigned best = 0;
-                size_t best_bytes = (size_t)-1;
-                for (unsigned i = 1; i < ready; ++i) {
-                    const size_t b = mvd_video_ready_frame_bytes(i);
-                    if (b && b < best_bytes) { best_bytes = b; best = i; }
-                }
-                ++drop_wait;
-                /* The bar relaxes as the wait goes on (0.7 -> 1.0 of the
-                 * average), so the drop still lands on a low-motion frame:
-                 * at ~1.6 Mbps only 2 of 21 drops found a frame under 0.7
-                 * and the rest were forced after 5 s (beta.25 test). */
-                const float bar = 0.7f + 0.3f * (float)(drop_wait < 150 ? drop_wait : 150) / 150.0f;
-                const bool quiet = best && (float)best_bytes <= avg_bytes * bar;
-                if (ready < reserve + 2) {
-                    drop_wait = 0; /* the surplus went away on its own */
-                } else if (best && (quiet || drop_wait >= 150)) {
-                    mvd_video_skip_ready_frame(best);
-                    if (quiet) ++quiet_drops;
-                    ++drained;
-                    ++g_perf.drained;
-                    drop_wait = 0;
-                }
-                backlog_streak = 0;
-            }
-        }
-        webrtc_transport_unlock();
-    }
-    /* A lower-screen redraw the GPU was too busy for goes out on the next
-     * pass: build 116 dropped it, and a menu move waited for the 250 ms
-     * refresh (the stream menu felt laggy). */
-    static bool bottom_pending;
-    draw_bottom = draw_bottom || bottom_pending;
-    if (!present && !draw_bottom) return;
-    const u64 start = svcGetSystemTick();
-    /* A video frame waits for the GPU: build 115 skipped the pass instead
-     * and came back later, but a frame put off past the next refresh grew
-     * the queue and was trimmed (15 of every 120 skipped, report GWU2AV).
-     * A bottom-screen-only redraw can wait for a free GPU. */
-    if (present) {
-        ui_frame_begin(false);
-    } else if (!ui_frame_try_begin()) {
-        bottom_pending = true;
-        return;
-    }
-    bottom_pending = false;
-    /* The frame is guarded by mvd_video's own present lock, not the
-     * transport's: the media thread keeps reading packets meanwhile. */
-    const void *frame = present ? mvd_video_take_gpu_frame() : NULL;
-    if (frame && g_screenshot_requested) {
-        g_screenshot_requested = false;
-        show_notice(screenshot_capture(frame) ? "Saving screenshot..." : "Screenshot failed");
-    }
-    if (frame) {
-        ui_video_upload(frame);
-        mvd_video_release_gpu_frame();
-    }
-    if (frame) {
-        ui_begin_top_video();
-        unsigned video_w, video_h;
-        mvd_video_wide_size(&video_w, &video_h);
-        ui_set_video_size(video_w, video_h);
-        float crop_x, crop_y, crop_w, crop_h;
-        mvd_video_view_crop(&crop_x, &crop_y, &crop_w, &crop_h);
-        ui_set_video_crop(crop_x, crop_y, crop_w, crop_h);
-        ui_draw_video();
-    }
-    if (draw_bottom) {
-        ui_begin_bottom();
-        screens_draw_bottom(&g_app);
-    }
-    ui_frame_end();
-    if (!frame) return;
-    ++g_shown_frames;
-    last_present_vblank = vblank;
-    const u64 ticks = svcGetSystemTick() - start;
-    present_ticks += ticks;
-    if (ticks > present_max) present_max = ticks;
-    /* Every 600 frames (~20 s), sooner when frames were repeated or skipped. */
-    const unsigned pending_frames = ++presented - last_log_frames;
-    if (pending_frames >= 600 || (pending_frames >= 120 && (repeated > 6 || skipped > 3))) {
-        const u64 per_us = SYSCLOCK_ARM11 / 1000000u;
-        const unsigned frames = presented - last_log_frames;
-        diagnostic_log("VIDEO", "paced present frames=%u avg/max=%llu/%llu us repeated=%u skipped=%u drained=%u quiet=%u depth=%u.%02u reserve=%u loopMax=%u slow=%u wait=%llu/%u ms shifts=%u",
-                       frames,
-                       (unsigned long long)(present_ticks / frames / per_us),
-                       (unsigned long long)(present_max / per_us), repeated, skipped, drained,
-                       quiet_drops, depth_sum / frames, depth_sum * 100 / frames % 100, reserve,
-                       g_loop_max_ms, g_loop_slow, (unsigned long long)(wait_sum_us / frames / 1000u),
-                       wait_max_us / 1000u, hd_shifts);
-        wait_sum_us = 0;
-        wait_max_us = hd_shifts = 0;
-        g_loop_max_ms = g_loop_slow = 0;
-        present_ticks = present_max = 0;
-        repeated = skipped = drained = quiet_drops = depth_sum = 0;
-        last_log_frames = presented;
-    }
-}
-
-static void render(bool draw_bottom)
-{
-    const bool video = g_app.view == VIEW_STREAM;
-    if (video && mvd_video_wide()) {
-        render_wide_video(draw_bottom);
-        return;
-    }
-    if (video) ui_top_classic_video();
-    if (video && !draw_bottom) {
-        present_video();
-        return;
-    }
-    /* Menus sync to vblank; the stream never waits for it, so video and
-     * input keep flowing while the lower screen redraws. */
-    ui_frame_begin(!video);
-    if (!video) {
-        /* A shortcut's icon and banner, drawn offscreen (menus only). */
-        shortcut_frame();
-        ui_begin_top();
-        screens_draw_top(&g_app);
-    }
-    ui_begin_bottom();
-    screens_draw_bottom(&g_app);
-    ui_frame_end();
-    shortcut_frame_end();
-    if (video) present_video();
-}
-
 static void show_notice(const char *text)
 {
     /* What the player was told belongs in the log: reports showed the
      * internals but not the words on screen. Repeats within 10 s skip it. */
     static u64 logged_at;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (strcmp(g_notice, text) || now - logged_at >= 10000) {
         diagnostic_log("UI", "notice: %.90s", text);
         logged_at = now;
@@ -509,7 +189,7 @@ static u64 g_modal_opened_at;
 
 static void open_modal(AppModal modal, const char *jp, const char *title, const char *text)
 {
-    g_modal_opened_at = osGetTime();
+    g_modal_opened_at = plat_time_ms();
     if (text && text[0]) diagnostic_log("UI", "modal %d %s: %.200s", (int)modal, title, text);
     else diagnostic_log("UI", "modal %d %s", (int)modal, title);
     g_app.modal = modal;
@@ -539,20 +219,18 @@ static AppView derive_view(void)
 static void refresh_device_status(void)
 {
     static u64 last;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (last && now - last < 1000) return;
     last = now;
-    g_app.wifi_bars = osGetWifiStrength();
-    u8 level = 5, charging = 0;
-    if (g_ptm_ready) {
-        PTMU_GetBatteryLevel(&level);
-        PTMU_GetBatteryChargeState(&charging);
-    }
+    g_app.wifi_bars = plat_wifi_strength();
+    u8 level;
+    bool charging;
+    plat_battery(&level, &charging);
     g_app.battery_level = level;
-    g_app.charging = charging != 0;
+    g_app.charging = charging;
 
     static unsigned last_frames;
-    const unsigned frames = g_shown_frames;
+    const unsigned frames = render_shown_frames();
     g_app.fps = frames >= last_frames ? frames - last_frames : 0;
     last_frames = frames;
 
@@ -594,15 +272,10 @@ static void steam_type_address(void)
 {
     char text[20];
     steam_link_typed_address(text, sizeof(text));
-    swkbdInit(&g_search_keyboard, SWKBD_TYPE_NUMPAD, 2, 15);
-    swkbdSetNumpadKeys(&g_search_keyboard, '.', 0);
-    swkbdSetHintText(&g_search_keyboard, i18n_text("Your PC's IPv4 address"));
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, i18n_text("Cancel"), false);
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, i18n_text("Find PC"), true);
-    swkbdSetValidation(&g_search_keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
-    swkbdSetFeatures(&g_search_keyboard, SWKBD_DARKEN_TOP_SCREEN);
-    if (text[0]) swkbdSetInitialText(&g_search_keyboard, text);
-    if (swkbdInputText(&g_search_keyboard, text, sizeof(text)) != SWKBD_BUTTON_RIGHT) return;
+    const PlatKeyboard keyboard = {
+        i18n_text("Your PC's IPv4 address"), i18n_text("Cancel"), i18n_text("Find PC"), 15, true, false
+    };
+    if (!plat_keyboard(&keyboard, text, sizeof(text))) return;
     char choice[24];
     snprintf(choice, sizeof(choice), "pc:%s", text);
     submit_job(NET_JOB_BEGIN_LOGIN, "Asking that address for Steam...", choice, NULL);
@@ -629,17 +302,13 @@ static void search_catalog(void)
 {
     char text[sizeof(g_app.search_text)];
     snprintf(text, sizeof(text), "%s", g_app.search_text);
-    swkbdInit(&g_search_keyboard, SWKBD_TYPE_QWERTY, 2, 64);
     static const char *const hint[SERVICE_COUNT] = {
         "Search GeForce NOW games", "Search your Xbox cloud games", "Search the games played on your PC"
     };
-    swkbdSetHintText(&g_search_keyboard, i18n_text(hint[current_service()]));
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_LEFT, i18n_text("Cancel"), false);
-    swkbdSetButton(&g_search_keyboard, SWKBD_BUTTON_RIGHT, i18n_text("Search"), true);
-    swkbdSetValidation(&g_search_keyboard, SWKBD_NOTEMPTY_NOTBLANK, 0, 0);
-    swkbdSetFeatures(&g_search_keyboard, SWKBD_DARKEN_TOP_SCREEN | SWKBD_PREDICTIVE_INPUT);
-    if (text[0]) swkbdSetInitialText(&g_search_keyboard, text);
-    if (swkbdInputText(&g_search_keyboard, text, sizeof(text)) != SWKBD_BUTTON_RIGHT) return;
+    const PlatKeyboard keyboard = {
+        i18n_text(hint[current_service()]), i18n_text("Cancel"), i18n_text("Search"), 64, false, true
+    };
+    if (!plat_keyboard(&keyboard, text, sizeof(text))) return;
     snprintf(g_app.search_text, sizeof(g_app.search_text), "%s", text);
     submit_job(NET_JOB_SEARCH, current_service() == SERVICE_GFN ? "Searching the GeForce NOW catalog..."
                : "Searching...", g_app.search_text, NULL);
@@ -705,7 +374,7 @@ static void launch_game(const GfnGame *game)
     }
     g_paid_confirmed = false;
     static u64 last_launch;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     /* Only NVIDIA refuses launches that come too fast. */
     if (current_service() == SERVICE_GFN && last_launch && now - last_launch < 8000) {
         show_notice("One moment - launching again too fast makes NVIDIA refuse for a minute");
@@ -817,7 +486,7 @@ static void slider_zoom_tick(bool streaming)
         return;
     }
     static const float edges[3] = { 0.08f, 0.40f, 0.75f };
-    const float v = osGet3DSliderState();
+    const float v = plat_input()->slider_3d;
     int next = 0;
     while (next < 3 && v >= edges[next]) ++next;
     if (next == level) return;
@@ -865,20 +534,20 @@ static void handle_updates(u32 down, u32 repeat, AppAction action)
     const UpdateInfo info = updater_info();
     const bool working = info.state == UPDATE_CHECKING || info.state == UPDATE_DOWNLOADING ||
                          info.state == UPDATE_VERIFYING || info.state == UPDATE_INSTALLING;
-    if (repeat & KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
-    if (repeat & KEY_DOWN) ++g_app.notes_scroll;
+    if (repeat & PLAT_KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
+    if (repeat & PLAT_KEY_DOWN) ++g_app.notes_scroll;
     /* Never leave mid-install: the page shows its progress to the end. */
-    if (((down & KEY_B) || action == ACTION_UPDATE_CLOSE) && !working) {
+    if (((down & PLAT_KEY_B) || action == ACTION_UPDATE_CLOSE) && !working) {
         g_app.update_open = false;
         return;
     }
-    if (((down & KEY_X) || action == ACTION_UPDATE_LATER) && info.state == UPDATE_AVAILABLE) {
+    if (((down & PLAT_KEY_X) || action == ACTION_UPDATE_LATER) && info.state == UPDATE_AVAILABLE) {
         updater_dismiss();
         g_app.update_open = false;
         show_notice("OK - Kasumi will remind you when the next version is out");
         return;
     }
-    if (!(down & KEY_A) && action != ACTION_UPDATE_PRIMARY) return;
+    if (!(down & PLAT_KEY_A) && action != ACTION_UPDATE_PRIMARY) return;
     switch (info.state) {
     case UPDATE_AVAILABLE:
         if (gfn_session_active(&g_client)) {
@@ -903,9 +572,9 @@ static void handle_updates(u32 down, u32 repeat, AppAction action)
 
 static void handle_whats_new(u32 down, u32 repeat, AppAction action)
 {
-    if (repeat & KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
-    if (repeat & KEY_DOWN) ++g_app.notes_scroll;
-    if ((down & (KEY_A | KEY_B | KEY_START)) || action == ACTION_WHATS_NEW_CLOSE)
+    if (repeat & PLAT_KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
+    if (repeat & PLAT_KEY_DOWN) ++g_app.notes_scroll;
+    if ((down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_START)) || action == ACTION_WHATS_NEW_CLOSE)
         g_app.whats_new_open = false;
 }
 
@@ -925,7 +594,7 @@ static void discord_invite_tick(void)
 
 static void handle_discord(u32 down, AppAction action)
 {
-    if ((down & (KEY_A | KEY_B | KEY_START)) || action == ACTION_DISCORD_CLOSE) {
+    if ((down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_START)) || action == ACTION_DISCORD_CLOSE) {
         g_app.discord_open = false;
         g_app.settings.discord_seen = true;
         save_settings();
@@ -942,7 +611,7 @@ static void sd_write_watch(void)
     const unsigned failed = file_worker_failed_writes();
     if (failed == seen) return;
     seen = failed;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (told_at && now - told_at < 60000) return;
     told_at = now;
     show_notice("Couldn't save to the SD card: check it isn't full or locked");
@@ -952,8 +621,8 @@ static void sd_write_watch(void)
 static void auto_update_check(void)
 {
     static u64 started_at;
-    if (!started_at) started_at = osGetTime();
-    if (!g_app.settings.auto_update || osGetTime() - started_at < 4000) return;
+    if (!started_at) started_at = plat_time_ms();
+    if (!g_app.settings.auto_update || plat_time_ms() - started_at < 4000) return;
     if (g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) return;
     if (net_worker_busy() || gfn_session_active(&g_client) || !updater_check_due()) return;
     if (updater_info().state != UPDATE_IDLE) return;
@@ -1088,7 +757,7 @@ static void mic_tick(bool streaming)
  * (which is itself an L3 + R3 zone) or, lower down, the PS button. A jump
  * from L3 or R3 into the middle is the second finger arriving; both stay
  * held until the reading lands back on L3 or R3 (one finger lifted). */
-static uint16_t stream_touch_buttons(bool touch_down, touchPosition touch)
+static uint16_t stream_touch_buttons(bool touch_down, PlatTouch touch)
 {
     static uint16_t last;
     static int last_x;
@@ -1099,8 +768,8 @@ static uint16_t stream_touch_buttons(bool touch_down, touchPosition touch)
         both = false;
         return 0;
     }
-    const int x = touch.px;
-    uint16_t buttons = screens_stream_held_buttons(&g_app, x, touch.py);
+    const int x = touch.x;
+    uint16_t buttons = screens_stream_held_buttons(&g_app, x, touch.y);
     if (!g_app.look_mode && !touch_down && !g_transport.pointer_mode && !mvd_video_zoomed()) {
         const bool one_stick = buttons == GFN_PAD_LEFT_THUMB || buttons == GFN_PAD_RIGHT_THUMB;
         const bool was_one_stick = last == GFN_PAD_LEFT_THUMB || last == GFN_PAD_RIGHT_THUMB;
@@ -1130,14 +799,14 @@ static unsigned touch_camera_mode(void)
 static float look_radius(void)
 {
     static const float RADIUS[3] = { 24.0f, 34.0f, 46.0f };
-    return RADIUS[g_app.settings.touch_stick_size < 3 ? g_app.settings.touch_stick_size : 1];
+    return RADIUS[g_app.settings.touch_stick_size < 3 ? g_app.settings.touch_stick_size : 1] * PLAT_TOUCH_SCALE;
 }
 #define LOOK_RADIUS look_radius()
 /* The resistive panel drops a light touch for a frame or two; a finger
  * that comes back within this long, near where it was, never left. */
 #define LOOK_GRACE_MS 160
 /* One sample this far from the last is panel noise unless the next agrees. */
-#define LOOK_JUMP_PX 60
+#define LOOK_JUMP_PX ((int)(60 * PLAT_TOUCH_SCALE))
 
 static struct {
     bool active;
@@ -1207,9 +876,9 @@ static void look_begin(int x, int y, u64 now)
  * push is the distance from where it landed, held for as long as the
  * finger stays there, and it goes through the C-Stick's own deadzone and
  * Camera stick speed. Trackpad mode turns by the finger's speed instead. */
-static void look_tick(bool touch_down, bool touching, touchPosition touch)
+static void look_tick(bool touch_down, bool touching, PlatTouch touch)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     const unsigned mode = g_app.look_mode;
     if (!mode || g_app.stream_menu || g_app.controls_open || g_app.modal != MODAL_NONE) {
         look_release(now);
@@ -1217,7 +886,7 @@ static void look_tick(bool touch_down, bool touching, touchPosition touch)
         gfn_input_set_touch_look(0.0f, 0.0f);
         return;
     }
-    const int x = touch.px, y = touch.py;
+    const int x = touch.x, y = touch.y;
     g_app.look_radius = LOOK_RADIUS;
     if (g_look.active && !touching) {
         /* Contact lost: hold the push for a moment before letting go. */
@@ -1271,8 +940,9 @@ static void look_tick(bool touch_down, bool touching, touchPosition touch)
                 u64 dt = now - g_look.last_move_at;
                 if (dt < 8) dt = 8;
                 if (dt > 100) dt = 100;
-                g_look.vx += ((float)dx * 1000.0f / (float)dt / 260.0f - g_look.vx) * 0.6f;
-                g_look.vy += (-(float)dy * 1000.0f / (float)dt / 260.0f - g_look.vy) * 0.6f;
+                const float full = 260.0f * PLAT_TOUCH_SCALE;
+                g_look.vx += ((float)dx * 1000.0f / (float)dt / full - g_look.vx) * 0.6f;
+                g_look.vy += (-(float)dy * 1000.0f / (float)dt / full - g_look.vy) * 0.6f;
                 g_look.last_move_at = now;
             } else if (now - g_look.last_move_at > 40) {
                 g_look.vx *= 0.6f;
@@ -1321,7 +991,7 @@ static void touchpad_begin(unsigned x, unsigned y)
     g_touchpad_active = true;
     g_touchpad_start_x = g_touchpad_last_x = x;
     g_touchpad_start_y = g_touchpad_last_y = y;
-    g_touchpad_started_at = osGetTime();
+    g_touchpad_started_at = plat_time_ms();
     g_touchpad_travel = 0;
 }
 
@@ -1338,46 +1008,48 @@ static void touchpad_move(unsigned x, unsigned y)
     if (from_start <= 4 || (!dx && !dy)) return;
     const unsigned width = g_transport.video_source_width ? g_transport.video_source_width : 960;
     const unsigned height = g_transport.video_source_height ? g_transport.video_source_height : 544;
-    webrtc_transport_mouse_move(&g_transport, (int16_t)(dx * (int)width / 320),
-                                (int16_t)(dy * (int)height / 192));
+    /* Across the touch screen is across the game (the 3DS pad is its
+     * width and four fifths of its height). */
+    webrtc_transport_mouse_move(&g_transport, (int16_t)(dx * (int)width / PLAT_TOUCH_WIDTH),
+                                (int16_t)(dy * (int)height * 5 / (PLAT_TOUCH_HEIGHT * 4)));
 }
 
 static void touchpad_end(void)
 {
     if (!g_touchpad_active) return;
     g_touchpad_active = false;
-    if (g_touchpad_travel > 6 || osGetTime() - g_touchpad_started_at > 450 ||
+    if (g_touchpad_travel > 6 || plat_time_ms() - g_touchpad_started_at > 450 ||
         g_mouse_a_held || g_mouse_tap_held || !g_transport.pointer_mode ||
         !g_transport.input_ready)
         return;
     if (webrtc_transport_mouse_button(&g_transport, true)) {
         g_mouse_tap_held = true;
-        g_mouse_tap_release_at = osGetTime() + 55;
+        g_mouse_tap_release_at = plat_time_ms() + 55;
         diagnostic_log("INPUT", "touchpad tap click down");
     }
 }
 
 static void update_pointer_click(u32 down, u32 held)
 {
-    if (g_mouse_tap_held && osGetTime() >= g_mouse_tap_release_at) {
+    if (g_mouse_tap_held && plat_time_ms() >= g_mouse_tap_release_at) {
         webrtc_transport_mouse_button(&g_transport, false);
         g_mouse_tap_held = false;
     }
     const bool can_click = g_app.view == VIEW_STREAM && g_transport.pointer_mode &&
                            !g_transport.keyboard_mode && !g_app.stream_menu &&
                            g_transport.input_ready;
-    if (g_mouse_a_held && (!can_click || !(held & KEY_A)) &&
-        (!can_click || osGetTime() >= g_mouse_a_min_release_at)) {
+    if (g_mouse_a_held && (!can_click || !(held & PLAT_KEY_A)) &&
+        (!can_click || plat_time_ms() >= g_mouse_a_min_release_at)) {
         webrtc_transport_mouse_button(&g_transport, false);
         g_mouse_a_held = false;
     }
-    if (can_click && (down & KEY_A) && !g_mouse_a_held) {
+    if (can_click && (down & PLAT_KEY_A) && !g_mouse_a_held) {
         if (g_mouse_tap_held) {
             webrtc_transport_mouse_button(&g_transport, false);
             g_mouse_tap_held = false;
         }
         g_mouse_a_held = webrtc_transport_mouse_button(&g_transport, true);
-        if (g_mouse_a_held) g_mouse_a_min_release_at = osGetTime() + 55;
+        if (g_mouse_a_held) g_mouse_a_min_release_at = plat_time_ms() + 55;
     }
     if (!can_click) g_touchpad_active = false;
 }
@@ -1386,12 +1058,12 @@ static void update_pointer_click(u32 down, u32 held)
 
 static void handle_modal(u32 down, AppAction action)
 {
-    if (osGetTime() - g_modal_opened_at < 300) return;
+    if (plat_time_ms() - g_modal_opened_at < 300) return;
     if (g_app.modal == MODAL_STEAM_LEAVE) {
         /* A: disconnect (the game keeps running), X: quit it on the PC, B: back. */
-        const bool disconnect = (down & KEY_A) || action == ACTION_CONFIRM;
-        const bool quit = (down & KEY_X) || action == ACTION_DISMISS;
-        if (disconnect || quit || (down & KEY_B)) g_app.modal = MODAL_NONE;
+        const bool disconnect = (down & PLAT_KEY_A) || action == ACTION_CONFIRM;
+        const bool quit = (down & PLAT_KEY_X) || action == ACTION_DISMISS;
+        if (disconnect || quit || (down & PLAT_KEY_B)) g_app.modal = MODAL_NONE;
         if (quit) {
             const int sent = webrtc_transport_steam_quit_game(&g_transport);
             if (sent == 0) show_notice("No game was open on the PC; only the stream was closed");
@@ -1404,8 +1076,8 @@ static void handle_modal(u32 down, AppAction action)
         /* A: the partner, X: NVIDIA, B: back. The answer is kept. */
         GfnProvider partner;
         providers_partner_here(&partner, NULL);
-        const bool pick_partner = (down & KEY_A) || action == ACTION_CONFIRM;
-        const bool pick_nvidia = (down & KEY_X) || action == ACTION_DISMISS;
+        const bool pick_partner = (down & PLAT_KEY_A) || action == ACTION_CONFIRM;
+        const bool pick_nvidia = (down & PLAT_KEY_X) || action == ACTION_DISMISS;
         if (pick_partner || pick_nvidia) {
             snprintf(g_app.settings.provider, sizeof(g_app.settings.provider), "%s",
                      pick_partner ? partner.code : PROVIDER_NVIDIA);
@@ -1413,13 +1085,13 @@ static void handle_modal(u32 down, AppAction action)
             g_app.modal = MODAL_NONE;
             diagnostic_log("AUTH", "provider picked at sign-in: %s", g_app.settings.provider);
             begin_login();
-        } else if (down & KEY_B) {
+        } else if (down & PLAT_KEY_B) {
             g_app.modal = MODAL_NONE;
         }
         return;
     }
-    const bool confirm = (down & KEY_A) || action == ACTION_CONFIRM || action == ACTION_RETRY;
-    const bool dismiss = (down & KEY_B) || action == ACTION_DISMISS;
+    const bool confirm = (down & PLAT_KEY_A) || action == ACTION_CONFIRM || action == ACTION_RETRY;
+    const bool dismiss = (down & PLAT_KEY_B) || action == ACTION_DISMISS;
     if (!confirm && !dismiss) return;
     const AppModal modal = g_app.modal;
     g_app.modal = MODAL_NONE;
@@ -1468,13 +1140,13 @@ static void handle_modal(u32 down, AppAction action)
         return;
     }
     if (modal == MODAL_LIMIT_WAIT) {
-        if (confirm && osGetTime() - g_limit_last_try < 20000) {
+        if (confirm && plat_time_ms() - g_limit_last_try < 20000) {
             /* Pressing Try now over and over drew NVIDIA's rate limit (429)
              * in beta.21 reports: one try per 20 s. */
             g_app.modal = MODAL_LIMIT_WAIT;
             show_notice("Just tried - wait a few seconds before trying again");
         } else if (confirm) {
-            g_app.limit_retry_at = osGetTime();
+            g_app.limit_retry_at = plat_time_ms();
         } else {
             diagnostic_log("APP", "stopped waiting for NVIDIA to free the slot");
             g_app.limit_wait_until = g_app.limit_retry_at = 0;
@@ -1651,34 +1323,34 @@ static void handle_hub(u32 down, u32 repeat, AppAction action)
     if (g_entering >= 0) return;
     /* START (or the Continue row): straight back into the last game. */
     const GfnGame *last = hub_continue_game();
-    if (last && ((down & KEY_START) || action == ACTION_CONTINUE)) {
+    if (last && ((down & PLAT_KEY_START) || action == ACTION_CONTINUE)) {
         launch_with_options(last, last->variant_selected);
         return;
     }
-    if ((repeat & (KEY_LEFT | KEY_UP | KEY_ZL | KEY_L)) || action == ACTION_PREV) {
+    if ((repeat & (PLAT_KEY_LEFT | PLAT_KEY_UP | PLAT_KEY_ZL | PLAT_KEY_L)) || action == ACTION_PREV) {
         if (g_app.hub_index > 0) --g_app.hub_index;
-    } else if ((repeat & (KEY_RIGHT | KEY_DOWN | KEY_ZR | KEY_R)) || action == ACTION_NEXT) {
+    } else if ((repeat & (PLAT_KEY_RIGHT | PLAT_KEY_DOWN | PLAT_KEY_ZR | PLAT_KEY_R)) || action == ACTION_NEXT) {
         if (g_app.hub_index + 1 < SERVICE_COUNT) ++g_app.hub_index;
     }
     if (action == ACTION_SERVICE) {
         enter_service(screens_touched_service());
-    } else if (down & KEY_A) {
+    } else if (down & PLAT_KEY_A) {
         enter_service(g_app.hub_index);
-    } else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
+    } else if ((down & PLAT_KEY_SELECT) || action == ACTION_SETTINGS) {
         g_app.settings_open = true;
         g_app.settings_section = -1;
-    } else if ((down & KEY_START) || action == ACTION_EXIT) {
+    } else if ((down & PLAT_KEY_START) || action == ACTION_EXIT) {
         open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
     }
 }
 
 static void handle_login(u32 down, AppAction action)
 {
-    if ((down & KEY_Y) || action == ACTION_NEW_CODE) {
+    if ((down & PLAT_KEY_Y) || action == ACTION_NEW_CODE) {
         begin_login();
-    } else if ((down & KEY_B) || action == ACTION_CANCEL) {
+    } else if ((down & PLAT_KEY_B) || action == ACTION_CANCEL) {
         submit_job(NET_JOB_CANCEL_LOGIN, NULL, NULL, NULL);
-    } else if (down & KEY_START) {
+    } else if (down & PLAT_KEY_START) {
         open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
     }
 }
@@ -1755,19 +1427,19 @@ static void handle_pc_sheet(u32 down, u32 repeat, AppAction action)
     char names[4][64];
     const int count = (int)steam_link_pcs(names, 4);
     const int rows = count + 3; /* the PCs, PAIR, FORGET, CLOSE */
-    if (repeat & KEY_UP) g_app.pc_index = (g_app.pc_index + rows - 1) % rows;
-    if (repeat & KEY_DOWN) g_app.pc_index = (g_app.pc_index + 1) % rows;
-    if ((repeat & KEY_LEFT) && g_app.pc_index == count + 1) g_app.pc_index = count;
-    if ((repeat & KEY_RIGHT) && g_app.pc_index == count) g_app.pc_index = count + 1;
+    if (repeat & PLAT_KEY_UP) g_app.pc_index = (g_app.pc_index + rows - 1) % rows;
+    if (repeat & PLAT_KEY_DOWN) g_app.pc_index = (g_app.pc_index + 1) % rows;
+    if ((repeat & PLAT_KEY_LEFT) && g_app.pc_index == count + 1) g_app.pc_index = count;
+    if ((repeat & PLAT_KEY_RIGHT) && g_app.pc_index == count) g_app.pc_index = count + 1;
     if (g_app.pc_index >= rows) g_app.pc_index = 0;
-    if ((down & KEY_B) || action == ACTION_PC_CLOSE) {
+    if ((down & PLAT_KEY_B) || action == ACTION_PC_CLOSE) {
         g_app.pc_sheet_open = false;
         return;
     }
     int pick = -1;
     if (action == ACTION_PC_ROW) pick = g_app.pc_index = screens_touched_pc();
-    else if (down & KEY_A) pick = g_app.pc_index;
-    if (down & KEY_X) {
+    else if (down & PLAT_KEY_A) pick = g_app.pc_index;
+    if (down & PLAT_KEY_X) {
         g_app.pc_sheet_open = false;
         steam_type_address();
         return;
@@ -1818,39 +1490,45 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
     }
     if (!gfn_has_session(&g_client)) {
         /* This service's sign-in card. */
-        if ((down & KEY_A) || action == ACTION_SIGN_IN) sign_in();
-        else if ((down & KEY_X) && current_service() == SERVICE_STEAM) steam_type_address();
-        else if (down & KEY_B) go_home();
-        else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
+        if ((down & PLAT_KEY_A) || action == ACTION_SIGN_IN) sign_in();
+        else if ((down & PLAT_KEY_X) && current_service() == SERVICE_STEAM) steam_type_address();
+        else if (down & PLAT_KEY_B) go_home();
+        else if ((down & PLAT_KEY_SELECT) || action == ACTION_SETTINGS) {
             g_app.settings_open = true;
             g_app.settings_section = -1;
-        } else if ((down & KEY_START) || action == ACTION_EXIT) {
+        } else if ((down & PLAT_KEY_START) || action == ACTION_EXIT) {
             open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
         }
         return;
     }
-    if (down & KEY_L) change_tab(-1);
-    if (down & KEY_R) change_tab(1);
+    if (down & PLAT_KEY_L) change_tab(-1);
+    if (down & PLAT_KEY_R) change_tab(1);
+    if (action == ACTION_TAB && screens_touched_index() >= 0 && screens_touched_index() != g_app.library_tab)
+        change_tab(screens_touched_index() - g_app.library_tab);
+    if (action == ACTION_SELECT_GAME && screens_touched_index() >= 0 && (size_t)screens_touched_index() < count) {
+        g_app.selected = (size_t)screens_touched_index();
+        keep_selection_visible();
+    }
     if (count) {
-        if ((repeat & KEY_LEFT) || action == ACTION_PREV) {
+        if ((repeat & PLAT_KEY_LEFT) || action == ACTION_PREV) {
             if (g_app.selected > 0) --g_app.selected;
         }
-        if ((repeat & KEY_RIGHT) || action == ACTION_NEXT) {
+        if ((repeat & PLAT_KEY_RIGHT) || action == ACTION_NEXT) {
             if (g_app.selected + 1 < count) ++g_app.selected;
         }
-        if (repeat & KEY_UP)
+        if (repeat & PLAT_KEY_UP)
             g_app.selected = g_app.selected > 5 ? g_app.selected - 5 : 0;
-        if (repeat & KEY_DOWN)
+        if (repeat & PLAT_KEY_DOWN)
             g_app.selected = g_app.selected + 5 < count ? g_app.selected + 5 : count - 1;
         keep_selection_visible();
     }
-    if (((down & KEY_START) || action == ACTION_CONTINUE) && g_app.continue_index >= 0 &&
+    if (((down & PLAT_KEY_START) || action == ACTION_CONTINUE) && g_app.continue_index >= 0 &&
         !g_app.search_text[0]) {
         const GfnGame *game = &g_client.games[g_app.continue_index];
         launch_with_options(game, game->variant_selected);
         return;
     }
-    if ((down & KEY_A) || action == ACTION_PLAY) {
+    if ((down & PLAT_KEY_A) || action == ACTION_PLAY) {
         if (count && g_app.selected < count) {
             g_app.details_open = true;
             g_app.options_open = false;
@@ -1861,9 +1539,9 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
             g_app.library_tab = LIBRARY_TAB_ALL;
             rebuild_list();
         }
-    } else if ((down & KEY_X) || action == ACTION_SEARCH) {
+    } else if ((down & PLAT_KEY_X) || action == ACTION_SEARCH) {
         search_catalog();
-    } else if ((down & KEY_Y) || action == ACTION_LIBRARY) {
+    } else if ((down & PLAT_KEY_Y) || action == ACTION_LIBRARY) {
         /* From a search, Y returns to the library; otherwise it refreshes
          * (Steam Link: it opens the PCs). */
         if (g_app.search_text[0]) show_saved_library();
@@ -1871,14 +1549,14 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
             g_app.pc_sheet_open = true;
             g_app.pc_index = 0;
         } else load_library();
-    } else if ((down & KEY_B) && g_app.search_text[0]) {
+    } else if ((down & PLAT_KEY_B) && g_app.search_text[0]) {
         show_saved_library();
-    } else if (down & KEY_B) {
+    } else if (down & PLAT_KEY_B) {
         go_home();
-    } else if ((down & KEY_SELECT) || action == ACTION_SETTINGS) {
+    } else if ((down & PLAT_KEY_SELECT) || action == ACTION_SETTINGS) {
         g_app.settings_open = true;
         g_app.settings_section = -1;
-    } else if (down & KEY_START) {
+    } else if (down & PLAT_KEY_START) {
         open_modal(MODAL_EXIT, "終了", "EXIT KASUMI?", "Return to the HOME Menu.");
     }
 }
@@ -1896,11 +1574,11 @@ static void finish_guide(void)
 
 static void handle_guide(u32 down, AppAction action)
 {
-    if ((down & KEY_START) || action == ACTION_GUIDE_SKIP) {
+    if ((down & PLAT_KEY_START) || action == ACTION_GUIDE_SKIP) {
         finish_guide();
-    } else if ((down & (KEY_A | KEY_RIGHT)) || action == ACTION_GUIDE_NEXT) {
+    } else if ((down & (PLAT_KEY_A | PLAT_KEY_RIGHT)) || action == ACTION_GUIDE_NEXT) {
         if (++g_app.guide_page >= GUIDE_PAGES) finish_guide();
-    } else if (((down & (KEY_B | KEY_LEFT)) || action == ACTION_GUIDE_BACK) && g_app.guide_page > 0) {
+    } else if (((down & (PLAT_KEY_B | PLAT_KEY_LEFT)) || action == ACTION_GUIDE_BACK) && g_app.guide_page > 0) {
         --g_app.guide_page;
     }
 }
@@ -2005,11 +1683,11 @@ static void handle_mapping(u32 down, u32 repeat, AppAction action)
     if (screens_touched_map_field() >= 0 &&
         (action == ACTION_MAP_FIELD || action == ACTION_MAP_PREV || action == ACTION_MAP_NEXT))
         g_app.mapping_field = screens_touched_map_field();
-    if (repeat & KEY_CSTICK_UP) g_app.mapping_field = (g_app.mapping_field + 2) % 3;
-    if (repeat & KEY_CSTICK_DOWN) g_app.mapping_field = (g_app.mapping_field + 1) % 3;
+    if (repeat & PLAT_KEY_CSTICK_UP) g_app.mapping_field = (g_app.mapping_field + 2) % 3;
+    if (repeat & PLAT_KEY_CSTICK_DOWN) g_app.mapping_field = (g_app.mapping_field + 1) % 3;
     int step = 0;
-    if ((repeat & KEY_CPAD_LEFT) || action == ACTION_MAP_PREV) step = -1;
-    if ((repeat & KEY_CPAD_RIGHT) || action == ACTION_MAP_NEXT) step = 1;
+    if ((repeat & PLAT_KEY_CPAD_LEFT) || action == ACTION_MAP_PREV) step = -1;
+    if ((repeat & PLAT_KEY_CPAD_RIGHT) || action == ACTION_MAP_NEXT) step = 1;
     const int input = g_app.mapping_input;
     if (step) {
         unsigned char *value = g_app.mapping_field == 0 ? &g_app.mapping.out[input]
@@ -2017,8 +1695,8 @@ static void handle_mapping(u32 down, u32 repeat, AppAction action)
         const int count = g_app.mapping_field == 2 ? GFN_BIND_MODE_COUNT : GFN_OUTPUT_COUNT;
         *value = (unsigned char)((*value + count + step) % count);
     }
-    if (repeat & KEY_CPAD_UP) g_app.mapping_input = (g_app.mapping_input + GFN_INPUT_COUNT - 1) % GFN_INPUT_COUNT;
-    if (repeat & KEY_CPAD_DOWN) g_app.mapping_input = (g_app.mapping_input + 1) % GFN_INPUT_COUNT;
+    if (repeat & PLAT_KEY_CPAD_UP) g_app.mapping_input = (g_app.mapping_input + GFN_INPUT_COUNT - 1) % GFN_INPUT_COUNT;
+    if (repeat & PLAT_KEY_CPAD_DOWN) g_app.mapping_input = (g_app.mapping_input + 1) % GFN_INPUT_COUNT;
     if (action == ACTION_MAP_RESET) g_app.mapping = g_app.mapping_default;
     if (action == ACTION_MAP_CANCEL) g_app.mapping_open = false;
     if (action != ACTION_MAP_DONE) return;
@@ -2047,14 +1725,14 @@ static void handle_options(u32 down, u32 repeat, AppAction action)
     const GfnGame *game = app_game(&g_app, g_app.selected);
     if (!game) { g_app.options_open = false; return; }
     GamePrefs prefs = game_prefs_get(game->app_id);
-    if ((down & KEY_B) || action == ACTION_OPTIONS_CLOSE) { g_app.options_open = false; return; }
+    if ((down & PLAT_KEY_B) || action == ACTION_OPTIONS_CLOSE) { g_app.options_open = false; return; }
     if ((action == ACTION_OPTION_PREV || action == ACTION_OPTION_NEXT) && screens_touched_option_row() >= 0)
         g_app.options_index = screens_touched_option_row();
-    if (repeat & KEY_UP) g_app.options_index = (g_app.options_index + OPTION_COUNT - 1) % OPTION_COUNT;
-    if (repeat & KEY_DOWN) g_app.options_index = (g_app.options_index + 1) % OPTION_COUNT;
+    if (repeat & PLAT_KEY_UP) g_app.options_index = (g_app.options_index + OPTION_COUNT - 1) % OPTION_COUNT;
+    if (repeat & PLAT_KEY_DOWN) g_app.options_index = (g_app.options_index + 1) % OPTION_COUNT;
     int step = 0;
-    if ((repeat & KEY_LEFT) || action == ACTION_OPTION_PREV) step = -1;
-    if ((repeat & KEY_RIGHT) || action == ACTION_OPTION_NEXT || (down & KEY_A)) step = 1;
+    if ((repeat & PLAT_KEY_LEFT) || action == ACTION_OPTION_PREV) step = -1;
+    if ((repeat & PLAT_KEY_RIGHT) || action == ACTION_OPTION_NEXT || (down & PLAT_KEY_A)) step = 1;
     if (!step) return;
     /* Each option cycles "Default" (-1) then the setting's own values. */
     #define CYCLE(value, count) value = ((value) + 1 + step + (count) + 1) % ((count) + 1) - 1
@@ -2067,10 +1745,10 @@ static void handle_options(u32 down, u32 repeat, AppAction action)
     case OPTION_TOUCH_CAMERA: CYCLE(prefs.touch_camera, 3); break;
     case OPTION_GYRO_SPEED: CYCLE(prefs.gyro_speed, 3); break;
     case OPTION_MAPPING:
-        if ((down & KEY_A) || action == ACTION_OPTION_NEXT || action == ACTION_OPTION_PREV) open_mapping(&prefs);
+        if ((down & PLAT_KEY_A) || action == ACTION_OPTION_NEXT || action == ACTION_OPTION_PREV) open_mapping(&prefs);
         return;
     case OPTION_CONNECTION:
-        if ((down & KEY_A) || action == ACTION_OPTION_NEXT)
+        if ((down & PLAT_KEY_A) || action == ACTION_OPTION_NEXT)
             submit_job(NET_JOB_CONNECTION_TEST, "Checking your connection to NVIDIA...", NULL, NULL);
         return;
     }
@@ -2091,9 +1769,9 @@ static void shortcut_action(const GfnGame *game)
         show_notice("Shortcuts aren't available for Steam Link yet");
         return;
     }
-    /* The shortcut jumps to the installed Kasumi title. */
-    if (updater_is_3dsx()) {
-        show_notice("Shortcuts need Kasumi installed as a CIA (with FBI), not the .3dsx");
+    const char *unavailable = shortcut_unavailable();
+    if (unavailable) {
+        show_notice(unavailable);
         return;
     }
     if (shortcut_exists(game->app_id)) {
@@ -2117,18 +1795,18 @@ static void handle_shortcut_sheet(const GfnGame *game, u32 down, AppAction actio
 {
     switch (g_app.shortcut_sheet) {
     case SHORTCUT_SHEET_WORKING:
-        if (down & (KEY_B | KEY_A)) show_notice("Almost there: keep Kasumi open");
+        if (down & (PLAT_KEY_B | PLAT_KEY_A)) show_notice("Almost there: keep Kasumi open");
         return;
     case SHORTCUT_SHEET_FAILED:
-        if ((down & KEY_A) || action == ACTION_RETRY) {
+        if ((down & PLAT_KEY_A) || action == ACTION_RETRY) {
             g_app.shortcut_sheet = SHORTCUT_SHEET_NONE;
             shortcut_action(game);
-        } else if ((down & KEY_B) || action == ACTION_DISMISS) {
+        } else if ((down & PLAT_KEY_B) || action == ACTION_DISMISS) {
             g_app.shortcut_sheet = SHORTCUT_SHEET_NONE;
         }
         return;
     default:
-        if ((down & (KEY_A | KEY_B)) || action == ACTION_CONFIRM) g_app.shortcut_sheet = SHORTCUT_SHEET_NONE;
+        if ((down & (PLAT_KEY_A | PLAT_KEY_B)) || action == ACTION_CONFIRM) g_app.shortcut_sheet = SHORTCUT_SHEET_NONE;
         return;
     }
 }
@@ -2146,29 +1824,29 @@ static void handle_details(u32 down, u32 repeat, AppAction action)
         return;
     }
     const unsigned variants = game->variant_count;
-    if ((down & KEY_A) || action == ACTION_DETAILS_PLAY) {
+    if ((down & PLAT_KEY_A) || action == ACTION_DETAILS_PLAY) {
         launch_with_options(app_game(&g_app, g_app.selected), g_app.details_variant);
-    } else if ((down & KEY_B) || action == ACTION_BACK) {
+    } else if ((down & PLAT_KEY_B) || action == ACTION_BACK) {
         g_app.details_open = false;
-    } else if ((down & KEY_Y) || action == ACTION_FAVOURITE) {
+    } else if ((down & PLAT_KEY_Y) || action == ACTION_FAVOURITE) {
         GamePrefs prefs = game_prefs_get(game->app_id);
         prefs.favourite = !prefs.favourite;
         game_prefs_set(game->app_id, &prefs);
         show_notice(prefs.favourite ? "Added to favourites" : "Removed from favourites");
-    } else if ((down & KEY_X) || action == ACTION_OPTIONS) {
+    } else if ((down & PLAT_KEY_X) || action == ACTION_OPTIONS) {
         g_app.options_open = true;
         g_app.options_index = 0;
-    } else if ((down & KEY_SELECT) || action == ACTION_SHORTCUT) {
+    } else if ((down & PLAT_KEY_SELECT) || action == ACTION_SHORTCUT) {
         shortcut_action(game);
-    } else if (variants > 1 && ((repeat & KEY_LEFT) || action == ACTION_VARIANT_PREV)) {
+    } else if (variants > 1 && ((repeat & PLAT_KEY_LEFT) || action == ACTION_VARIANT_PREV)) {
         g_app.details_variant = (g_app.details_variant + variants - 1) % variants;
-    } else if (variants > 1 && ((repeat & KEY_RIGHT) || action == ACTION_VARIANT_NEXT)) {
+    } else if (variants > 1 && ((repeat & PLAT_KEY_RIGHT) || action == ACTION_VARIANT_NEXT)) {
         g_app.details_variant = (g_app.details_variant + 1) % variants;
-    } else if ((repeat & KEY_UP) && g_app.selected > 0) {
+    } else if ((repeat & PLAT_KEY_UP) && g_app.selected > 0) {
         --g_app.selected;
         keep_selection_visible();
         g_app.details_variant = app_game(&g_app, g_app.selected)->variant_selected;
-    } else if ((repeat & KEY_DOWN) && g_app.selected + 1 < g_app.list_count) {
+    } else if ((repeat & PLAT_KEY_DOWN) && g_app.selected + 1 < g_app.list_count) {
         ++g_app.selected;
         keep_selection_visible();
         g_app.details_variant = app_game(&g_app, g_app.selected)->variant_selected;
@@ -2184,12 +1862,12 @@ static void open_settings_section(int section)
 
 static void handle_gallery(u32 down, u32 repeat, AppAction action)
 {
-    if ((repeat & (KEY_L | KEY_LEFT)) || action == ACTION_GALLERY_PREV) gallery_step(-1);
-    if ((repeat & (KEY_R | KEY_RIGHT)) || action == ACTION_GALLERY_NEXT) gallery_step(1);
-    if (((down & KEY_X) || action == ACTION_GALLERY_DELETE) && gallery_count())
+    if ((repeat & (PLAT_KEY_L | PLAT_KEY_LEFT)) || action == ACTION_GALLERY_PREV) gallery_step(-1);
+    if ((repeat & (PLAT_KEY_R | PLAT_KEY_RIGHT)) || action == ACTION_GALLERY_NEXT) gallery_step(1);
+    if (((down & PLAT_KEY_X) || action == ACTION_GALLERY_DELETE) && gallery_count())
         open_modal(MODAL_DELETE_SHOT, "削除", "DELETE THIS SCREENSHOT?",
                    "It is removed from the SD card for good.");
-    if ((down & KEY_B) || action == ACTION_GALLERY_CLOSE) {
+    if ((down & PLAT_KEY_B) || action == ACTION_GALLERY_CLOSE) {
         gallery_close();
         g_app.gallery_open = false;
     }
@@ -2209,14 +1887,14 @@ static void handle_settings(u32 down, u32 repeat, AppAction action)
     /* The grid of sections. */
     if (g_app.settings_section < 0) {
         int *grid = &g_app.settings_grid;
-        if (repeat & KEY_LEFT) *grid = (*grid + sections - 1) % sections;
-        if (repeat & KEY_RIGHT) *grid = (*grid + 1) % sections;
-        if (repeat & (KEY_UP | KEY_DOWN)) *grid = (*grid + 3) % sections;
+        if (repeat & PLAT_KEY_LEFT) *grid = (*grid + sections - 1) % sections;
+        if (repeat & PLAT_KEY_RIGHT) *grid = (*grid + 1) % sections;
+        if (repeat & (PLAT_KEY_UP | PLAT_KEY_DOWN)) *grid = (*grid + 3) % sections;
         if (action == ACTION_SETTINGS_SECTION && screens_touched_section() >= 0)
             open_settings_section(screens_touched_section());
-        else if (down & KEY_A)
+        else if (down & PLAT_KEY_A)
             open_settings_section(*grid);
-        else if ((down & (KEY_B | KEY_SELECT)) || action == ACTION_BACK) {
+        else if ((down & (PLAT_KEY_B | PLAT_KEY_SELECT)) || action == ACTION_BACK) {
             save_settings();
             g_app.settings_open = false;
         }
@@ -2225,14 +1903,23 @@ static void handle_settings(u32 down, u32 repeat, AppAction action)
     /* One section: up and down stay inside it, L and R change it. */
     const int section = g_app.settings_section;
     const int first = screens_section_first(section), size = screens_section_size(section);
-    if (repeat & KEY_UP) g_app.setting_index = first + (g_app.setting_index - first + size - 1) % size;
-    if (repeat & KEY_DOWN) g_app.setting_index = first + (g_app.setting_index - first + 1) % size;
-    if (down & KEY_L) { open_settings_section((section + sections - 1) % sections); return; }
-    if (down & KEY_R) { open_settings_section((section + 1) % sections); return; }
-    if ((repeat & KEY_LEFT) || action == ACTION_VALUE_PREV) change_setting(-1);
-    if ((repeat & KEY_RIGHT) || (down & KEY_A) || action == ACTION_VALUE_NEXT) change_setting(1);
-    if ((down & KEY_X) && screens_setting_at(g_app.setting_index) == SETTING_MUSIC) menu_audio_next();
-    if ((down & (KEY_B | KEY_SELECT)) || action == ACTION_BACK) {
+    if (repeat & PLAT_KEY_UP) g_app.setting_index = first + (g_app.setting_index - first + size - 1) % size;
+    if (repeat & PLAT_KEY_DOWN) g_app.setting_index = first + (g_app.setting_index - first + 1) % size;
+    if (down & PLAT_KEY_L) { open_settings_section((section + sections - 1) % sections); return; }
+    if (down & PLAT_KEY_R) { open_settings_section((section + 1) % sections); return; }
+    if (action == ACTION_SETTINGS_SECTION && screens_touched_section() >= 0) {
+        open_settings_section(screens_touched_section());
+        return;
+    }
+    if (action == ACTION_SELECT_SETTING && screens_touched_index() >= first &&
+        screens_touched_index() < first + size) {
+        g_app.setting_index = screens_touched_index();
+        return;
+    }
+    if ((repeat & PLAT_KEY_LEFT) || action == ACTION_VALUE_PREV) change_setting(-1);
+    if ((repeat & PLAT_KEY_RIGHT) || (down & PLAT_KEY_A) || action == ACTION_VALUE_NEXT) change_setting(1);
+    if ((down & PLAT_KEY_X) && screens_setting_at(g_app.setting_index) == SETTING_MUSIC) menu_audio_next();
+    if ((down & (PLAT_KEY_B | PLAT_KEY_SELECT)) || action == ACTION_BACK) {
         if (action == ACTION_BACK && screens_setting_at(g_app.setting_index) == SETTING_ACCOUNT &&
             gfn_has_session(&g_client)) {
             change_setting(1);
@@ -2240,7 +1927,7 @@ static void handle_settings(u32 down, u32 repeat, AppAction action)
         }
         save_settings();
         /* B goes back to the sections; SELECT leaves Settings. */
-        if (down & KEY_SELECT) g_app.settings_open = false;
+        if (down & PLAT_KEY_SELECT) g_app.settings_open = false;
         g_app.settings_section = -1;
     }
 }
@@ -2249,8 +1936,8 @@ static void handle_session(u32 down, AppAction action)
 {
     const bool failed = g_client.session_state == GFN_SESSION_ERROR ||
                         g_transport.state == WEBRTC_FAILED || g_signal.state == NVST_SIGNAL_ERROR;
-    if ((down & KEY_B) || action == ACTION_CANCEL) leave_session();
-    else if (failed && ((down & KEY_A) || action == ACTION_RETRY)) {
+    if ((down & PLAT_KEY_B) || action == ACTION_CANCEL) leave_session();
+    else if (failed && ((down & PLAT_KEY_A) || action == ACTION_RETRY)) {
         g_app.reconnect_attempt = 0;
         retry_session();
     }
@@ -2281,12 +1968,12 @@ static void menu_zone(void)
 }
 
 static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
-                          touchPosition touch)
+                          PlatTouch touch)
 {
     /* START + SELECT held opens the stream menu without leaving the game. */
-    if ((held & (KEY_START | KEY_SELECT)) == (KEY_START | KEY_SELECT)) {
-        if (!g_combo_started_at) g_combo_started_at = osGetTime();
-        else if (osGetTime() - g_combo_started_at >= MENU_COMBO_HOLD_MS && !g_app.stream_menu) {
+    if ((held & (PLAT_KEY_START | PLAT_KEY_SELECT)) == (PLAT_KEY_START | PLAT_KEY_SELECT)) {
+        if (!g_combo_started_at) g_combo_started_at = plat_time_ms();
+        else if (plat_time_ms() - g_combo_started_at >= MENU_COMBO_HOLD_MS && !g_app.stream_menu) {
             g_app.stream_menu = true;
             g_app.stream_menu_index = STREAM_MENU_RESUME;
         }
@@ -2296,33 +1983,40 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
 
     if (g_transport.keyboard_mode) {
         bool close = remote_keyboard_buttons(&g_transport, down);
-        if (touch_down) close |= remote_keyboard_touch(&g_transport, touch.px, touch.py);
+        if (touch_down) close |= remote_keyboard_touch(&g_transport, touch.x, touch.y);
         if (close) g_transport.keyboard_mode = false;
         return;
     }
 
     if (g_app.controls_open) {
-        if ((down & (KEY_A | KEY_B | KEY_SELECT)) || action == ACTION_CONTROLS_CLOSE)
+        if ((down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_SELECT)) || action == ACTION_CONTROLS_CLOSE)
             g_app.controls_open = false;
         return;
     }
 
     if (g_app.stream_menu) {
         /* Two columns: up/down move a row, left/right a column. */
-        if ((down & KEY_UP) && g_app.stream_menu_index >= 2) g_app.stream_menu_index -= 2;
-        if ((down & KEY_DOWN) && g_app.stream_menu_index + 2 < STREAM_MENU_COUNT) g_app.stream_menu_index += 2;
-        if ((down & KEY_LEFT) && (g_app.stream_menu_index & 1)) --g_app.stream_menu_index;
-        if ((down & KEY_RIGHT) && !(g_app.stream_menu_index & 1)) ++g_app.stream_menu_index;
-        if (down & KEY_A) action = (AppAction)(ACTION_MENU_RESUME + g_app.stream_menu_index);
-        if (down & KEY_B) action = ACTION_MENU_RESUME;
-        if (action == ACTION_MENU_RESUME) {
+        if ((down & PLAT_KEY_UP) && g_app.stream_menu_index >= 2) g_app.stream_menu_index -= 2;
+        if ((down & PLAT_KEY_DOWN) && g_app.stream_menu_index + 2 < STREAM_MENU_COUNT) g_app.stream_menu_index += 2;
+        if ((down & PLAT_KEY_LEFT) && (g_app.stream_menu_index & 1)) --g_app.stream_menu_index;
+        if ((down & PLAT_KEY_RIGHT) && !(g_app.stream_menu_index & 1)) ++g_app.stream_menu_index;
+        if (down & PLAT_KEY_A) action = (AppAction)(ACTION_MENU_RESUME + g_app.stream_menu_index);
+        if (down & PLAT_KEY_B) action = ACTION_MENU_RESUME;
+        /* A screen with room for them shows the quick toggles in the menu
+         * too (the Vita): they close it and act as in the game. */
+        const bool quick = action == ACTION_STREAM_KEYBOARD || action == ACTION_STREAM_POINTER ||
+                           action == ACTION_STREAM_ZOOM || action == ACTION_LOOK_TOGGLE ||
+                           action == ACTION_MIC_TOGGLE;
+        if (quick) {
+            g_app.stream_menu = false;
+        } else if (action == ACTION_MENU_RESUME) {
             g_app.stream_menu = false;
         } else if (action == ACTION_MENU_CONTROLS) {
             g_app.stream_menu = false;
             g_app.controls_open = true;
         } else if (action == ACTION_MENU_SCREENSHOT) {
             g_app.stream_menu = false;
-            g_screenshot_requested = true;
+            render_request_screenshot();
         } else if (action == ACTION_MENU_ZONE) {
             menu_zone();
         } else if (action == ACTION_MENU_SOUND) {
@@ -2354,7 +2048,7 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
                 leave_session();
             }
         }
-        return;
+        if (!quick) return;
     }
 
     switch (action) {
@@ -2395,14 +2089,14 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
 
     /* Centre panel: touchpad in pointer mode, otherwise the zoom map. */
     const UiRect panel = screens_stream_panel();
-    if (held & KEY_TOUCH) {
+    if (held & PLAT_KEY_TOUCH) {
         if (g_transport.pointer_mode) {
-            if (touch_down && ui_hit(panel, touch.px, touch.py) && g_transport.input_ready)
-                touchpad_begin(touch.px, touch.py);
-            else touchpad_move(touch.px, touch.py);
-        } else if (mvd_video_zoomed() && ui_hit(panel, touch.px, touch.py)) {
+            if (touch_down && ui_hit(panel, touch.x, touch.y) && g_transport.input_ready)
+                touchpad_begin(touch.x, touch.y);
+            else touchpad_move(touch.x, touch.y);
+        } else if (mvd_video_zoomed() && ui_hit(panel, touch.x, touch.y)) {
             const float frame_w = panel.w - 8, frame_h = frame_w * 9 / 16;
-            float nx = (touch.px - panel.x - 4) / frame_w, ny = (touch.py - panel.y - 6) / frame_h;
+            float nx = (touch.x - panel.x - 4) / frame_w, ny = (touch.y - panel.y - 6) / frame_h;
             if (nx < 0) nx = 0;
             if (nx > 1) nx = 1;
             if (ny < 0) ny = 0;
@@ -2422,7 +2116,6 @@ static void queue_auto_report(const char *trigger);
  * reconnects afterwards. */
 static volatile u64 g_suspended_at, g_resumed_at;
 static volatile bool g_suspend_was_sleep;
-static aptHookCookie g_apt_cookie;
 
 /* Where the last main-loop pass spent its time, so a ui-stall says which
  * part froze (beta.31: one console stopped for 12.8 s in menus, no job). */
@@ -2434,7 +2127,7 @@ static u64 g_phase_at;
 
 static void phase_end(int phase)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     g_phase_ms[phase] = now > g_phase_at ? (unsigned)(now - g_phase_at) : 0;
     g_phase_at = now;
 }
@@ -2457,20 +2150,19 @@ static u32 g_last_held;
  * the input log. Select with L or Down is close enough to tell. */
 static bool rosalina_combo(u32 held)
 {
-    return (held & KEY_SELECT) && (held & (KEY_L | KEY_DDOWN));
+    return (held & PLAT_KEY_SELECT) && (held & (PLAT_KEY_L | PLAT_KEY_DDOWN));
 }
 
-static void apt_hook(APT_HookType hook, void *param)
+static void system_event(PlatSystemEvent event)
 {
-    (void)param;
     ++g_apt_events;
-    if (hook == APTHOOK_ONSLEEP || hook == APTHOOK_ONSUSPEND) {
+    if (event == PLAT_SYS_SLEEP || event == PLAT_SYS_SUSPEND) {
         webrtc_transport_pause(true);
-        g_suspended_at = osGetTime();
-        g_suspend_was_sleep = hook == APTHOOK_ONSLEEP;
-    } else if (hook == APTHOOK_ONWAKEUP || hook == APTHOOK_ONRESTORE) {
+        g_suspended_at = plat_time_ms();
+        g_suspend_was_sleep = event == PLAT_SYS_SLEEP;
+    } else if (event == PLAT_SYS_WAKE || event == PLAT_SYS_RESTORE) {
         webrtc_transport_pause(false);
-        g_resumed_at = osGetTime();
+        g_resumed_at = plat_time_ms();
     }
 }
 
@@ -2480,7 +2172,7 @@ static void finish_history(void)
 {
     if (!g_history_open) return;
     g_history_open = false;
-    const u64 played = g_app.stream_started_at ? osGetTime() - g_app.stream_started_at : 0;
+    const u64 played = g_app.stream_started_at ? plat_time_ms() - g_app.stream_started_at : 0;
     play_history_end(g_current_game.app_id, (uint32_t)(played / 1000));
 }
 
@@ -2501,16 +2193,15 @@ static void queue_stats_load(void)
     queue_eta_load();
 }
 
-/* Connected to an access point (ac:u), checked at most twice a second. */
+/* Connected to an access point, checked at most twice a second. */
 static bool wifi_connected(void)
 {
     static u64 checked_at;
     static bool connected = true;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (now - checked_at >= 500) {
         checked_at = now;
-        u32 status = 0;
-        connected = R_SUCCEEDED(ACU_GetWifiStatus(&status)) && status != 0;
+        connected = plat_wifi_connected();
     }
     return connected;
 }
@@ -2539,7 +2230,7 @@ static void track_lid_pause(bool paused)
     static u64 paused_at;
     if (paused == g_app.lid_paused) return;
     g_app.lid_paused = paused;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (paused) {
         paused_at = now;
         g_app.welcome_at = 0;
@@ -2563,7 +2254,7 @@ static void track_queue(void)
     static int start_place;
     static bool alert_pending;
     static u64 lid_checked_at;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     /* Lid shut while waiting for a rig, or mid-game with sleep held off
      * ("Pause" and "Keep playing"): screens off to save battery. */
     if (now - lid_checked_at >= 400) {
@@ -2616,36 +2307,12 @@ static void track_queue(void)
     g_app.queue_eta = -1;
 }
 
-/* The 3DS keeps doing background Wi-Fi work (StreetPass, SpotPass and
- * notification checks) while an app streams, and each scan takes the radio
- * off the access point for a moment. Beta.19 logs: the stream stopped for
- * 200-280 ms at a time, frames were lost, and ~35 packets a minute had to be
- * re-sent on a fast, nearby connection. Moonlight-N3DS takes the Wi-Fi
- * exclusively (infrastructure only, background daemons stopped) for the
- * same reason. Kasumi does it only while a game session runs. */
-static void wifi_exclusive(bool on)
-{
-    if (!g_ndm_ready || on == g_ndm_exclusive) return;
-    Result result;
-    if (on) {
-        result = NDMU_EnterExclusiveState(NDM_EXCLUSIVE_STATE_INFRASTRUCTURE);
-        if (R_SUCCEEDED(result)) result = NDMU_LockState();
-        g_ndm_exclusive = R_SUCCEEDED(result);
-        if (!g_ndm_exclusive) NDMU_LeaveExclusiveState();
-    } else {
-        NDMU_UnlockState();
-        result = NDMU_LeaveExclusiveState();
-        g_ndm_exclusive = false;
-    }
-    diagnostic_log("NET", "exclusive Wi-Fi %s rc=%08lX", on ? "on" : "off", (unsigned long)result);
-}
-
 /* Timer, free-tier warnings and automatic reconnects for a running session. */
 static void track_session(void)
 {
     static u64 reconnect_at, playing_since;
     static bool warned_5, warned_1;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
 
     track_queue();
     char shot[64];
@@ -2663,7 +2330,7 @@ static void track_session(void)
                            (g_app.settings.mute_in_menus && (g_app.stream_menu || g_app.controls_open)));
 
     static bool was_active;
-    wifi_exclusive(gfn_session_active(&g_client));
+    plat_wifi_exclusive(gfn_session_active(&g_client));
     if (!gfn_session_active(&g_client)) {
         finish_history();
         if (g_perf.active) {
@@ -2705,7 +2372,7 @@ static void track_session(void)
                 diagnostic_log("APP", "system %s for %llu ms; stream kept", g_suspend_was_sleep ? "sleep" : "HOME/applet",
                                (unsigned long long)away);
             g_resumed_at = g_suspended_at = 0;
-        } else if ((osGetWifiStrength() > 0 || now - g_resumed_at > 15000) && !net_worker_busy() &&
+        } else if ((plat_wifi_strength() > 0 || now - g_resumed_at > 15000) && !net_worker_busy() &&
                    g_client.session_state == GFN_SESSION_READY) {
             diagnostic_log("APP", "resumed after %llu ms away (system %s, lid=%s); reconnecting",
                            (unsigned long long)away, g_suspend_was_sleep ? "sleep" : "HOME/applet",
@@ -2943,7 +2610,7 @@ static void probe_load(void)
     if (!g_probe.count) return;
     stream_profile_set_probing(true);
     g_probe.phase = PROBE_LIBRARY;
-    g_probe.since = osGetTime();
+    g_probe.since = plat_time_ms();
     probe_result("probe start (build " APP_BUILD "): %u resolutions, game filter \"%s\"", g_probe.count, g_probe.game);
 }
 
@@ -2975,7 +2642,7 @@ static void probe_dump_offer(void)
 static void probe_tick(void)
 {
     if (g_probe.phase == PROBE_OFF || g_probe.phase == PROBE_DONE || net_worker_busy()) return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     const unsigned w = g_probe.width[g_probe.index], h = g_probe.height[g_probe.index];
     switch (g_probe.phase) {
     case PROBE_LIBRARY:
@@ -3086,9 +2753,9 @@ static void tick_network(void)
     /* Signaling is only heartbeats once media flows; ~60 Hz is plenty and
      * keeps socket requests low while the stream loop runs fast. */
     static u64 last_signal_tick;
-    if (!g_transport.peer || osGetTime() - last_signal_tick >= 16) {
+    if (!g_transport.peer || plat_time_ms() - last_signal_tick >= 16) {
         nvst_signal_tick(&g_signal);
-        last_signal_tick = osGetTime();
+        last_signal_tick = plat_time_ms();
     }
     /* When the SDP offer has arrived, drive the WebRTC answer and ICE/DTLS. */
     if (g_signal.state == NVST_SIGNAL_OFFER && !g_transport.peer &&
@@ -3110,7 +2777,7 @@ static void tick_network(void)
 static const char *current_status(void)
 {
     static char line[160];
-    if (g_notice[0] && osGetTime() < g_notice_until) return g_notice;
+    if (g_notice[0] && plat_time_ms() < g_notice_until) return g_notice;
     if (g_transport.peer) {
         snprintf(line, sizeof(line), "%s%.145s", g_transport.steam ? "" : i18n_text("WebRTC: "), g_transport.status);
         return line;
@@ -3137,7 +2804,7 @@ static void queue_auto_report(const char *trigger)
     const size_t used = strlen(g_auto_trigger);
     if (used + strlen(trigger) + 2 > sizeof(g_auto_trigger)) return;
     snprintf(g_auto_trigger + used, sizeof(g_auto_trigger) - used, "%s%s", used ? "+" : "", trigger);
-    g_auto_queued_at = osGetTime();
+    g_auto_queued_at = plat_time_ms();
     diagnostic_log("REPORT", "automatic report queued (%s)", trigger);
 }
 
@@ -3147,7 +2814,7 @@ static void auto_report_tick(void)
         g_app.settings.share_reports != SHARE_YES)
         return;
     if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) || gfn_session_active(&g_client) ||
-        net_worker_busy() || g_app.modal != MODAL_NONE || osGetTime() - g_auto_queued_at < 60000)
+        net_worker_busy() || g_app.modal != MODAL_NONE || plat_time_ms() - g_auto_queued_at < 60000)
         return;
     if (submit_job(NET_JOB_SEND_REPORT, NULL, g_auto_trigger, NULL)) {
         ++g_auto_sent;
@@ -3156,13 +2823,26 @@ static void auto_report_tick(void)
     }
 }
 
+/* Why the session ended, for its [END] line. Once a stream has started, the
+ * client status still holds connection-time text ("NVST verified; waiting
+ * for SDP offer"), which made a normal exit read like a failed launch. */
+static const char *session_end_message(void)
+{
+    if (g_app.end_note[0]) return g_app.end_note;
+    if (g_client.session_state != GFN_SESSION_ERROR && g_signal.state == NVST_SIGNAL_ERROR)
+        return g_signal.status;
+    if (g_app.stream_started_at && g_client.session_state != GFN_SESSION_ERROR)
+        return "stream was running; no error";
+    return g_client.status;
+}
+
 /* One line per session, written when it ends: who ended it and in what
  * state, so a report can be read from its [END] lines first. */
 static void log_session_end(const char *by)
 {
     if (g_app.end_logged) return;
     g_app.end_logged = true;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     const u64 last = g_transport.last_decoded_frame_at;
     diagnostic_log("END", "by=%s code=%s nvidia=%s played=%llus reconnects=%u frames=%u lastFrame=%lldms "
                    "dark=%d kbps=%u pli=%u errors=%u state=%d status=%d game=\"%.40s\" msg=\"%.100s\"",
@@ -3173,14 +2853,14 @@ static void log_session_end(const char *by)
                    last && now > last ? (long long)(now - last) : -1LL, mvd_video_picture_dark() ? 1 : 0,
                    g_transport.video_kbps, g_transport.keyframe_requests, mvd_video_errors(),
                    g_client.session_state, g_client.session_status, g_current_game.title,
-                   g_app.end_note[0] ? g_app.end_note : g_client.status);
+                   session_end_message());
 }
 
 /* Watchdogs for states that should never last: each raises a flag (see
  * diagnostic_flag), and every new flag asks for an automatic report. */
 static void watch_for_bugs(void)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     for (const char *code; (code = diagnostic_take_new_flag());) {
         char trigger[40];
         snprintf(trigger, sizeof(trigger), "flag:%.32s", code);
@@ -3261,7 +2941,7 @@ static void watch_for_bugs(void)
     static bool memory_flagged;
     if (!memory_flagged && now - memory_checked > 10000) {
         memory_checked = now;
-        const u32 free_bytes = linearSpaceFree();
+        const u32 free_bytes = plat_device_memory_free();
         if (free_bytes < 1024 * 1024) {
             memory_flagged = true;
             diagnostic_flag("low-memory", "linear free %lu KiB (view %d)", (unsigned long)(free_bytes / 1024),
@@ -3297,7 +2977,7 @@ static void stats_tick(void)
     if ((g_app.view != VIEW_LIBRARY && g_app.view != VIEW_HUB) || gfn_session_active(&g_client) ||
         net_worker_busy() || g_app.modal != MODAL_NONE)
         return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (tried_at && now - tried_at < (g_stats_failed ? 600000u : 60000u)) return;
     if (!report_stats_pending()) return;
     tried_at = now;
@@ -3352,7 +3032,7 @@ static u64 g_shortcut_launch_at;
 static void shortcut_launch_tick(void)
 {
     if (!g_shortcut_launch_at) return;
-    if (gfn_session_active(&g_client) || osGetTime() - g_shortcut_launch_at > 60000) {
+    if (gfn_session_active(&g_client) || plat_time_ms() - g_shortcut_launch_at > 60000) {
         /* A game already running (resumed at start-up), or it never got ready. */
         diagnostic_log("SHORTCUT", "launch of %.60s dropped", g_shortcut_game.title);
         g_shortcut_launch_at = 0;
@@ -3384,7 +3064,7 @@ static void keep_login_tick(void)
     const bool login_due = g_client.token_expires_at && g_client.token_expires_at - now_s <= 540;
     const bool client_due = g_client.client_token[0] && g_client.client_token_expires_at - now_s <= 540;
     if (!login_due && !client_due) return;
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (tried_at && now - tried_at < 120000) return;
     tried_at = now;
     diagnostic_log("AUTH", "renewing in the background (login %llds, client token %llds left)",
@@ -3430,7 +3110,7 @@ static void watch_session_errors(void)
     /* A free session ending around its hour: NVIDIA says "internal error",
      * but it is the free tier's limit (beta.23 report K9J4FF, 63 min). */
     if (error && !was_error && g_app.free_tier_guess && g_app.stream_started_at &&
-        osGetTime() - g_app.stream_started_at >= 58ull * 60 * 1000) {
+        plat_time_ms() - g_app.stream_started_at >= 58ull * 60 * 1000) {
         diagnostic_log("APP", "free session ended after its hour (%.80s)", g_client.status);
         snprintf(g_app.end_note, sizeof(g_app.end_note),
                  i18n_text("Your free hour is over. Press A to start the game again (you may queue again)."));
@@ -3443,9 +3123,9 @@ static void watch_session_errors(void)
      * from the game's own menu (beta.26 reports 9WFFRT, QYHU2H): a normal
      * end, not a failure to report. Short streams still report. */
     if (error && !was_error && g_app.stream_started_at && g_client.session_state == GFN_SESSION_ERROR &&
-        !strcmp(g_client.fail_code, "ended") && osGetTime() - g_app.stream_started_at >= 2ull * 60 * 1000) {
+        !strcmp(g_client.fail_code, "ended") && plat_time_ms() - g_app.stream_started_at >= 2ull * 60 * 1000) {
         diagnostic_log("APP", "session ended after %llus of play",
-                       (unsigned long long)((osGetTime() - g_app.stream_started_at) / 1000));
+                       (unsigned long long)((plat_time_ms() - g_app.stream_started_at) / 1000));
         log_session_end("nvidia");
         was_error = error;
         return;
@@ -3500,7 +3180,7 @@ static u64 limit_retry_delay(void)
 
 static void limit_wait_text(void)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     const unsigned left = g_app.limit_retry_at > now ? (unsigned)((g_app.limit_retry_at - now + 999) / 1000) : 0;
     if (g_app.limit_busy) {
         snprintf(g_app.modal_text, sizeof(g_app.modal_text),
@@ -3531,7 +3211,7 @@ static void limit_wait_text(void)
  * the slot, or show the error. */
 static void launch_failed(void)
 {
-    const u64 now = osGetTime();
+    const u64 now = plat_time_ms();
     if (g_client.conflict_found) {
         char other[112] = "another game";
         for (size_t i = 0; i < g_client.game_count; ++i)
@@ -3697,12 +3377,12 @@ static void limit_wait_tick(void)
 {
     if (!g_app.limit_retry_at) return;
     if (g_app.modal == MODAL_LIMIT_WAIT) limit_wait_text();
-    if (osGetTime() < g_app.limit_retry_at || net_worker_busy() || gfn_session_active(&g_client)) return;
+    if (plat_time_ms() < g_app.limit_retry_at || net_worker_busy() || gfn_session_active(&g_client)) return;
     if (g_app.modal != MODAL_LIMIT_WAIT && g_app.modal != MODAL_NONE) return;
     g_app.limit_retry_at = 0;
     g_app.modal = MODAL_NONE;
     diagnostic_log("APP", "trying the launch again");
-    g_limit_last_try = osGetTime();
+    g_limit_last_try = plat_time_ms();
     submit_job(NET_JOB_START_SESSION, "Trying again...", "retry", &g_current_game);
 }
 
@@ -3881,7 +3561,7 @@ static void ui_sounds(u32 down, AppAction action)
         return;
     }
     const UiState *was = &last;
-    const bool back = (down & KEY_B) || action == ACTION_BACK || action == ACTION_CANCEL;
+    const bool back = (down & PLAT_KEY_B) || action == ACTION_BACK || action == ACTION_CANCEL;
     /* In a game, only the stream menu and its sheets make sounds: the
      * buttons belong to the game. */
     const bool in_game = now.view == VIEW_STREAM && !now.stream_menu && !was->stream_menu &&
@@ -3905,7 +3585,7 @@ static void ui_sounds(u32 down, AppAction action)
     } else if (now.library_tab != was->library_tab) {
         sound = SFX_TAB;
     } else if (memcmp(&now.settings, &was->settings, sizeof(now.settings))) {
-        const bool lower = (down & KEY_LEFT) || action == ACTION_VALUE_PREV || action == ACTION_OPTION_PREV ||
+        const bool lower = (down & PLAT_KEY_LEFT) || action == ACTION_VALUE_PREV || action == ACTION_OPTION_PREV ||
                            action == ACTION_MAP_PREV || action == ACTION_VARIANT_PREV;
         sound = lower ? SFX_TOGGLE_OFF : SFX_TOGGLE_ON;
     } else if (now.selected != was->selected || now.setting_index != was->setting_index ||
@@ -3917,9 +3597,9 @@ static void ui_sounds(u32 down, AppAction action)
         sound = SFX_MOVE;
     } else if (now.view != was->view && now.view != VIEW_STREAM && was->view != VIEW_STREAM) {
         sound = back ? SFX_BACK : now.view == VIEW_LIBRARY && was->view == VIEW_SESSION ? -1 : SFX_SELECT;
-    } else if (now.busy && !was->busy && (down & KEY_A)) {
+    } else if (now.busy && !was->busy && (down & PLAT_KEY_A)) {
         sound = SFX_SELECT;
-    } else if ((down & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)) && now.modal == MODAL_NONE && !now.busy &&
+    } else if ((down & (PLAT_KEY_UP | PLAT_KEY_DOWN | PLAT_KEY_LEFT | PLAT_KEY_RIGHT)) && now.modal == MODAL_NONE && !now.busy &&
                (now.view == VIEW_LIBRARY || now.view == VIEW_SETTINGS || now.view == VIEW_DETAILS ||
                 now.stream_menu)) {
         /* Pressed against the end of a list. */
@@ -3938,8 +3618,8 @@ static void log_session(void)
     const bool connecting = g_client.session_state == GFN_SESSION_SETUP ||
                             (g_client.session_state == GFN_SESSION_READY && g_app.view != VIEW_STREAM);
     const u64 interval = connecting ? 1000 : 5000;
-    if (!gfn_session_active(&g_client) || osGetTime() - last < interval) return;
-    last = osGetTime();
+    if (!gfn_session_active(&g_client) || plat_time_ms() - last < interval) return;
+    last = plat_time_ms();
     diagnostic_log("SESSION", "state=%d status=%d queue=%d nvst=%d rx=%u frames=%u ack=%u hb=%u webrtc=%d video=%u kbps=%u idr=%u pli=%u audio=%u decoded=%u drop=%u err=%u data=%u input=%u reports=%u mouse=%u clicks=%u keys=%u conceal=%u",
         g_client.session_state, g_client.session_status, g_client.queue_position,
         g_signal.state, g_signal.messages, g_signal.parser.frames,
@@ -3957,23 +3637,16 @@ static void fatal_screen(const char *title, const char *message)
     g_app.status = message;
     open_modal(MODAL_EXIT, "エラー", title, message);
     g_app.view = VIEW_HUB;
-    while (aptMainLoop() && !g_quit) {
-        hidScanInput();
-        if (hidKeysDown() & (KEY_A | KEY_B | KEY_START)) break;
-        render(true);
+    while (plat_main_loop() && !g_quit) {
+        plat_input_scan();
+        if (plat_input()->down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_START)) break;
+        render(&g_app, true);
     }
 }
 
 int main(int argc, char **argv)
 {
-    gfxInitDefault();
-    gfxSetScreenFormat(GFX_TOP, GSP_RGB565_OES);
-    /* One top framebuffer: MVD frames are written into it directly. */
-    gfxSetDoubleBuffering(GFX_TOP, false);
-    if (!ui_init()) {
-        gfxExit();
-        return 1;
-    }
+    if (!ui_init()) return 1;
     g_app.client = &g_client;
     g_app.signal = &g_signal;
     g_app.transport = &g_transport;
@@ -3991,7 +3664,7 @@ int main(int argc, char **argv)
     file_worker_init();
     if (!g_app.settings.install_id[0]) {
         /* Anonymous: random, made here, not linked to any account. */
-        srand((unsigned)(svcGetSystemTick() ^ osGetTime()));
+        srand((unsigned)(plat_ticks() ^ plat_time_ms()));
         snprintf(g_app.settings.install_id, sizeof(g_app.settings.install_id), "%04x%04x%04x",
                  rand() & 0xFFFF, rand() & 0xFFFF, rand() & 0xFFFF);
         settings_save(&g_app.settings);
@@ -4002,33 +3675,28 @@ int main(int argc, char **argv)
     open_hub();
     settings_apply_input(&g_app.settings);
     settings_apply_picture(&g_app.settings);
-    hidSetRepeatParameters(18, 5);
+    plat_input_set_repeat(18, 5);
 
-    bool is_new_3ds = false;
-    const Result model_result = APT_CheckNew3DS(&is_new_3ds);
-    if (R_FAILED(model_result) || !is_new_3ds) {
+    if (!plat_model_supported()) {
         fatal_screen("NEW 3DS REQUIRED",
                      "Kasumi needs a New 3DS, New 3DS XL or New 2DS XL for its video decoder.");
         ui_exit();
-        gfxExit();
         return 1;
     }
 
-    osSetSpeedupEnable(true);
+    plat_full_speed();
     char init_error[128] = "";
     if (!init_services(init_error, sizeof(init_error))) {
         fatal_screen("STARTUP FAILED", init_error);
         shutdown_services();
         ui_exit();
-        gfxExit();
         return 1;
     }
 
     app_paths_migrate();
     diagnostic_init();
     diagnostic_log("APP", "startup model=%s wifiBars=%u linearFreeKiB=%lu",
-                   is_new_3ds ? "new3ds-family" : "old3ds-family",
-                   osGetWifiStrength(), (unsigned long)(linearSpaceFree() / 1024));
+                   PLAT_MODEL_FAMILY, plat_wifi_strength(), (unsigned long)(plat_device_memory_free() / 1024));
     /* The last run of this version never reached a normal exit. */
     if (report_previous_run_unclean()) {
         diagnostic_log("APP", "previous run did not exit cleanly");
@@ -4074,20 +3742,19 @@ int main(int argc, char **argv)
     }
     /* Opened from a game's HOME Menu shortcut: launch it once signed in. */
     if (shortcut_take_launch(&g_shortcut_game, &g_shortcut_variant)) {
-        g_shortcut_launch_at = osGetTime();
+        g_shortcut_launch_at = plat_time_ms();
         g_app.whats_new_open = false;
         g_app.hub_open = false;
         char text[128];
         snprintf(text, sizeof(text), i18n_text("Starting %.90s..."), g_shortcut_game.title);
         show_notice(text);
     }
-    aptHook(&g_apt_cookie, apt_hook, NULL);
+    plat_on_system_event(system_event);
     queue_alert_stop();
     if (!net_worker_start(&g_client, &g_signal)) {
         fatal_screen("STARTUP FAILED", "Could not start the network worker thread.");
         shutdown_services();
         ui_exit();
-        gfxExit();
         return 1;
     }
     probe_load();
@@ -4098,10 +3765,10 @@ int main(int argc, char **argv)
 
     bool was_touching = false;
     u64 last_bottom_draw = 0;
-    u64 loop_started = osGetTime();
-    while (aptMainLoop() && !g_quit) {
+    u64 loop_started = plat_time_ms();
+    while (plat_main_loop() && !g_quit) {
         {
-            const u64 loop_now = osGetTime();
+            const u64 loop_now = plat_time_ms();
             const unsigned loop_ms = loop_now > loop_started ? (unsigned)(loop_now - loop_started) : 0;
             loop_started = loop_now;
             /* The UI froze with no HOME, sleep or applet in between. */
@@ -4125,11 +3792,8 @@ int main(int argc, char **argv)
             apt_seen = g_apt_events;
             g_phase_at = loop_now;
             if (g_app.view == VIEW_STREAM && loop_ms < 5000 && !interrupted) {
-                if (loop_ms > g_loop_max_ms) g_loop_max_ms = loop_ms;
-                if (loop_ms > 25) {
-                    ++g_loop_slow;
-                    ++g_perf.slow_loops;
-                }
+                render_note_loop(loop_ms);
+                if (loop_ms > 25) ++g_perf.slow_loops;
                 if (loop_ms > g_perf.loop_max_ms) g_perf.loop_max_ms = loop_ms;
             }
         }
@@ -4138,17 +3802,24 @@ int main(int argc, char **argv)
         probe_tick();
         phase_end(PHASE_SYNC);
         g_app.busy = net_worker_busy() ? g_busy_message : NULL;
-        hidScanInput();
-        const u32 down = hidKeysDown();
-        const u32 held = hidKeysHeld();
+        /* The extra buttons (the Vita's L2 / R2 / L3 / R3) only while
+         * playing, where no menu wants the touch. */
+        static const PlatExtraButtons EXTRA[EXTRA_BUTTONS_COUNT] = { PLAT_EXTRA_REAR, PLAT_EXTRA_FRONT, PLAT_EXTRA_OFF };
+        const bool playing = g_app.view == VIEW_STREAM && !g_app.stream_menu && !g_app.controls_open &&
+                             !g_transport.keyboard_mode && g_app.modal == MODAL_NONE;
+        plat_input_set_extra_buttons(playing && g_app.settings.extra_buttons < EXTRA_BUTTONS_COUNT
+                                     ? EXTRA[g_app.settings.extra_buttons] : PLAT_EXTRA_OFF);
+        plat_input_scan();
+        const PlatInput *in = plat_input();
+        const u32 down = in->down;
+        const u32 held = in->held;
         g_last_held = held;
-        const u32 repeat = hidKeysDownRepeat();
-        touchPosition touch = {0, 0};
-        if (held & KEY_TOUCH) hidTouchRead(&touch);
-        const bool touch_down = (down & KEY_TOUCH) != 0;
-        g_app.touching = (held & KEY_TOUCH) != 0;
-        g_app.touch_x = touch.px;
-        g_app.touch_y = touch.py;
+        const u32 repeat = in->repeat;
+        const PlatTouch touch = in->touch_count ? render_map_touch(in->touch[0]) : (PlatTouch){ 0, 0, 0 };
+        const bool touch_down = (down & PLAT_KEY_TOUCH) != 0;
+        g_app.touching = (held & PLAT_KEY_TOUCH) != 0;
+        g_app.touch_x = touch.x;
+        g_app.touch_y = touch.y;
 
         const AppView previous_view = g_app.view;
         enter_tick();
@@ -4166,7 +3837,7 @@ int main(int argc, char **argv)
         g_app.keyboard_open = g_transport.keyboard_mode;
 
         if (g_app.view == VIEW_LIBRARY || g_app.view == VIEW_DETAILS || g_app.view == VIEW_HUB) rebuild_list();
-        const AppAction action = touch_down ? screens_touch(&g_app, touch.px, touch.py) : ACTION_NONE;
+        const AppAction action = touch_down ? screens_touch(&g_app, touch.x, touch.y) : ACTION_NONE;
         if (g_app.view != VIEW_STREAM) {
             auto_update_check();
             discord_invite_tick();
@@ -4193,7 +3864,7 @@ int main(int argc, char **argv)
              * cancelled, but never the request that ends the session on
              * NVIDIA's side (beta.23: players pressing B while leaving got
              * "Session stop network: Cancelled", and the game stayed open). */
-            if ((down & KEY_B) && net_worker_current_job() != NET_JOB_STOP_SESSION) net_worker_cancel();
+            if ((down & PLAT_KEY_B) && net_worker_current_job() != NET_JOB_STOP_SESSION) net_worker_cancel();
         } else if (g_app.modal != MODAL_NONE) {
             handle_modal(down, action);
         } else {
@@ -4208,7 +3879,7 @@ int main(int argc, char **argv)
             }
         }
         phase_end(PHASE_HANDLE);
-        if (hidKeysUp() & KEY_TOUCH) touchpad_end();
+        if (in->up & PLAT_KEY_TOUCH) touchpad_end();
         if (queue_alert_active() && (down || touch_down)) queue_alert_stop();
         update_pointer_click(down, held);
         ui_sounds(down, action);
@@ -4246,7 +3917,7 @@ int main(int argc, char **argv)
         const bool want_sleep = !gfn_session_active(&g_client) ||
                                 (g_app.stream_started_at && g_app.settings.lid_mode == LID_SLEEP);
         if (want_sleep != sleep_allowed) {
-            aptSetSleepAllowed(want_sleep);
+            plat_allow_sleep(want_sleep);
             sleep_allowed = want_sleep;
         }
 
@@ -4258,7 +3929,7 @@ int main(int argc, char **argv)
                        g_app.view == VIEW_STREAM || game_audio ? MENU_SCENE_GAME
                        : g_app.view == VIEW_SESSION ? MENU_SCENE_WAITING : MENU_SCENE_MENUS);
         g_app.status = current_status();
-        g_app.toast = g_notice[0] && osGetTime() < g_notice_until ? g_notice : NULL;
+        g_app.toast = g_notice[0] && plat_time_ms() < g_notice_until ? g_notice : NULL;
         if (!g_app.toast && g_transport.state == WEBRTC_CONNECTED && g_transport.steam_capture_unavailable)
             g_app.toast = g_transport.status;
         track_session();
@@ -4270,13 +3941,13 @@ int main(int argc, char **argv)
         sd_write_watch();
         phase_end(PHASE_TRACK);
         {
-            const u64 last_frame = g_transport.last_decoded_frame_at, at = osGetTime();
+            const u64 last_frame = g_transport.last_decoded_frame_at, at = plat_time_ms();
             g_app.video_stalled = g_app.view == VIEW_STREAM && last_frame && at > last_frame &&
                                   at - last_frame > 1500;
         }
         /* While video owns the top screen, redraw the lower screen only when
          * something on it can have changed. */
-        const u64 now = osGetTime();
+        const u64 now = plat_time_ms();
         const bool draw_bottom = g_app.view != VIEW_STREAM || g_app.touching || was_touching ||
                                  down || now - last_bottom_draw >= 250 ||
                                  /* Animations on the lower screen run at ~30 fps
@@ -4287,7 +3958,9 @@ int main(int argc, char **argv)
         was_touching = g_app.touching;
         if (g_app.view != VIEW_STREAM) game_art_pump();
         if (g_app.gallery_open) gallery_pump();
-        render(draw_bottom);
+        render(&g_app, draw_bottom);
+        const char *render_notice = render_take_notice();
+        if (render_notice) show_notice(render_notice);
         /* While streaming, don't wait for vblank: sleep inside poll() on the
          * media socket so a video frame is decoded the moment its packets
          * land. The 4 ms cap keeps input sampling fast. Build 49 spun on
@@ -4299,7 +3972,7 @@ int main(int argc, char **argv)
 
     finish_history();
     if (g_perf.active) perf_end(g_app.settings.install_id);
-    aptUnhook(&g_apt_cookie);
+    plat_on_system_event(NULL);
     queue_alert_exit();
     /* The media core stops before the sound it feeds is closed. */
     webrtc_transport_close(&g_transport);
@@ -4318,11 +3991,10 @@ int main(int argc, char **argv)
         net_worker_wait_idle(3000);
         if (net_worker_submit(NET_JOB_SEND_STATS, NULL, NULL)) net_worker_wait_idle(3000);
     }
-    aptSetSleepAllowed(true);
+    plat_allow_sleep(true);
     net_worker_stop();
     game_art_exit();
     shutdown_services();
     ui_exit();
-    gfxExit();
     return 0;
 }

@@ -16,6 +16,8 @@ typedef enum {
 } DeadzoneLevel;
 
 enum { LID_PAUSE, LID_SLEEP, LID_KEEP_PLAYING, LID_MODE_COUNT };
+/* Where the extra buttons go (Settings > Controls on the Vita). */
+enum { EXTRA_BUTTONS_REAR, EXTRA_BUTTONS_FRONT, EXTRA_BUTTONS_OFF, EXTRA_BUTTONS_COUNT };
 /* Automatic diagnostic reports: not asked yet, yes, or no. */
 enum { SHARE_ASK, SHARE_YES, SHARE_NO };
 /* Bumped when what is shared changes, so everyone is asked again:
@@ -63,6 +65,9 @@ typedef struct {
     /* How far the touch C-stick pushes for full speed: 0 small, 1 medium,
      * 2 large. */
     unsigned touch_stick_size;
+    /* Where the buttons a console lacks go (the Vita's L2 / R2 / L3 / R3):
+     * EXTRA_BUTTONS_REAR, _FRONT or _OFF. */
+    unsigned extra_buttons;
     /* The 3D slider in games (player suggestion): 0 off, 1 zoom, 2+ holds a
      * button while it is up (gfn_slider_choice_output). */
     unsigned slider;

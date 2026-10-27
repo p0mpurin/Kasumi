@@ -49,7 +49,8 @@ uint32_t steam_udp_local_ip(uint32_t *mask)
 int steam_udp_error(void) { return WSAGetLastError(); }
 
 #else
-#include <3ds.h>
+#include "platform.h"
+
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -58,7 +59,7 @@ int steam_udp_error(void) { return WSAGetLastError(); }
 #include <sys/socket.h>
 #include <unistd.h>
 
-uint64_t steam_now_ms(void) { return osGetTime(); }
+uint64_t steam_now_ms(void) { return plat_time_ms(); }
 
 int steam_udp_open(void)
 {
@@ -84,19 +85,18 @@ void steam_udp_close(int sock)
 
 uint32_t steam_udp_broadcast(void)
 {
-    struct in_addr ip, mask, broadcast;
-    if (R_SUCCEEDED(SOCU_GetIPInfo(&ip, &mask, &broadcast)) && broadcast.s_addr)
-        return ntohl(broadcast.s_addr);
+    u32 broadcast = 0;
+    if (plat_ip_info(NULL, NULL, &broadcast) && broadcast) return broadcast;
     return 0xFFFFFFFFu;
 }
 
 uint32_t steam_udp_local_ip(uint32_t *mask)
 {
-    struct in_addr ip, netmask, broadcast;
+    u32 ip = 0, netmask = 0;
     if (mask) *mask = 0;
-    if (R_FAILED(SOCU_GetIPInfo(&ip, &netmask, &broadcast))) return 0;
-    if (mask) *mask = ntohl(netmask.s_addr);
-    return ntohl(ip.s_addr);
+    if (!plat_ip_info(&ip, &netmask, NULL)) return 0;
+    if (mask) *mask = netmask;
+    return ip;
 }
 
 int steam_udp_error(void) { return errno; }

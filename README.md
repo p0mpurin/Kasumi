@@ -152,6 +152,9 @@ decodes it at half size and shows a steady 30 fps.
     Link (Remote Play on, in Steam's settings).
 - 2.4 GHz Wi-Fi with a good signal (3 bars is best).
 
+**PS Vita (preview):** any PS Vita or PS TV with HENkaku/Ensō. The same
+accounts work. The Vita build is new and still being tested: see below.
+
 ## Install
 
 <img src="docs/assets/install-qr.png" width="160" align="right" alt="QR code for Kasumi.cia">
@@ -169,6 +172,13 @@ After that, Kasumi updates itself: **Settings > Updates** shows what's new
 and installs the latest release in place (it checks automatically, only in
 the menus). Your login, library and settings are kept. Every download is
 checked against the release's SHA256SUMS before anything is installed.
+
+**PS Vita (preview):** install `Kasumi.vpk` from the Releases page with
+VitaShell. Kasumi keeps its files in `ux0:data/kasumi`. The game fills the
+screen; open the stream menu to see the controls panel. The rear touchpad's
+corners are L2 / R2 (top) and L3 / R3 (bottom). For now updates are
+downloaded to `ux0:data/kasumi/Kasumi.vpk` for you to install with
+VitaShell, and HOME Menu shortcuts and the HOME Menu theme are 3DS-only.
 
 ## Getting started
 
@@ -472,6 +482,19 @@ make cia MAKEROM=/path/to/makerom BANNERTOOL=/path/to/bannertool
 [makerom](https://github.com/3DSGuy/Project_CTR) and
 [bannertool](https://github.com/Steveice10/bannertool). How the stream,
 pacing and input work is described in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+
+For the PS Vita, install [VitaSDK](https://vitasdk.org/) with
+`vdpm curl opus`, then from the same shell:
+
+```sh
+bash tools/build-transport-vita.sh
+bash tools/build-aecm-vita.sh
+bash tools/build-vita.sh
+```
+
+`tools/build-vita.sh` produces `Kasumi.vpk`. The shared code lives in
+`source/`; each console's side of `include/platform.h` is in `source/3ds/`
+and `source/vita/`.
 
 To publish a release, set the version in the Makefile, write
 `docs/releases/v<version>.md`, and run `bash tools/make-release.sh` (with

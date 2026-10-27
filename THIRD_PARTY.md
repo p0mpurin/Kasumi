@@ -15,6 +15,8 @@ its own licence. All of these licences are compatible with GPL-3.0.
 | [stb_image, stb_image_write](https://github.com/nothings/stb) | MIT or public domain (in each header) | Box art decoding, PNG screenshots |
 | [WebRTC](https://webrtc.googlesource.com/src) AECM (mobile echo canceller), the subset packaged by [TriCord](https://github.com/2b-zipper/TriCord) | BSD-3-Clause with patent grant (`vendor/webrtc-aecm/LICENSE`, `PATENTS`) | Echo cancellation for voice chat |
 
+| [Jansson](https://github.com/akheron/jansson) 2.14, PS Vita build only | MIT (`vendor/jansson/LICENSE`) | JSON (VitaSDK's package is position-independent, which a Vita executable can't use) |
+
 ## Linked from devkitPro portlibs
 
 | Project | Licence |
@@ -25,6 +27,16 @@ its own licence. All of these licences are compatible with GPL-3.0.
 | [Opus](https://opus-codec.org/) | BSD-3-Clause |
 | [zlib](https://zlib.net/) | zlib |
 | Mbed TLS 2.28.8 (for libcurl) | Apache-2.0 |
+
+## Linked from VitaSDK packages (PS Vita build)
+
+| Project | Licence |
+|---|---|
+| [vita2d](https://github.com/xerpi/libvita2d) | MIT |
+| [libcurl](https://curl.se/) | curl licence (MIT-style) |
+| [OpenSSL](https://www.openssl.org/) 1.1.1 (for libcurl) | OpenSSL / SSLeay licence |
+| [Opus](https://opus-codec.org/) | BSD-3-Clause |
+| [zlib](https://zlib.net/), [zstd](https://github.com/facebook/zstd), libpng, libjpeg-turbo, FreeType, HarfBuzz, bzip2 (for vita2d and libcurl) | permissive |
 
 `romfs/cacert.pem` is the Mozilla CA certificate list as distributed by curl
 (MPL-2.0).

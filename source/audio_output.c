@@ -2,8 +2,8 @@
 #include "i18n.h"
 #include "diagnostic.h"
 #include "echo_cancel.h"
+#include "platform.h"
 
-#include <3ds.h>
 #include <opus/opus.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,8 +33,7 @@ static void apply_mix(void)
 {
     if (!g_mix_ready) return;
     const float v = g_muted ? 0.0f : g_volume;
-    float mix[12] = { v, v };
-    ndspChnSetMix(AUDIO_CHANNEL, mix);
+    plat_audio_channel_volume(AUDIO_CHANNEL, v, v);
 }
 
 void audio_output_set_volume(float volume)
@@ -53,7 +52,7 @@ void audio_output_set_muted(bool muted)
     apply_mix();
 }
 static int16_t *g_pcm;
-static ndspWaveBuf g_wavebufs[AUDIO_WAVEBUFS];
+static PlatAudioBuffer g_wavebufs[AUDIO_WAVEBUFS];
 static unsigned g_next_wavebuf;
 static bool g_prebuffering = true;
 static bool g_have_sequence;
@@ -61,32 +60,11 @@ static uint16_t g_last_sequence;
 static int g_last_frame_samples = 480;
 static unsigned g_concealed;
 static bool g_attempted;
-static bool g_ndsp_ready;
+static bool g_channel_ready;
 static char g_status[96] = "not started";
 static bool g_system_ready;
 static bool g_firmware_missing;
 static bool g_system_attempted;
-
-/* ndsp writes its variables into DSP shared memory at 0x1ff50000 and
- * 0x1ff70000. A CIA only has those mapped if its exheader asks for them
- * (resources/app.rsf); beta.3 and beta.4 CIAs did not and crashed in ndspInit
- * (crash dumps 30-32: a write to 0x1ff57ffe). Check first, and play without
- * sound rather than crash if they are missing. */
-static bool dsp_memory_mapped(void)
-{
-    static const u32 regions[2] = { 0x1FF50000, 0x1FF70000 };
-    for (int i = 0; i < 2; ++i) {
-        MemInfo info;
-        PageInfo page;
-        if (R_FAILED(svcQueryMemory(&info, &page, regions[i])) || info.state == MEMSTATE_FREE ||
-            info.base_addr + info.size < regions[i] + 0x8000) {
-            diagnostic_log("AUDIO", "dsp memory at %08lX not mapped (state=%lu)",
-                           (unsigned long)regions[i], (unsigned long)info.state);
-            return false;
-        }
-    }
-    return true;
-}
 
 /* Started once at launch while the app is idle, and kept up. */
 bool audio_system_init(void)
@@ -94,18 +72,8 @@ bool audio_system_init(void)
     if (g_system_ready) return true;
     if (g_system_attempted) return false;
     g_system_attempted = true;
-    if (!dsp_memory_mapped()) {
-        diagnostic_log("AUDIO", "dsp init skipped: playing without sound");
-        return false;
-    }
-    diagnostic_log("AUDIO", "dsp init begin");
-    diagnostic_checkpoint();
-    const Result result = ndspInit();
-    g_system_ready = R_SUCCEEDED(result);
-    /* D880A7FA: the DSP firmware dump (dspfirm.cdc) is not on the card. */
-    g_firmware_missing = result == (Result)0xD880A7FA;
-    diagnostic_log("AUDIO", "dsp init %s rc=%08lX", g_system_ready ? "ok" : "failed (no sound)",
-                   (unsigned long)result);
+    g_system_ready = plat_audio_init();
+    g_firmware_missing = plat_audio_firmware_missing();
     return g_system_ready;
 }
 
@@ -115,13 +83,13 @@ bool audio_system_firmware_missing(void) { return g_firmware_missing; }
 void audio_system_exit(void)
 {
     if (!g_system_ready) return;
-    ndspExit();
+    plat_audio_exit();
     g_system_ready = false;
 }
 
 bool audio_output_init(void)
 {
-    if (g_decoder && g_ndsp_ready) return true;
+    if (g_decoder && g_channel_ready) return true;
     if (g_attempted) return false;
     g_attempted = true;
 
@@ -140,10 +108,10 @@ bool audio_output_init(void)
         g_decoder = NULL;
         return false;
     }
-    g_ndsp_ready = true;
+    g_channel_ready = true;
 
     const size_t samples_per_buffer = AUDIO_MAX_SAMPLES * AUDIO_CHANNELS;
-    g_pcm = linearAlloc(samples_per_buffer * AUDIO_WAVEBUFS * sizeof(*g_pcm));
+    g_pcm = plat_audio_alloc(samples_per_buffer * AUDIO_WAVEBUFS * sizeof(*g_pcm));
     if (!g_pcm) {
         snprintf(g_status, sizeof(g_status), i18n_text("audio linearAlloc failed"));
         diagnostic_log("AUDIO", "%s", g_status);
@@ -153,20 +121,12 @@ bool audio_output_init(void)
     memset(g_pcm, 0, samples_per_buffer * AUDIO_WAVEBUFS * sizeof(*g_pcm));
     memset(g_wavebufs, 0, sizeof(g_wavebufs));
 
-    ndspChnWaveBufClear(AUDIO_CHANNEL);
-    ndspChnReset(AUDIO_CHANNEL);
-    ndspSetOutputMode(NDSP_OUTPUT_STEREO);
-    ndspChnSetInterp(AUDIO_CHANNEL, NDSP_INTERP_LINEAR);
-    ndspChnSetRate(AUDIO_CHANNEL, AUDIO_SAMPLE_RATE);
-    ndspChnSetFormat(AUDIO_CHANNEL, NDSP_FORMAT_STEREO_PCM16);
+    plat_audio_channel_open(AUDIO_CHANNEL, AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, false);
     g_mix_ready = true;
     apply_mix();
-    for (unsigned i = 0; i < AUDIO_WAVEBUFS; ++i) {
-        g_wavebufs[i].data_pcm16 = g_pcm + i * samples_per_buffer;
-        g_wavebufs[i].status = NDSP_WBUF_DONE;
-    }
+    for (unsigned i = 0; i < AUDIO_WAVEBUFS; ++i) g_wavebufs[i].data = g_pcm + i * samples_per_buffer;
     /* Paused until the prebuffer fills; queue_frame() starts playback. */
-    ndspChnSetPaused(AUDIO_CHANNEL, true);
+    plat_audio_channel_pause(AUDIO_CHANNEL, true);
     g_prebuffering = true;
     snprintf(g_status, sizeof(g_status), "ready 48k stereo, %u buffers, cap %u",
              AUDIO_WAVEBUFS, AUDIO_MAX_QUEUED);
@@ -196,8 +156,7 @@ static unsigned queued_buffers(void)
 {
     unsigned queued = 0;
     for (unsigned i = 0; i < AUDIO_WAVEBUFS; ++i)
-        if (g_wavebufs[i].status != NDSP_WBUF_DONE && g_wavebufs[i].status != NDSP_WBUF_FREE)
-            ++queued;
+        if (!plat_audio_buffer_idle(&g_wavebufs[i])) ++queued;
     return queued;
 }
 
@@ -209,27 +168,25 @@ static int queue_frame(const uint8_t *packet, size_t packet_size)
     if (queued == 0 && !g_prebuffering) {
         /* Underrun: hold playback until a cushion builds so it doesn't crackle. */
         g_prebuffering = true;
-        ndspChnSetPaused(AUDIO_CHANNEL, true);
+        plat_audio_channel_pause(AUDIO_CHANNEL, true);
     }
     if (queued >= AUDIO_MAX_QUEUED) return 0;
-    ndspWaveBuf *wave = &g_wavebufs[g_next_wavebuf];
-    if (wave->status != NDSP_WBUF_DONE && wave->status != NDSP_WBUF_FREE) return 0;
+    PlatAudioBuffer *wave = &g_wavebufs[g_next_wavebuf];
+    if (!plat_audio_buffer_idle(wave)) return 0;
 
     const int decoded = packet
-        ? opus_decode(g_decoder, packet, (opus_int32)packet_size, wave->data_pcm16,
-                      AUDIO_MAX_SAMPLES, 0)
-        : opus_decode(g_decoder, NULL, 0, wave->data_pcm16, g_last_frame_samples, 0);
+        ? opus_decode(g_decoder, packet, (opus_int32)packet_size, wave->data, AUDIO_MAX_SAMPLES, 0)
+        : opus_decode(g_decoder, NULL, 0, wave->data, g_last_frame_samples, 0);
     if (decoded <= 0) return decoded < 0 ? decoded : 0;
-    DSP_FlushDataCache(wave->data_pcm16, (size_t)decoded * AUDIO_CHANNELS * sizeof(int16_t));
     /* What the speakers are about to play, for voice chat's echo canceller
      * (does nothing while the mic is off). */
-    echo_cancel_far_end(wave->data_pcm16, (size_t)decoded);
-    wave->nsamples = (u32)decoded;
-    ndspChnWaveBufAdd(AUDIO_CHANNEL, wave);
+    echo_cancel_far_end(wave->data, (size_t)decoded);
+    wave->frames = (u32)decoded;
+    plat_audio_queue(AUDIO_CHANNEL, wave);
     g_next_wavebuf = (g_next_wavebuf + 1) % AUDIO_WAVEBUFS;
     if (g_prebuffering && queued + 1 >= AUDIO_PREBUFFER) {
         g_prebuffering = false;
-        ndspChnSetPaused(AUDIO_CHANNEL, false);
+        plat_audio_channel_pause(AUDIO_CHANNEL, false);
     }
     return decoded;
 }
@@ -268,14 +225,13 @@ unsigned audio_output_concealed(void) { return g_concealed; }
 
 void audio_output_close(void)
 {
-    if (g_ndsp_ready) {
+    if (g_channel_ready) {
         /* The driver itself stays up for the next stream. */
-        ndspChnWaveBufClear(AUDIO_CHANNEL);
-        ndspChnReset(AUDIO_CHANNEL);
-        g_ndsp_ready = false;
+        plat_audio_channel_close(AUDIO_CHANNEL);
+        g_channel_ready = false;
     }
     if (g_pcm) {
-        linearFree(g_pcm);
+        plat_audio_free(g_pcm);
         g_pcm = NULL;
     }
     if (g_decoder) {

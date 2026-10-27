@@ -1,6 +1,6 @@
 #pragma once
 
-#include <3ds/types.h>
+#include "platform.h"
 
 #define PROBE_PORT 50010
 

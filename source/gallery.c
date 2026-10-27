@@ -1,8 +1,6 @@
 #include "gallery.h"
+#include "platform.h"
 
-#include <3ds.h>
-#include <citro2d.h>
-#include <citro3d.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +8,7 @@
 
 #include "app_paths.h"
 #include "diagnostic.h"
+#include "ui.h"
 
 #define SHOT_DIR APP_DATA_DIR "/screenshots"
 #define MAX_SHOTS 256
@@ -30,18 +29,17 @@ static unsigned g_saved_count;
 static bool g_saved_dirty = true;
 
 /* Decoding happens on a thread; the UI uploads the result. */
-static Thread g_thread;
-static LightLock g_lock;
-static LightEvent g_wake;
+static PlatThread g_thread;
+static PlatLock g_lock;
+static PlatEvent g_wake;
 static volatile bool g_quit, g_open;
 static int g_want = -1;           /* index asked for (under g_lock) */
 static int g_decoded = -1;        /* index in g_pixels, waiting for upload */
 static int g_shown = -1;          /* index in the texture */
-static u32 *g_pixels;             /* TEX_W x TEX_H linear 0xRRGGBBAA */
+static u32 *g_pixels;             /* TEX_W x TEX_H 0xRRGGBBAA */
 static unsigned g_pic_w, g_pic_h; /* the picture inside g_pixels */
-static C3D_Tex g_tex;
-static bool g_tex_ready;
-static Tex3DS_SubTexture g_sub;
+/* Kept once made: the GPU may still be drawing it when the viewer closes. */
+static UiPicture *g_picture;
 
 static int compare_desc(const void *a, const void *b) { return strcmp((const char *)b, (const char *)a); }
 
@@ -132,28 +130,28 @@ static void worker(void *arg)
 {
     (void)arg;
     while (!g_quit) {
-        LightEvent_Wait(&g_wake);
+        plat_event_wait(&g_wake);
         if (g_quit) break;
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         const int want = g_want;
         const bool busy = g_decoded >= 0; /* the UI hasn't taken the last one */
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         if (want < 0 || busy || want == g_shown) continue;
         const bool ok = decode(want);
-        LightLock_Lock(&g_lock);
+        plat_lock(&g_lock);
         if (ok && g_want == want) g_decoded = want;
-        LightLock_Unlock(&g_lock);
+        plat_unlock(&g_lock);
         /* Asked for another meanwhile: go again. */
-        if (g_want != want) LightEvent_Signal(&g_wake);
+        if (g_want != want) plat_event_signal(&g_wake);
     }
 }
 
 static void request(int index)
 {
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_want = index;
-    LightLock_Unlock(&g_lock);
-    LightEvent_Signal(&g_wake);
+    plat_unlock(&g_lock);
+    plat_event_signal(&g_wake);
 }
 
 bool gallery_open(void)
@@ -163,14 +161,14 @@ bool gallery_open(void)
     g_saved_count = g_count;
     g_saved_dirty = false;
     if (!g_count) return false;
-    if (!g_pixels) g_pixels = linearAlloc(TEX_W * TEX_H * sizeof(u32));
+    if (!g_pixels) g_pixels = malloc(TEX_W * TEX_H * sizeof(u32));
     if (!g_pixels) return false;
-    LightLock_Init(&g_lock);
-    LightEvent_Init(&g_wake, RESET_ONESHOT);
+    plat_lock_init(&g_lock);
+    plat_event_init(&g_wake, false);
     g_quit = false;
     g_want = g_decoded = g_shown = -1;
     g_index = 0;
-    g_thread = threadCreate(worker, NULL, 32 * 1024, 0x3A, -1, false);
+    g_thread = plat_thread_create(worker, NULL, 32 * 1024, 0x3A, PLAT_CORE_ANY, false);
     if (!g_thread) return false;
     g_open = true;
     request(0);
@@ -182,9 +180,8 @@ void gallery_close(void)
 {
     if (!g_open) return;
     g_quit = true;
-    LightEvent_Signal(&g_wake);
-    threadJoin(g_thread, U64_MAX);
-    threadFree(g_thread);
+    plat_event_signal(&g_wake);
+    plat_thread_join(g_thread);
     g_thread = NULL;
     g_open = false;
     /* The texture stays until the next open (the GPU may still be drawing
@@ -213,9 +210,9 @@ bool gallery_delete_current(void)
     --g_count;
     g_saved_count = g_count;
     if (g_index >= g_count && g_index) --g_index;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     g_decoded = -1;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     g_shown = -1;
     if (g_count) request((int)g_index);
     return true;
@@ -238,50 +235,24 @@ const char *gallery_caption(void)
 void gallery_pump(void)
 {
     if (!g_open) return;
-    LightLock_Lock(&g_lock);
+    plat_lock(&g_lock);
     const int decoded = g_decoded;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     if (decoded < 0) return;
-    if (!g_tex_ready) {
-        g_tex_ready = C3D_TexInit(&g_tex, TEX_W, TEX_H, GPU_RGBA8);
-        if (g_tex_ready) {
-            C3D_TexSetFilter(&g_tex, GPU_LINEAR, GPU_LINEAR);
-            C3D_TexSetWrap(&g_tex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-        }
-    }
-    if (g_tex_ready) {
-        /* As game_art.c: one display transfer, row 0 at the top (v = 1).
-         * Outside a frame, so it waits for the GPU to finish the last one
-         * before overwriting the texture it may have drawn. */
-        GSPGPU_FlushDataCache(g_tex.data, g_tex.size);
-        GSPGPU_FlushDataCache(g_pixels, TEX_W * TEX_H * sizeof(u32));
-        C3D_SyncDisplayTransfer(g_pixels, GX_BUFFER_DIM(TEX_W, TEX_H), (u32 *)g_tex.data, GX_BUFFER_DIM(TEX_W, TEX_H),
-                                GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
-                                GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                                GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
-        GSPGPU_InvalidateDataCache(g_tex.data, g_tex.size);
-        g_sub.width = (u16)g_pic_w;
-        g_sub.height = (u16)g_pic_h;
-        g_sub.left = 0.0f;
-        g_sub.top = 1.0f;
-        g_sub.right = (float)g_pic_w / TEX_W;
-        g_sub.bottom = 1.0f - (float)g_pic_h / TEX_H;
-        g_shown = decoded;
-    }
-    LightLock_Lock(&g_lock);
+    if (!g_picture) g_picture = ui_picture_create(PIC_W, PIC_H);
+    if (g_picture && ui_picture_set(g_picture, g_pixels, g_pic_w, g_pic_h, TEX_W)) g_shown = decoded;
+    plat_lock(&g_lock);
     g_decoded = -1;
-    LightLock_Unlock(&g_lock);
+    plat_unlock(&g_lock);
     /* The thread may be waiting to decode the next one. */
-    LightEvent_Signal(&g_wake);
+    plat_event_signal(&g_wake);
 }
 
 bool gallery_draw(float x, float y, float w, float h)
 {
-    if (!g_open || !g_tex_ready || g_shown != (int)g_index || !g_pic_w || !g_pic_h) return false;
+    if (!g_open || !g_picture || g_shown != (int)g_index || !g_pic_w || !g_pic_h) return false;
     float scale = w / g_pic_w;
     if (h / g_pic_h < scale) scale = h / g_pic_h;
     const float dw = g_pic_w * scale, dh = g_pic_h * scale;
-    const C2D_Image image = { &g_tex, &g_sub };
-    return C2D_DrawImageAt(image, x + (w - dw) / 2.0f, y + (h - dh) / 2.0f, 0.0f, NULL, scale, scale);
+    return ui_picture_draw(g_picture, x + (w - dw) / 2.0f, y + (h - dh) / 2.0f, scale, 1.0f);
 }

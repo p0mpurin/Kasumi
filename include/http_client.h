@@ -17,6 +17,8 @@ typedef struct {
 } HttpResponse;
 
 bool http_global_init(void);
+/* Trust Kasumi's certificate bundle on a curl handle (CURL *). */
+void http_use_ca_bundle(void *curl);
 void http_global_exit(void);
 bool http_request(const char *method, const char *url, const char *user_agent,
                   const char *const *headers, size_t header_count,
