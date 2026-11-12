@@ -861,7 +861,20 @@ void xcloud_session_tick(GfnClient *c)
         char why[120];
         error_text(&r, why, sizeof(why));
         char text[160];
-        snprintf(text, sizeof(text), i18n_text("Xbox Cloud Gaming couldn't start the game%s%.110s"), why[0] ? ": " : ".", why);
+        /* "Unknown: Type:  ServerError : InternalCode :-2147186503 :" (report
+         * QEXRWX, Fortnite, during Provisioning: before Kasumi sends anything)
+         * read as gibberish. Say it is Microsoft's, with the code in hex. */
+        const char *internal = strstr(why, "InternalCode :");
+        if (internal && strstr(why, "ServerError")) {
+            const unsigned long hresult = (unsigned long)(uint32_t)strtol(internal + 14, NULL, 10);
+            snprintf(text, sizeof(text),
+                     i18n_text("Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play "
+                               "with the same account."),
+                     hresult);
+        } else {
+            snprintf(text, sizeof(text), i18n_text("Xbox Cloud Gaming couldn't start the game%s%.110s"), why[0] ? ": " : ".",
+                     why);
+        }
         session_failed(c, text, "failed");
     }
     json_decref(root);

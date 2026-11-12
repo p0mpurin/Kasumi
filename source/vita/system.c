@@ -147,3 +147,4 @@ u32 plat_device_memory_free(void)
 void plat_notify_light(u32 color) { (void)color; }
 bool plat_lid_closed(void) { return false; }
 void plat_screens_on(bool on) { (void)on; }
+bool plat_lower_screen_light(unsigned percent) { (void)percent; return true; }

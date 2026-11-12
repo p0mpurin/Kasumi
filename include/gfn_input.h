@@ -97,12 +97,27 @@ void gfn_button_map_clean(GfnButtonMap *map);
 void gfn_input_set_custom_map(const GfnButtonMap *map);
 bool gfn_input_custom_map_active(void);
 
-/* The 3D slider setting: 0 off, 1 zoom (main.c), then buttons. The output
- * of a choice (GFN_OUT_NONE for off and zoom) is held while the slider is
- * past halfway. */
+/* The 3D slider setting, as saved: off and zoom (main.c), the buttons from
+ * 2, then the later choices at the end so saved buttons keep their meaning.
+ * The output of a choice (GFN_OUT_NONE unless it is a button) is held while
+ * the slider is past halfway. */
+enum {
+    GFN_SLIDER_OFF = 0,
+    GFN_SLIDER_ZOOM = 1,
+    GFN_SLIDER_CAMERA = 15,
+    GFN_SLIDER_LOWER_LIGHT = 16,
+};
 unsigned gfn_slider_choice_count(void);
 unsigned gfn_slider_choice_output(unsigned choice);
+/* The order the setting cycles through: the buttons come last. */
+unsigned gfn_slider_choice_position(unsigned choice);
+unsigned gfn_slider_choice_at(unsigned position);
 void gfn_input_set_slider_output(unsigned output);
+/* The slider multiplies the C-Stick's speed: down is the Camera stick speed
+ * setting, up is twice that. */
+void gfn_input_set_slider_camera(bool on);
+/* The C-Stick's speed now, 100 being a full push at full speed. */
+unsigned gfn_input_camera_percent(void);
 
 void gfn_input_configure(const GfnInputConfig *config);
 /* Buttons the 3DS lacks (L3, R3, Guide), held from the touch screen; they

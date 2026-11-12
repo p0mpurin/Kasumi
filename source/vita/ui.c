@@ -59,9 +59,9 @@ PNG(sec_controls) PNG(sec_picture) PNG(sec_sound) PNG(sec_network) PNG(sec_syste
 PNG(no_cover) PNG(grid) PNG(look_ring) PNG(look_dot) PNG(svc_gfn) PNG(svc_xbox) PNG(svc_steam)
 PNG(icon_gfn) PNG(icon_xbox) PNG(icon_steam) PNG(cover_bigpicture) PNG(cover_desktop) PNG(hub_backdrop)
 PNG(bg_seiji) PNG(bg_sakura) PNG(bg_kin) PNG(bg_ai) PNG(bg_fuji)
-PNG(bg_beni) PNG(bg_matcha) PNG(bg_kaki) PNG(bg_sumi) PNG(bg_shiro)
+PNG(bg_beni) PNG(bg_matcha) PNG(bg_kaki) PNG(bg_sumi) PNG(bg_shiro) PNG(bg_yuki)
 PNG(glass_seiji) PNG(glass_sakura) PNG(glass_kin) PNG(glass_ai) PNG(glass_fuji)
-PNG(glass_beni) PNG(glass_matcha) PNG(glass_kaki) PNG(glass_sumi) PNG(glass_shiro)
+PNG(glass_beni) PNG(glass_matcha) PNG(glass_kaki) PNG(glass_sumi) PNG(glass_shiro) PNG(glass_yuki)
 
 static const unsigned char *const ART[UI_IMAGE_COUNT] = {
     _binary_hero_png_start, _binary_mist_png_start, _binary_enso_png_start, _binary_seal_png_start,
@@ -85,6 +85,7 @@ static const unsigned char *const WALLPAPERS[UI_THEME_COUNT][2] = {
     { _binary_bg_kaki_png_start, _binary_glass_kaki_png_start },
     { _binary_bg_sumi_png_start, _binary_glass_sumi_png_start },
     { _binary_bg_shiro_png_start, _binary_glass_shiro_png_start },
+    { _binary_bg_yuki_png_start, _binary_glass_yuki_png_start },
 };
 
 static vita2d_texture *g_art[UI_IMAGE_COUNT];

@@ -6,6 +6,9 @@
 
 #include "ui.h"
 
+/* Where the last video frame was drawn, in screen pixels (render.c). */
+UiRect render_video_rect(void);
+
 #define UI_SCREEN_WIDTH 960.0f
 #define UI_SCREEN_HEIGHT 544.0f
 

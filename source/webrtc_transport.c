@@ -504,11 +504,24 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
      * 15 s. Once a picture has shown, a bigger stretch only holds it. Some
      * games send even more (Dragon Ball Xenoverse 2: 2560x1440). */
     /* Build 146: decoded at half size instead (xcloud_decode_720p). */
-    const bool decode_720p = t->xcloud && xcloud_decode_720p() &&
-                             decode_width == 1280 && decode_height == 720;
+    const bool hd_size = decode_width == 1280 && decode_height == 720;
+    /* Fortnite gets 6 s to switch. In November players often saw the 15 s
+     * message below on Fortnite itself: it had stayed at 720p. So after 6 s
+     * it is decoded at half size like every other game; if the switch comes
+     * later, the decoder is rebuilt for the smaller picture at its keyframe. */
+    if (t->xcloud && !xcloud_decode_720p() && !t->xcloud_hd_fallback && hd_size && t->xcloud_hd_since &&
+        plat_time_ms() - t->xcloud_hd_since >= 6000) {
+        t->xcloud_hd_fallback = true;
+        diagnostic_flag("xcloud-no-resize", "still %ux%u after 6 s: decoding it at half size", source_width,
+                        source_height);
+    }
+    const bool decode_720p = t->xcloud && (xcloud_decode_720p() || t->xcloud_hd_fallback) && hd_size;
     if (t->xcloud && !decode_720p) {
         const uint64_t now = plat_time_ms();
         if (decode_width <= 960 && decode_height <= 544) {
+            if (t->xcloud_hd_fallback && t->xcloud_hd_since)
+                diagnostic_log("XCLOUD", "switched to %ux%u %llu ms after the 720p start", source_width,
+                               source_height, (unsigned long long)(now - t->xcloud_hd_since));
             t->xcloud_hd_since = 0;
         } else {
             if (!t->xcloud_hd_since) t->xcloud_hd_since = now;
@@ -1060,7 +1073,16 @@ static void steam_tick(WebRtcTransport *t)
 
     GfnGamepadState pad_state;
     gfn_input_read(&pad_state);
-    if (t->pointer_mode && !t->keyboard_mode) {
+    if (t->pointer_mode && !t->keyboard_mode && t->picture_mode) {
+        /* Picture mode: the stylus places the pointer, so the C-Stick is the
+         * mouse wheel instead, a notch at a time (faster when pushed far). */
+        const int ry = pad_state.right_y;
+        const int push = ry < 0 ? -ry : ry;
+        if (push > 12000 && now - t->last_wheel_at >= (push > 26000 ? 90u : 180u)) {
+            steam_session_mouse_wheel(s, ry > 0);
+            t->last_wheel_at = now;
+        }
+    } else if (t->pointer_mode && !t->keyboard_mode) {
         /* The right stick moves the PC's mouse, at the same speed as on
          * GeForce NOW (per 16 ms step); A clicks (main.c). */
         if (now - t->last_mouse_move_at >= 16) {
@@ -1068,6 +1090,9 @@ static void steam_tick(WebRtcTransport *t)
             if (dx || dy) steam_session_mouse_move(s, dx, dy);
             t->last_mouse_move_at = now;
         }
+    }
+    if (t->pointer_mode && !t->keyboard_mode) {
+        /* The mouse owns the right stick, A and B (main.c: clicks). */
         pad_state.right_x = pad_state.right_y = 0;
         pad_state.buttons &= (uint16_t)~gfn_input_buttons_for_keys(PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_X);
     }
@@ -1115,14 +1140,13 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
      * tests (2026-10-12): the 720p tier is the smallest (osName android or
      * anything unknown; windows/tizen get 1080p), a 30 fps or max-mbps
      * request is ignored, and 400 kbps held at ~460 kbps with 720p60 kept.
-     * Fewer bits per frame is all we can ask for: less for MVD to chew. */
-    const unsigned cap = xcloud_decode_720p() ? 1200 : 0;
+     * Fewer bits per frame is all we can ask for: less for MVD to chew.
+     * Fortnite too, in case it stays at 720p (xcloud_hd_fallback); at its
+     * usual 800x480 this is about what GeForce NOW sends. */
+    const unsigned cap = 1200;
     char video_ice[600];
-    if (cap)
-        snprintf(video_ice, sizeof(video_ice), "c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s", cap, cap * 1000,
-                 strstr(ice, "a=rtcp:9"));
-    else
-        snprintf(video_ice, sizeof(video_ice), "%s", ice);
+    snprintf(video_ice, sizeof(video_ice), "c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s", cap, cap * 1000,
+             strstr(ice, "a=rtcp:9"));
     const char *fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
     char *out = malloc(SDP_LIMIT);
     if (!out) {
@@ -1512,6 +1536,15 @@ int webrtc_transport_steam_quit_game(WebRtcTransport *t)
     return sent ? 1 : running ? -1 : 0;
 }
 
+int webrtc_transport_steam_activity(WebRtcTransport *t)
+{
+    if (!t || !t->peer || !t->steam) return 0;
+    plat_rlock(&g_peer_lock);
+    const int activity = steam_session_activity(t->peer);
+    plat_runlock(&g_peer_lock);
+    return activity;
+}
+
 void webrtc_transport_set_pointer_mode(WebRtcTransport *t, bool enabled)
 {
     if (!t || t->pointer_mode == enabled) return;
@@ -1561,6 +1594,35 @@ bool webrtc_transport_mouse_move(WebRtcTransport *t, int16_t dx, int16_t dy)
         (char *)packet, size, 0) >= 0;
     plat_runlock(&g_peer_lock);
     if (ok) t->mouse_moves++;
+    return ok;
+}
+
+bool webrtc_transport_mouse_to(WebRtcTransport *t, float x, float y)
+{
+    if (!t || !t->peer || !t->steam || !t->input_ready) return false;
+    plat_rlock(&g_peer_lock);
+    steam_session_mouse_to(t->peer, x, y);
+    plat_runlock(&g_peer_lock);
+    t->mouse_moves++;
+    return true;
+}
+
+bool webrtc_transport_mouse_button_id(WebRtcTransport *t, unsigned button, bool pressed)
+{
+    if (!t || !t->peer || !t->steam || !t->input_ready) return false;
+    plat_rlock(&g_peer_lock);
+    const bool ok = steam_session_mouse_button_id(t->peer, button, pressed);
+    plat_runlock(&g_peer_lock);
+    if (ok && !pressed) t->mouse_clicks++;
+    return ok;
+}
+
+bool webrtc_transport_mouse_wheel(WebRtcTransport *t, bool up)
+{
+    if (!t || !t->peer || !t->steam || !t->input_ready) return false;
+    plat_rlock(&g_peer_lock);
+    const bool ok = steam_session_mouse_wheel(t->peer, up);
+    plat_runlock(&g_peer_lock);
     return ok;
 }
 

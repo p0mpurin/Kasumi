@@ -87,8 +87,26 @@ static const unsigned char SLIDER_OUTPUTS[] = {
     GFN_OUT_L2, GFN_OUT_R2, GFN_OUT_CROSS, GFN_OUT_CIRCLE, GFN_OUT_SQUARE, GFN_OUT_TRIANGLE,
 };
 static unsigned g_slider_output;
+static bool g_slider_camera;
+_Static_assert(2 + sizeof(SLIDER_OUTPUTS) == GFN_SLIDER_CAMERA, "the buttons end where the later choices start");
 
-unsigned gfn_slider_choice_count(void) { return 2 + sizeof(SLIDER_OUTPUTS); }
+unsigned gfn_slider_choice_count(void) { return GFN_SLIDER_LOWER_LIGHT + 1; }
+
+unsigned gfn_slider_choice_position(unsigned choice)
+{
+    if (choice < 2) return choice;
+    if (choice >= GFN_SLIDER_CAMERA) return choice - GFN_SLIDER_CAMERA + 2;
+    return choice + 2;
+}
+
+unsigned gfn_slider_choice_at(unsigned position)
+{
+    if (position < 2) return position;
+    if (position < 4) return GFN_SLIDER_CAMERA + position - 2;
+    return position - 2;
+}
+
+void gfn_input_set_slider_camera(bool on) { g_slider_camera = on; }
 
 unsigned gfn_slider_choice_output(unsigned choice)
 {
@@ -273,6 +291,18 @@ uint16_t gfn_input_buttons_for_keys(u32 keys)
     return buttons;
 }
 
+/* Camera speed: Slow tops out at 70 %; Fast and Fastest reach a full turn
+ * with a lighter push on the short C-Stick. The 3D slider can add up to as
+ * much again; with no slider on the console it reads 0 and adds nothing. */
+static float camera_gain_now(const PlatInput *in)
+{
+    static const float camera_gain[] = { 0.7f, 1.0f, 1.3f, 1.6f };
+    const float gain = camera_gain[g_config.camera_speed];
+    return g_slider_camera ? gain * (1.0f + in->slider_3d) : gain;
+}
+
+unsigned gfn_input_camera_percent(void) { return (unsigned)(camera_gain_now(plat_input()) * 100.0f + 0.5f); }
+
 /* Radial deadzone, rescaled so the deadzone edge is zero and the stick's
  * physical rim reaches full deflection in every direction. */
 static void scale_stick(int raw_x, int raw_y, int rim, float gain, int16_t *out_x, int16_t *out_y)
@@ -362,16 +392,14 @@ void gfn_input_read(GfnGamepadState *state)
      * on a 2DS: it reads 0, so nothing is pressed). */
     if (g_slider_output && in->slider_3d > 0.5f) press_output(state, g_slider_output, &sticks);
     scale_stick(in->lstick_x, in->lstick_y, PLAT_LSTICK_REACH, 1.0f, &state->left_x, &state->left_y);
-    /* Camera speed: Slow tops out at 70 %; Fast and Fastest reach a full
-     * turn with a lighter push on the short C-Stick. */
-    static const float camera_gain[] = { 0.7f, 1.0f, 1.3f, 1.6f };
+    const float camera = camera_gain_now(in);
     /* The touch camera's stick joins the C-Stick before scaling, so it
      * has the same deadzone, curve and speed. */
     const int cx = in->rstick_x + (int)(g_touch_stick_x * (float)PLAT_RSTICK_REACH);
     const int cy = in->rstick_y + (int)(g_touch_stick_y * (float)PLAT_RSTICK_REACH);
-    scale_stick(cx, cy, PLAT_RSTICK_REACH, camera_gain[g_config.camera_speed], &state->right_x, &state->right_y);
+    scale_stick(cx, cy, PLAT_RSTICK_REACH, camera, &state->right_x, &state->right_y);
     if (g_touch_look_x != 0.0f || g_touch_look_y != 0.0f) {
-        const float gain = camera_gain[g_config.camera_speed] * 32767.0f;
+        const float gain = camera * 32767.0f;
         float rx = (float)state->right_x + g_touch_look_x * gain;
         float ry = (float)state->right_y + g_touch_look_y * gain;
         rx = rx > 32767.0f ? 32767.0f : rx < -32767.0f ? -32767.0f : rx;

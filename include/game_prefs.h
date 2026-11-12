@@ -20,6 +20,10 @@ typedef struct {
     int gyro_speed;
     /* Touch camera (AppSettings.touch_camera). */
     int touch_camera;
+    /* Where the lower screen's magnifier looks, in thousandths of the
+     * picture across and down (-1 = the middle). Kept per game: each has
+     * its minimap somewhere else. Not an "option" (no dot in the list). */
+    int mag_x, mag_y;
     /* Custom button mapping, when has_map. */
     bool has_map;
     GfnButtonMap map;

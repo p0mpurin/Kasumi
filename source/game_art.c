@@ -179,6 +179,22 @@ static void free_retired(void)
     g_retire_new_count = 0;
 }
 
+void game_art_release(void)
+{
+    plat_lock(&g_lock);
+    for (int i = 0; i < ART_SLOTS; ++i) {
+        ArtSlot *slot = &g_slots[i];
+        /* The worker is filling this one: it lands as decoded pixels. */
+        if (slot->state == ART_LOADING) continue;
+        if (slot->state == ART_READY) retire_picture(slot->picture);
+        free(slot->pixels);
+        memset(slot, 0, sizeof(*slot));
+    }
+    plat_unlock(&g_lock);
+}
+
+void game_art_collect(void) { free_retired(); }
+
 static ArtSlot *find(const char *key)
 {
     for (int i = 0; i < ART_SLOTS; ++i)

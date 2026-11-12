@@ -47,7 +47,10 @@ typedef enum {
     /* Leaving a Steam Link stream: just disconnect, or quit the game on the PC. */
     MODAL_STEAM_LEAVE,
     /* A game for paid GeForce NOW memberships, on a free account. */
-    MODAL_PAID_ONLY
+    MODAL_PAID_ONLY,
+    /* Something worth knowing, once: text and an OK button (fits the lower
+     * screen during a stream, where the top shows the game). */
+    MODAL_TIP
 } AppModal;
 
 typedef enum {
@@ -104,10 +107,16 @@ typedef enum {
     ACTION_GUIDE_NEXT,
     ACTION_GUIDE_BACK,
     ACTION_GUIDE_SKIP,
+    /* The tour's choice pages: the arrows beside the value. */
+    ACTION_GUIDE_VALUE_PREV,
+    ACTION_GUIDE_VALUE_NEXT,
     ACTION_UPDATE_PRIMARY,
     ACTION_UPDATE_CLOSE,
     ACTION_UPDATE_LATER,
     ACTION_WHATS_NEW_CLOSE,
+    ACTION_NEWS_NEXT,
+    ACTION_NEWS_BACK,
+    ACTION_NEWS_TRY,
     ACTION_DISCORD_CLOSE,
     ACTION_MAP_PREV,
     ACTION_MAP_NEXT,
@@ -143,7 +152,7 @@ enum { SETTING_LAYOUT, SETTING_PAD_NAMES, SETTING_MAPPING, SETTING_TRIGGERS, SET
        SETTING_CAMERA_SPEED, SETTING_CAMERA_INVERT, SETTING_SCREENSHOTS,
        SETTING_VIDEO_SHARPEN, SETTING_VIDEO_COLOR, SETTING_TOUCH_CAMERA, SETTING_TOUCH_STICK_SIZE,
        SETTING_FRAME_RATE, SETTING_MIC, SETTING_SERVICE, SETTING_SLIDER, SETTING_HOME_THEME,
-       SETTING_LANGUAGE, SETTING_EXTRA_BUTTONS, SETTING_COUNT };
+       SETTING_LANGUAGE, SETTING_EXTRA_BUTTONS, SETTING_KANJI_LABELS, SETTING_LOWER_PANEL, SETTING_COUNT };
 
 /* Library tabs (L / R). */
 enum { LIBRARY_TAB_ALL, LIBRARY_TAB_FAVOURITES, LIBRARY_TAB_RECENT, LIBRARY_TAB_COUNT };
@@ -156,7 +165,11 @@ enum { SERVICE_GFN, SERVICE_XBOX, SERVICE_STEAM, SERVICE_COUNT };
 enum { OPTION_BITRATE, OPTION_CAMERA_SPEED, OPTION_CAMERA_INVERT, OPTION_TOUCH_CAMERA, OPTION_GYRO,
        OPTION_GYRO_SPEED, OPTION_LAYOUT, OPTION_MAPPING, OPTION_CONNECTION, OPTION_COUNT };
 
-#define GUIDE_PAGES 5
+#define GUIDE_PAGES 8
+/* Bumped when the tour gains something every player should see: those who
+ * finished an older one get it once more. 2 = 1.2's choices (language,
+ * Japanese labels, button layout and names). */
+#define GUIDE_VERSION 2
 
 /* The stream menu is a 2 x 4 grid, read row by row. */
 enum { STREAM_MENU_RESUME, STREAM_MENU_SCREENSHOT, STREAM_MENU_CONTROLS, STREAM_MENU_ZONE,
@@ -214,6 +227,8 @@ typedef struct {
     /* Software update page and the one-time "what's new" page. */
     bool update_open;
     bool whats_new_open;
+    /* Which What's new card (NEWS), or -1 for the release notes alone. */
+    int whats_new_page;
     /* The one-time Discord invite card. */
     bool discord_open;
     int notes_scroll;
@@ -222,7 +237,7 @@ typedef struct {
     AppModal modal;
     char modal_title[48];
     char modal_jp[24];
-    char modal_text[192];
+    char modal_text[320];
     /* The code of the diagnostic report just sent ("K7F-2QX"). */
     char report_code[16];
 
@@ -247,6 +262,17 @@ typedef struct {
     bool genshin_session;
 
     bool keyboard_open;
+    /* Steam Link's picture mode: the lower screen shows the game and a tap
+     * clicks there (MOUSE cycles pad -> mouse pad -> picture). picture_mode
+     * is the player's choice; picture_view whether it is showing (a Steam
+     * stream, mouse mode, Wide), and the mark where the last tap landed. */
+    bool picture_mode, picture_view;
+    /* The magnifier is in the lower screen's panel (Settings > Picture >
+     * Lower screen panel), looking at mag_x, mag_y (0..1, its centre). */
+    bool magnifier_view;
+    float mag_x, mag_y;
+    float picture_mark_x, picture_mark_y;
+    u64 picture_mark_at;
     bool stream_menu;
     int stream_menu_index;
     /* Controls reference sheet on the lower screen. */
@@ -376,6 +402,8 @@ AppAction screens_touch(const App *app, int x, int y);
 uint16_t screens_stream_held_buttons(const App *app, int x, int y);
 /* Stream view: the centre panel (touchpad or zoom map). */
 UiRect screens_stream_panel(void);
+/* Where the picture sits in picture mode, in touch-screen pixels. */
+UiRect screens_picture_rect(void);
 /* The touch camera's pad and its R3 corner, while look_mode is on. */
 UiRect screens_look_pad(void);
 UiRect screens_look_r3(void);

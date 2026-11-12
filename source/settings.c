@@ -54,6 +54,10 @@ void settings_defaults(AppSettings *settings)
     settings->sound_effects = true;
     settings->mic = false;
     settings->discord_seen = false;
+    settings->kanji_labels = true;
+    settings->lower_panel = LOWER_PANEL_STATS;
+    settings->guide_version = 0;
+    settings->steam_desktop_tip_seen = false;
     settings->lid_mode = LID_PAUSE;
     settings->guide_done = false;
     settings->auto_update = true;
@@ -65,6 +69,7 @@ void settings_defaults(AppSettings *settings)
     settings->share_stats = false;
     settings->share_consent = 0;
     settings->install_id[0] = '\0';
+    settings->news_seen[0] = '\0';
     settings->server[0] = '\0';
     settings->provider[0] = '\0';
 }
@@ -136,6 +141,17 @@ bool settings_load(AppSettings *settings)
     settings->sound_effects = read_bool(root, "sound_effects", settings->sound_effects);
     settings->mic = read_bool(root, "mic", settings->mic);
     settings->discord_seen = read_bool(root, "discord_seen", settings->discord_seen);
+    settings->kanji_labels = read_bool(root, "kanji_labels", settings->kanji_labels);
+    {
+        json_t *panel = json_object_get(root, "lower_panel");
+        if (json_is_integer(panel) && json_integer_value(panel) >= 0 && json_integer_value(panel) < LOWER_PANEL_COUNT)
+            settings->lower_panel = (unsigned)json_integer_value(panel);
+    }
+    {
+        json_t *version = json_object_get(root, "guide_version");
+        if (json_is_integer(version)) settings->guide_version = (unsigned)json_integer_value(version);
+    }
+    settings->steam_desktop_tip_seen = read_bool(root, "steam_desktop_tip_seen", settings->steam_desktop_tip_seen);
     /* Older settings files only had lid_keeps_playing (true: keep playing). */
     const int lid_fallback = read_bool(root, "lid_keeps_playing", false) ? LID_KEEP_PLAYING : LID_PAUSE;
     settings->lid_mode = (unsigned)read_int(root, "lid_mode", lid_fallback, LID_MODE_COUNT);
@@ -150,6 +166,8 @@ bool settings_load(AppSettings *settings)
     settings->xbox_service = read_bool(root, "xbox_service", settings->xbox_service);
     settings->steam_service = read_bool(root, "steam_service", settings->steam_service);
     settings->share_consent = (unsigned)read_int(root, "share_consent", 0, 1000);
+    json_t *news = json_object_get(root, "news_seen");
+    if (json_is_string(news)) snprintf(settings->news_seen, sizeof(settings->news_seen), "%s", json_string_value(news));
     json_t *install = json_object_get(root, "install_id");
     if (json_is_string(install)) snprintf(settings->install_id, sizeof(settings->install_id), "%s", json_string_value(install));
     json_t *server = json_object_get(root, "server");
@@ -210,6 +228,11 @@ static json_t *settings_json(const AppSettings *settings)
     json_object_set_new(root, "mic", json_boolean(settings->mic));
     json_object_set_new(root, "discord_seen", json_boolean(settings->discord_seen));
     json_object_set_new(root, "language", json_integer((json_int_t)settings->language));
+    json_object_set_new(root, "kanji_labels", json_boolean(settings->kanji_labels));
+    json_object_set_new(root, "lower_panel", json_integer((json_int_t)settings->lower_panel));
+    json_object_set_new(root, "guide_version", json_integer((json_int_t)settings->guide_version));
+    json_object_set_new(root, "news_seen", json_string(settings->news_seen));
+    json_object_set_new(root, "steam_desktop_tip_seen", json_boolean(settings->steam_desktop_tip_seen));
     if (settings->has_map) game_prefs_write_map(root, &settings->map);
     return root;
 }
@@ -267,6 +290,15 @@ void settings_apply_picture(const AppSettings *settings)
     audio_output_set_volume((float)settings->volume / 5.0f);
 }
 
+float settings_lower_panel_zoom(unsigned lower_panel)
+{
+    /* "2x" means twice as large as on the top screen. The panel (182 pixels,
+     * 48 mm on a New 3DS XL) is under half the top screen's width (106 mm),
+     * so showing half the picture in it would come out smaller, not larger. */
+    const float panel_to_top = 2.2f;
+    return (lower_panel == LOWER_PANEL_MAG3 ? 3.0f : 2.0f) * panel_to_top;
+}
+
 void settings_apply_input(const AppSettings *settings)
 {
     const GfnInputConfig config = {
@@ -281,6 +313,7 @@ void settings_apply_input(const AppSettings *settings)
     gfn_input_configure(&config);
     gfn_input_set_xbox_names(settings->xbox_names);
     gfn_input_set_slider_output(gfn_slider_choice_output(settings->slider));
+    gfn_input_set_slider_camera(settings->slider == GFN_SLIDER_CAMERA);
     /* Every game's own map, if there is one (a game's own map or layout
      * replaces it at launch, main.c). */
     if (settings->has_map) gfn_input_set_custom_map(&settings->map);

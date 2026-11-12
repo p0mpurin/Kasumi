@@ -72,6 +72,7 @@ int session_stage(const App *app);
 bool screens_session_failed(const App *app);
 
 /* The game page: the chosen store, play time as text. */
+const char *details_hint(const GfnGame *game);
 const char *details_store(const App *app, const GfnGame *game);
 void format_played(char *out, size_t size, uint32_t seconds);
 /* A per-game options row's value, and whether this game changes it. */
@@ -84,11 +85,28 @@ bool binding_changed(const App *app, int input);
 
 const char *update_phase_title(const UpdateInfo *info);
 
-/* The first-run guide. */
+/* The first-run tour. A page with a setting (>= 0) is a choice: left / right
+ * change it there and then, the rest is read-only. */
 typedef struct {
     const char *kanji, *jp, *en, *body, *tip;
+    int setting;
 } GuidePage;
 extern const GuidePage GUIDE[GUIDE_PAGES];
+
+/* What's new: a few cards, once per release, for everyone who updates. Try
+ * it sets a theme, opens the setting or starts the tour. */
+#define NEWS_RELEASE "1.2"
+typedef enum { NEWS_TRY_NONE, NEWS_TRY_SETTING, NEWS_TRY_TOUR, NEWS_TRY_THEME } NewsTry;
+typedef enum { NEWS_SHOW_THEME, NEWS_SHOW_PICTURE, NEWS_SHOW_MAGNIFIER, NEWS_SHOW_SLIDER, NEWS_SHOW_LABELS,
+               NEWS_SHOW_FIXES } NewsShow;
+typedef struct {
+    const char *kanji, *jp, *en, *body, *where;
+    NewsTry try_kind;
+    int setting;
+    NewsShow show;
+} NewsCard;
+extern const NewsCard NEWS[];
+extern const int NEWS_COUNT;
 
 /* Was this status line written from this message (in the chosen language)? */
 bool status_from(const char *status, const char *english_format);

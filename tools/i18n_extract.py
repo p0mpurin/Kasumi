@@ -30,13 +30,13 @@ FILES = [
     "steam_session.c", "updater.c", "webrtc_transport.c", "nvst_signal.c", "remote_keyboard.c",
     "shortcut.c", "shortcut_cia.c", "gfn_input.c", "gallery.c", "net_worker.c", "report.c",
     "audio_output.c", "mic_capture.c", "game_prefs.c", "screenshot.c", "providers.c", "provider.c",
-    "render.c", "system.c", "package.c",
+    "render.c", "system.c", "package.c", "http_client.c",
 ]
 # Lines that never show text to the player.
 SKIP_LINE = re.compile(
     r"diagnostic_(log|flag|checkpoint)|#include|#define\s+\w+_PATH|fopen|json_(object|pack|string|integer|"
     r"is_|array|load|dump|true|false)|strcmp|strncmp|strstr|strcasecmp|http_request|\"Content-|curl_|"
-    r"printf\(\s*\"\[|svcOutputDebugString|APP_DATA_DIR|sdmc:|https?://|\.json|\.txt|\.png|\.bin")
+    r"printf\(\s*\"\[|svcOutputDebugString|_Static_assert|body_contains|-----(BEGIN|END) |APP_DATA_DIR|sdmc:|https?://|\.json|\.txt|\.png|\.bin")
 LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 

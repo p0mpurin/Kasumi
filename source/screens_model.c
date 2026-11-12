@@ -74,6 +74,9 @@ const SettingEntry SETTING_ENTRIES[] = {
 #endif
     { SETTING_FILTER, NULL, NULL },
     { SETTING_STATS, NULL, NULL },
+#if PLAT_HAS_WIDE_MODE
+    { SETTING_LOWER_PANEL, NULL, NULL },
+#endif
     { -1, "音と色", "SOUND & LOOK" },
     { SETTING_VOLUME, NULL, NULL },
     { SETTING_MENU_AUDIO, NULL, NULL },
@@ -91,6 +94,7 @@ const SettingEntry SETTING_ENTRIES[] = {
     { SETTING_SERVER, NULL, NULL },
     { -1, "本体", "SYSTEM" },
     { SETTING_LANGUAGE, NULL, NULL },
+    { SETTING_KANJI_LABELS, NULL, NULL },
 #if PLAT_HAS_LID
     { SETTING_LID, NULL, NULL },
 #endif
@@ -202,6 +206,8 @@ const char *const SETTING_LABELS[SETTING_COUNT] = {
     [SETTING_UPDATE_CHANNEL] = "Update channel", [SETTING_PROVIDER] = "GeForce NOW provider",
     [SETTING_SERVICE] = "Cloud service", [SETTING_LANGUAGE] = "Language",
     [SETTING_EXTRA_BUTTONS] = "L2 / R2 / L3 / R3",
+    [SETTING_KANJI_LABELS] = "Japanese labels",
+    [SETTING_LOWER_PANEL] = "Lower screen panel",
 };
 const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_LAYOUT] = "ボタン配置", [SETTING_TRIGGERS] = "トリガー",
@@ -227,6 +233,8 @@ const char *const SETTING_JP[SETTING_COUNT] = {
     [SETTING_UPDATE_CHANNEL] = "チャンネル", [SETTING_PROVIDER] = "提供元", [SETTING_SERVICE] = "サービス",
     [SETTING_LANGUAGE] = "言語",
     [SETTING_EXTRA_BUTTONS] = "追加ボタン",
+    [SETTING_KANJI_LABELS] = "日本語表記",
+    [SETTING_LOWER_PANEL] = "下画面",
 };
 
 /* NVIDIA's store codes, as people know the stores. */
@@ -313,10 +321,12 @@ unsigned setting_option(const App *app, int setting, unsigned *count)
     case SETTING_CAMERA_INVERT: *count = 3; return s->camera_invert;
     case SETTING_TOUCH_CAMERA: *count = 3; return s->touch_camera;
     case SETTING_TOUCH_STICK_SIZE: *count = 3; return s->touch_stick_size;
-    case SETTING_SLIDER: *count = gfn_slider_choice_count(); return s->slider;
+    case SETTING_SLIDER: *count = gfn_slider_choice_count(); return gfn_slider_choice_position(s->slider);
     case SETTING_FRAME_RATE: *count = 2; return s->fps60 ? 1 : 0;
     case SETTING_THEME: *count = UI_THEME_COUNT; return s->theme;
     case SETTING_LANGUAGE: *count = LANG_COUNT; return s->language;
+    case SETTING_KANJI_LABELS: *count = 2; return s->kanji_labels ? 0 : 1;
+    case SETTING_LOWER_PANEL: *count = LOWER_PANEL_COUNT; return s->lower_panel % LOWER_PANEL_COUNT;
     case SETTING_VOLUME: *count = 6; return s->volume;
     case SETTING_MENU_AUDIO: *count = 2; return s->mute_in_menus ? 1 : 0;
     case SETTING_LID: *count = LID_MODE_COUNT; return s->lid_mode;
@@ -375,10 +385,16 @@ const char *setting_value(const App *app, int setting)
     case SETTING_TOUCH_STICK_SIZE:
         return s->touch_stick_size == 0 ? "Small" : s->touch_stick_size == 2 ? "Large" : "Medium";
     case SETTING_SLIDER:
-        return s->slider == 0 ? "Off" : s->slider == 1 ? "Zoom" : gfn_output_short_name(gfn_slider_choice_output(s->slider));
+        return s->slider == GFN_SLIDER_OFF ? "Off" : s->slider == GFN_SLIDER_ZOOM ? "Zoom"
+             : s->slider == GFN_SLIDER_CAMERA ? "Camera speed" : s->slider == GFN_SLIDER_LOWER_LIGHT ? "Dim lower screen"
+             : gfn_output_short_name(gfn_slider_choice_output(s->slider));
     case SETTING_FRAME_RATE: return s->fps60 ? "60 fps (beta)" : "30 fps";
     case SETTING_THEME: return ui_theme_name((UiTheme)s->theme);
     case SETTING_LANGUAGE: return i18n_name((Lang)s->language);
+    case SETTING_KANJI_LABELS: return s->kanji_labels ? "Shown" : "Hidden";
+    case SETTING_LOWER_PANEL:
+        return s->lower_panel == LOWER_PANEL_MAG3 ? "Magnifier 3x" :
+               s->lower_panel == LOWER_PANEL_MAG2 ? "Magnifier 2x" : "Stream stats";
     case SETTING_VOLUME: {
         static const char *const levels[6] = { "Muted", "20 %", "40 %", "60 %", "80 %", "100 %" };
         return levels[s->volume < 6 ? s->volume : 5];
@@ -537,7 +553,7 @@ static const char *vita_description(const App *app, int setting)
              : s->camera_invert == 1 ? "Pushing the right stick up looks down, like a flight stick. Gyro aim is not inverted."
                                      : "Both directions of the right stick are reversed. Gyro aim is not inverted.";
     case SETTING_THEME:
-        return "The colour and the wallpaper behind the menus. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.";
+        return "The colour and the wallpaper behind the menus. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi, Shiro or Yuki.";
     case SETTING_VOLUME:
         return "Game audio volume in Kasumi, on top of the Vita's own volume buttons.";
     case SETTING_MUSIC: {
@@ -637,8 +653,10 @@ const char *setting_description(const App *app, int setting)
                                         : "How far you push the touch C-stick for full speed. Medium suits most games.";
     case SETTING_SLIDER: {
         static char text[140];
-        if (s->slider == 0) return "The 3D slider does nothing in games. Slide it to choose zoom or a button.";
-        if (s->slider == 1) return "In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.";
+        if (s->slider == GFN_SLIDER_OFF) return "The 3D slider does nothing in games. Choose zoom, camera speed, dimming the lower screen or a button.";
+        if (s->slider == GFN_SLIDER_CAMERA) return "In a game, slide the 3D slider up to speed up the C-Stick. All the way down is your Camera stick speed; all the way up is twice that.";
+        if (s->slider == GFN_SLIDER_LOWER_LIGHT) return "In a game, slide the 3D slider up to dim the lower screen; the very top turns it off. Menus light it up again.";
+        if (s->slider == GFN_SLIDER_ZOOM) return "In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.";
         snprintf(text, sizeof(text), i18n_text("In a game, the 3D slider past halfway holds %s until you slide it back down."),
                  gfn_output_name(gfn_slider_choice_output(s->slider)));
         return text;
@@ -681,9 +699,20 @@ const char *setting_description(const App *app, int setting)
              : s->camera_invert == 1 ? "Pushing the C-Stick up looks down, like a flight stick. Gyro aim is not inverted."
                                      : "Both directions of the C-Stick are reversed. Gyro aim is not inverted.";
     case SETTING_THEME:
-        return "The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.";
+        return "The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi, Shiro or Yuki.";
     case SETTING_LANGUAGE:
         return "The language of Kasumi's menus. Game titles and store names stay as they are.";
+    case SETTING_LOWER_PANEL:
+        return s->lower_panel == LOWER_PANEL_STATS
+            ? "The panel in the middle of the lower screen shows the stream's stats. The magnifier shows part of "
+              "the picture larger instead: a minimap, ammo or small text."
+            : "The panel shows part of the picture larger. Drag in it to choose which part; each game remembers "
+              "its spot. Wide screen mode only.";
+    case SETTING_KANJI_LABELS:
+        return s->kanji_labels
+            ? "The small Japanese line under each button and beside headings. Hide it for English only; the "
+              "kanji artwork stays."
+            : "English only on buttons and headings. The kanji artwork (seals, ensō) stays.";
     case SETTING_HOME_THEME:
         return "A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to "
                "/Themes; install it with Anemone3DS.";
@@ -827,7 +856,7 @@ void screens_setting_change(App *app, int setting, int direction)
         break;
     case SETTING_SLIDER: {
         const unsigned n = gfn_slider_choice_count();
-        s->slider = (s->slider + n + step) % n;
+        s->slider = gfn_slider_choice_at((gfn_slider_choice_position(s->slider) + n + step) % n);
         break;
     }
     case SETTING_FRAME_RATE: s->fps60 = !s->fps60; break;
@@ -836,6 +865,13 @@ void screens_setting_change(App *app, int setting, int direction)
         /* Applied at once, so the menu on screen changes language too. */
         s->language = (s->language + LANG_COUNT + step) % LANG_COUNT;
         i18n_set((Lang)s->language);
+        break;
+    case SETTING_LOWER_PANEL:
+        s->lower_panel = (s->lower_panel + LOWER_PANEL_COUNT + (unsigned)step) % LOWER_PANEL_COUNT;
+        break;
+    case SETTING_KANJI_LABELS:
+        s->kanji_labels = !s->kanji_labels;
+        ui_set_kanji_labels(s->kanji_labels);
         break;
     case SETTING_VOLUME: s->volume = (s->volume + 6 + step) % 6; break;
     case SETTING_MENU_AUDIO: s->mute_in_menus = !s->mute_in_menus; break;
@@ -969,6 +1005,16 @@ bool screens_session_failed(const App *app)
            app->signal->state == NVST_SIGNAL_ERROR;
 }
 
+/* The game page's own line in the status strip. It showed the library's
+ * "Library: N games (Y refreshes)", but on this page Y is the favourite
+ * button (issue #19). */
+const char *details_hint(const GfnGame *game)
+{
+    const GamePrefs prefs = game_prefs_get(game->app_id);
+    return prefs.favourite ? "★ Favourite  ·  Y removes  ·  X: game options"
+                           : "Y: add to favourites  ·  X: game options";
+}
+
 const char *details_store(const App *app, const GfnGame *game)
 {
     if (app->details_variant < game->variant_count) return store_label(game->variants[app->details_variant].store);
@@ -1090,26 +1136,86 @@ const char *update_phase_title(const UpdateInfo *info)
 
 const GuidePage GUIDE[GUIDE_PAGES] = {
     { "霞", "ようこそ", "WELCOME TO KASUMI",
-      "Play on the New 3DS from GeForce NOW, Xbox Cloud Gaming, or your own PC with Steam Link. The game "
-      "runs elsewhere; the 3DS shows the picture and sends your buttons.",
-      "Next you pick a service on the hub. B always brings you back to it." },
-    { "鍵", "サインイン", "SIGN IN",
-      "Cloud services show a short code to enter on your phone or computer; no password is typed on the "
-      "3DS. Steam Link shows a code to type into Steam on your PC.",
-      "Logins and paired PCs stay only on this console's SD card." },
-    { "操", "操作", "CONTROLS",
-      "The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 "
-      "and Home / PS are on the lower screen.",
-      "Hold START + SELECT during play for the stream menu." },
+      "GeForce NOW, Xbox Cloud Gaming and your own PC's Steam games, played on your 3DS. First, a few quick "
+      "choices.",
+      "Signing in never asks for a password here: you type a short code on your phone or PC.", -1 },
+    { "言", "言語", "LANGUAGE",
+      "The language of Kasumi's menus. Left and right change it; game titles stay as they are.",
+      "Later: Settings > System > Language", SETTING_LANGUAGE },
+    { "字", "日本語表記", "JAPANESE LABELS",
+      "A small Japanese line sits under button names. Keep it for the look, or hide it for English only.",
+      "Later: Settings > System > Japanese labels", SETTING_KANJI_LABELS },
+#if PLAT_HAS_EXTRA_BUTTONS
+    { "操", "追加ボタン", "L2 / R2 / L3 / R3",
+      "The Vita has no L2, R2, L3 or R3: put them on the rear touchpad's corners or the screen's edges. PS is "
+      "in the stream menu.",
+      "Later: Settings > Controls > L2 / R2 / L3 / R3", SETTING_EXTRA_BUTTONS },
+#else
+    { "操", "ボタン配置", "BUTTON LAYOUT",
+      "Position: each button acts like the one in the same place on a PlayStation or Xbox pad. Letters: A "
+      "sends A. The picture shows what each one sends.",
+      "Later: Settings > Controls > Button layout", SETTING_LAYOUT },
+#endif
+    { "名", "表記", "BUTTON NAMES",
+      "How menus and hints name the pad's buttons: PlayStation (Cross, L1) or Xbox (A, LB). What they do "
+      "stays the same.",
+      "Later: Settings > Controls > Button names", SETTING_PAD_NAMES },
     { "画", "画質", "PICTURE & WI-FI",
-      "Stay close to your router (3 bars). For cloud games, Adaptive is the default; Steady 1 Mbps helps "
-      "if the picture stutters. ZOOM crops for small text.",
-      "Settings > Network > Connection check tests your Wi-Fi." },
-    { "遊", "機能", "EXTRAS",
-      "Gyro aiming, screenshots, zoom zones, themes, favourites and options for each game. Open a "
-      "game from the library to see them.",
-      "Settings > System > Getting started shows this guide again." },
+#if PLAT_HAS_WIDE_MODE
+      "Stay near your router. If the picture stutters, try Steady 1 Mbps; ZOOM on the lower screen crops in "
+      "for small text.",
+#else
+      "Stay near your router. If the picture stutters, try Steady 1 Mbps in Settings > Picture.",
+#endif
+      "Settings > Network > Connection check tests your Wi-Fi.", -1 },
+    { "遊", "遊び方", "IN A GAME",
+#if PLAT_HAS_EXTRA_BUTTONS
+      "Hold START + SELECT, or tap the handle at the top, for the stream menu: screenshots, buttons, keyboard "
+      "and quitting.",
+#else
+      "Hold START + SELECT for the stream menu. The lower screen has KEYS for typing, MOUSE for PC menus and "
+      "ZOOM.",
+#endif
+      "Steam Link: start games from Big Picture. On the PC desktop, Steam's desktop controls make the "
+      "left stick scroll.", -1 },
+    { "地", "案内", "WHERE THINGS ARE",
+      "Settings has six parts, from Controls to Account. Each game has its own options too: X on its page.",
+      "Settings > System > Getting started shows this tour again.", -1 },
 };
+
+const NewsCard NEWS[] = {
+    { "雪", "冬", "WINTER THEME",
+      "Yuki brings ice to the lower screen and snow over the menus. Until 7 January it snows in every theme.",
+      "Settings > Sound & look > Theme", NEWS_TRY_THEME, -1, NEWS_SHOW_THEME },
+    { "絵", "画面でクリック", "TAP TO CLICK",
+#if PLAT_HAS_WIDE_MODE
+      "On Steam Link, press MOUSE twice: the game shows on the lower screen. Tap to click, hold to right-click, "
+      "C-Stick scrolls.",
+#else
+      "On Steam Link, press MOUSE, then MOUSE again: tap the game to click, hold to right-click.",
+#endif
+      "Made for point-and-click games like Fallout.", NEWS_TRY_NONE, -1, NEWS_SHOW_PICTURE },
+#if PLAT_HAS_WIDE_MODE
+    { "拡", "拡大鏡", "MAGNIFIER",
+      "Part of the picture, bigger, on the lower screen: a minimap, ammo or small text. Drag it to pick the "
+      "spot.",
+      "Settings > Picture > Lower screen panel", NEWS_TRY_SETTING, SETTING_LOWER_PANEL, NEWS_SHOW_MAGNIFIER },
+#endif
+#if PLAT_HAS_3D_SLIDER
+    { "立", "3Dボリューム", "3D SLIDER",
+      "Two new jobs for the 3D slider: speed up the C-Stick while you play, or dim the lower screen.",
+      "Settings > Controls > 3D slider", NEWS_TRY_SETTING, SETTING_SLIDER, NEWS_SHOW_SLIDER },
+#endif
+    { "字", "あなた好みに", "YOUR WAY",
+      "A short tour sets your language, button layout and button names. The Japanese under buttons can be "
+      "hidden now.",
+      "Settings > System > Japanese labels", NEWS_TRY_TOUR, -1, NEWS_SHOW_LABELS },
+    { "直", "修正", "FIXED",
+      "Fortnite on Xbox no longer stops at 720p, a second game in a row shows its picture, and errors say what "
+      "to do.",
+      NULL, NEWS_TRY_NONE, -1, NEWS_SHOW_FIXES },
+};
+const int NEWS_COUNT = (int)(sizeof(NEWS) / sizeof(NEWS[0]));
 
 /* Was this status line written from this message (in the chosen language)?
  * Compares the text before the first value. */

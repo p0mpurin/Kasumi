@@ -189,6 +189,14 @@ void gallery_close(void)
     g_shown = -1;
 }
 
+void gallery_release(void)
+{
+    if (g_open || !g_picture) return;
+    ui_picture_free(g_picture);
+    g_picture = NULL;
+    g_shown = -1;
+}
+
 unsigned gallery_count(void) { return g_count; }
 unsigned gallery_index(void) { return g_index; }
 

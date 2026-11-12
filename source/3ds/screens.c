@@ -1,6 +1,7 @@
 #include "app.h"
 #include "screens_model.h"
 #include "platform.h"
+#include "ui_3ds.h"
 #include "app_paths.h"
 
 #include <math.h>
@@ -82,7 +83,7 @@ static const UiRect SET_NEXT = { 244, 188, 60, 44 };
 /* Settings grid: three by two section tiles. */
 static UiRect set_tile(int i)
 {
-    return (UiRect){ 16.0f + (float)(i % 3) * 98.0f, 34.0f + (float)(i / 3) * 76.0f, 92.0f, 70.0f };
+    return (UiRect){ 16.0f + (float)(i % 3) * 98.0f, 10.0f + (float)(i / 3) * 88.0f, 92.0f, 82.0f };
 }
 static int g_touched_section = -1;
 int screens_touched_section(void) { return g_touched_section; }
@@ -100,6 +101,7 @@ static const UiRect MODAL_LEFT = { 40, 132, 116, 46 };
 static const UiRect MODAL_RIGHT = { 164, 132, 116, 46 };
 /* A modal with one button: centred where the pair sits. */
 static const UiRect MODAL_ONLY = { 102, 132, 116, 46 };
+static const UiRect MODAL_TIP_OK = { 102, 186, 116, 44 };
 static const UiRect MENU_PANEL = { 12, 6, 296, 228 };
 
 /* Game details, lower screen. */
@@ -120,6 +122,8 @@ static const UiRect MAP_CANCEL = { 114, 196, 92, 38 };
 static const UiRect MAP_DONE = { 212, 196, 92, 38 };
 
 /* Guide, lower screen. */
+static const UiRect GUIDE_VALUE_PREV = { 16, 42, 44, 40 };
+static const UiRect GUIDE_VALUE_NEXT = { 260, 42, 44, 40 };
 static const UiRect GUIDE_BACK = { 16, 188, 92, 44 };
 static const UiRect GUIDE_SKIP = { 114, 188, 92, 44 };
 static const UiRect GUIDE_NEXT = { 212, 188, 92, 44 };
@@ -156,6 +160,49 @@ static UiRect menu_item(int index)
 }
 
 UiRect screens_stream_panel(void) { return STR_PANEL; }
+
+/* Picture mode: the whole picture, its shape kept, above the stream buttons. */
+UiRect screens_picture_rect(void)
+{
+    unsigned w = 0, h = 0;
+    mvd_video_wide_size(&w, &h);
+    if (!w || !h) w = 16, h = 9;
+    const float area_w = UI_BOTTOM_WIDTH, area_h = STR_BUTTON_Y - 4.0f;
+    float pw = area_w, ph = area_w * (float)h / (float)w;
+    if (ph > area_h) {
+        ph = area_h;
+        pw = area_h * (float)w / (float)h;
+    }
+    return (UiRect){ floorf((area_w - pw) / 2.0f), floorf((area_h - ph) / 2.0f), floorf(pw), floorf(ph) };
+}
+
+/* Picture mode's lower screen: the game, a ring where the stylus last
+ * pointed, and the stream buttons. Messages lie over the picture's top. */
+static void draw_picture_bottom(const App *app)
+{
+    ui_rect(0, 0, UI_BOTTOM_WIDTH, STR_BUTTON_Y, UI_RGBA(0x00, 0x00, 0x00, 0xFF));
+    const UiRect r = screens_picture_rect();
+    if (!ui_draw_video_in(r.x, r.y, r.w, r.h))
+        ui_text(160, r.y + r.h / 2 - 6, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, "Waiting for the picture...");
+    const u64 since = plat_time_ms() - app->picture_mark_at;
+    if (app->picture_mark_at && since < 450) {
+        /* A crosshair opening out and fading: here is where it clicked. */
+        const float k = (float)since / 450.0f, x = app->picture_mark_x, y = app->picture_mark_y;
+        const float a = 3.0f + 6.0f * k, b = a + 6.0f;
+        const u32 c = ui_with_alpha(UI_ACCENT, (u8)(255.0f * (1.0f - k)));
+        ui_line(x - b, y, x - a, y, 1.5f, c);
+        ui_line(x + a, y, x + b, y, 1.5f, c);
+        ui_line(x, y - b, x, y - a, 1.5f, c);
+        ui_line(x, y + a, x, y + b, 1.5f, c);
+    }
+    const char *message = app->video_stalled ? "Connection unstable - waiting for video" : app->toast;
+    if (message) {
+        /* Two lines: this banner lies over the picture, and it teaches the mode. */
+        const bool two = ui_text_width(message, 11) > 296;
+        ui_rect(0, 0, UI_BOTTOM_WIDTH, two ? 38 : 21, ui_with_alpha(app->video_stalled ? UI_KIN : UI_ACCENT_DEEP, 0xE0));
+        ui_text_wrap(160, 3, 11, app->video_stalled ? UI_BG : UI_TEXT, UI_ALIGN_CENTER, 296, 2, 16, message);
+    }
+}
 
 static bool pressed(const App *app, UiRect r)
 {
@@ -236,7 +283,7 @@ static void draw_status_bar(const App *app, float width)
 
 static void draw_title(float center, float y, const char *jp, const char *en)
 {
-    if (ui_has_japanese()) {
+    if (ui_show_jp()) {
         ui_text(center, y - 2.0f, 12.0f, UI_ACCENT, UI_ALIGN_CENTER, jp);
         ui_label(center, y + 12.0f, 11.0f, UI_TEXT, UI_ALIGN_CENTER, en);
     } else {
@@ -256,8 +303,34 @@ static void draw_status_strip(const App *app, const char *text)
     const bool toast = app->toast != NULL;
     if (toast) ui_rect(0, 0, UI_BOTTOM_WIDTH, 23, UI_ACCENT_DEEP);
     ui_circle(14.0f, 11.0f, 3.0f, signed_in ? UI_ACCENT : UI_TEXT_FAINT);
-    ui_text_fit(UI_BOTTOM_WIDTH / 2, 5.0f, 11.0f, toast ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_CENTER,
-                260.0f, toast ? app->toast : text);
+    /* Too long for the line (warnings were cut off mid-word): the two
+     * halves take turns, 3.5 s each. */
+    const char *shown = toast ? app->toast : text;
+    char half[200];
+    if (shown && shown[0]) {
+        const char *full = i18n_text(shown);
+        const size_t n = strlen(full);
+        if (n < sizeof(half) - 8 && ui_text_width(full, 11.0f) > 258.0f) {
+            size_t cut = 0;
+            for (size_t i = 1; i < n; ++i) {
+                if (full[i] != ' ') continue;
+                memcpy(half, full, i);
+                half[i] = '\0';
+                if (ui_text_width(half, 11.0f) > 244.0f) break;
+                cut = i;
+            }
+            if (cut) {
+                if ((ui_ticks() / 3500) % 2 == 0) {
+                    memcpy(half, full, cut);
+                    snprintf(half + cut, sizeof(half) - cut, " …");
+                } else {
+                    snprintf(half, sizeof(half), "… %s", full + cut + 1);
+                }
+                shown = half;
+            }
+        }
+    }
+    ui_text_fit(UI_BOTTOM_WIDTH / 2, 5.0f, 11.0f, toast ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_CENTER, 260.0f, shown);
     ui_circle(UI_BOTTOM_WIDTH - 14.0f, 11.0f, 3.0f, signed_in ? UI_ACCENT : UI_TEXT_FAINT);
     ui_hline(0, 23.0f, UI_BOTTOM_WIDTH, toast ? UI_ACCENT : UI_LINE);
 }
@@ -380,23 +453,12 @@ static void draw_petal(float x, float y, float size, float angle, float flip, u3
 /* Sakura petals drifting down on the wind, turning as they fall. */
 #define PETAL_COLOR UI_RGBA(0xF0, 0xC4, 0xD2, 0xFF)
 
+
+/* The theme's weather (ui_ambient_fx): petals, leaves, rain, snow... */
 static void draw_petals(float width, float height, u32 color, float strength)
 {
-    if (strength <= 0.01f) return;
-    const float t = (float)ui_ticks() / 1000.0f;
-    for (unsigned i = 0; i < 16; ++i) {
-        const float span = height + 30.0f;
-        const float y = fmodf(t * (8.0f + 11.0f * hash01(i, 1)) + hash01(i, 2) * span, span) - 10.0f;
-        if (y < 30.0f) continue;
-        const float wander = sinf(t * (0.5f + hash01(i, 4)) + (float)i) * 16.0f;
-        const float x = fmodf(hash01(i, 3) * (width + 40.0f) + t * (5.0f + 7.0f * hash01(i, 7)) + wander + 400.0f,
-                              width + 40.0f) - 20.0f;
-        const float spin = t * (0.6f + 1.4f * hash01(i, 6)) + (float)i;
-        const float flip = 0.3f + 0.7f * fabsf(cosf(spin * 0.8f));
-        const float fade = y < 52.0f ? (y - 30.0f) / 22.0f : 1.0f;
-        const float a = strength * fade * (0.35f + 0.5f * hash01(i, 8));
-        draw_petal(x, y, 2.2f + 2.0f * hash01(i, 5), spin, flip, ui_with_alpha(color, (u8)(255.0f * clamp01(a))));
-    }
+    (void)color;
+    ui_ambient_fx(width, 30.0f, height, strength, 16);
 }
 
 /* A service's art over the whole top screen, drifting slowly. */
@@ -557,7 +619,12 @@ static void draw_hub_backdrop(const App *app)
     if (f > 0.01f && a + 1 < SERVICE_COUNT) draw_ambient(a + 1, tint * f);
     ui_gradient(0, 0, UI_TOP_WIDTH, 110, ui_with_alpha(UI_BG, 0xB4), ui_with_alpha(UI_BG, 0x38));
     ui_gradient(0, 110, UI_TOP_WIDTH, 130, ui_with_alpha(UI_BG, 0x38), ui_with_alpha(UI_BG, 0xE6));
-    draw_petals(UI_TOP_WIDTH, UI_HEIGHT, PETAL_COLOR, 0.8f);
+    /* The theme shows on the home screen: its colour washed over the
+     * painting, a glow rising from below, and its own weather. */
+    const u32 theme = ui_theme_color(ui_theme());
+    ui_rect(0, 0, UI_TOP_WIDTH, UI_HEIGHT, ui_with_alpha(theme, 0x1C));
+    ui_gradient(0, 120, UI_TOP_WIDTH, 120, ui_with_alpha(theme, 0x00), ui_with_alpha(theme, 0x34));
+    draw_petals(UI_TOP_WIDTH, UI_HEIGHT, PETAL_COLOR, 0.9f);
 }
 
 /* Inside a service: its art behind everything, bright at the hand-over
@@ -680,8 +747,7 @@ static bool draw_painted_bottom(const App *app)
 {
     if (app->guide_page >= 0 || app->whats_new_open || app->update_open || app->discord_open) return false;
     const AppView v = app->view;
-    if (v != VIEW_HUB && v != VIEW_LIBRARY && v != VIEW_DETAILS && v != VIEW_LOGIN && v != VIEW_SESSION)
-        return false;
+    if (v != VIEW_LIBRARY && v != VIEW_DETAILS && v != VIEW_LOGIN && v != VIEW_SESSION) return false;
     const float t = (float)ui_ticks() / 1000.0f;
     const float drift = sinf(t * 0.06f) * 0.03f;
     bool drawn;
@@ -709,9 +775,9 @@ static void draw_cover_backdrop(const GfnGame *game, float alpha)
     const float t = (float)ui_ticks() / 1000.0f;
     const float w = 420.0f, scale = w / GAME_ART_WIDTH, h = GAME_ART_HEIGHT * scale;
     const float x = 200.0f - w / 2 + sinf(t * 0.07f) * 8.0f, y = 120.0f - h * 0.42f + cosf(t * 0.05f) * 6.0f;
-    const UiImage special = special_cover(game);
-    if (special != UI_IMAGE_COUNT) ui_image_fit(special, x, y, w, h, alpha);
-    else game_art_draw(game, x, y, scale, alpha);
+    /* Not for Big Picture and the desktop: their art has words, which
+     * blown up this far bled through as stray letters. */
+    if (special_cover(game) == UI_IMAGE_COUNT) game_art_draw(game, x, y, scale, alpha);
     ui_gradient(0, 26, UI_TOP_WIDTH, 107, ui_with_alpha(UI_BG, 0x90), ui_with_alpha(UI_BG, 0x50));
     ui_gradient(0, 133, UI_TOP_WIDTH, 107, ui_with_alpha(UI_BG, 0x50), ui_with_alpha(UI_BG, 0xE8));
 }
@@ -798,9 +864,9 @@ static void draw_hub_top(const App *app)
         const u8 a = (u8)(255.0f * chrome);
         ui_gradient(0, 26, UI_TOP_WIDTH, 36, ui_with_alpha(UI_BG, (u8)(150.0f * chrome)), ui_with_alpha(UI_BG, 0));
         static const char *const jp = "何で遊ぶ？", *const en = "Choose where to play";
-        const float jw = ui_has_japanese() ? ui_text_width(jp, 15) + 10.0f : 0.0f, ew = ui_text_width(en, 15);
+        const float jw = ui_show_jp() ? ui_text_width(jp, 15) + 10.0f : 0.0f, ew = ui_text_width(en, 15);
         const float x0 = floorf(200.0f - (jw + ew) / 2.0f);
-        if (ui_has_japanese()) ui_text(x0, 33, 15, ui_with_alpha(service_light(app->hub_index), a), UI_ALIGN_LEFT, jp);
+        if (ui_show_jp()) ui_text(x0, 33, 15, ui_with_alpha(service_light(app->hub_index), a), UI_ALIGN_LEFT, jp);
         ui_text(x0 + jw, 33, 15, ui_with_alpha(UI_TEXT, a), UI_ALIGN_LEFT, en);
     }
     /* Far cards first, so the focused one sits on top. */
@@ -1335,7 +1401,7 @@ static void draw_gallery_top(const App *app)
 
 static void draw_gallery_bottom(const App *app)
 {
-    ui_text(160, 2, 12, UI_ACCENT, UI_ALIGN_CENTER, "写真");
+    if (ui_show_jp()) ui_text(160, 2, 12, UI_ACCENT, UI_ALIGN_CENTER, "写真");
     ui_label(160, 16, 11, UI_TEXT, UI_ALIGN_CENTER, "SCREENSHOTS");
     ui_hline(0, 29, UI_BOTTOM_WIDTH, UI_LINE);
     const unsigned count = gallery_count();
@@ -1445,7 +1511,7 @@ static void draw_settings_top(const App *app, bool entering)
         if (a <= 0.02f) continue;
         const u8 alpha = (u8)(255.0f * a);
         if (e->setting < 0) {
-            if (ui_has_japanese()) {
+            if (ui_show_jp()) {
                 const float w = ui_text(18, y + 5, 11, ui_with_alpha(UI_ACCENT, alpha), UI_ALIGN_LEFT, e->jp);
                 ui_label(18 + w + 6, y + 6, 11, ui_with_alpha(UI_TEXT_FAINT, alpha), UI_ALIGN_LEFT, e->en);
             } else {
@@ -1459,8 +1525,9 @@ static void draw_settings_top(const App *app, bool entering)
         const float label_w = ui_text(28, y + 3, 12,
                                       ui_with_alpha(is_selected ? UI_TEXT : UI_TEXT_DIM, alpha),
                                       UI_ALIGN_LEFT, SETTING_LABELS[s]);
-        ui_text(28 + label_w + 7, y + 4, 11, ui_with_alpha(UI_TEXT_FAINT, alpha), UI_ALIGN_LEFT,
-                SETTING_JP[s]);
+        if (ui_show_jp())
+            ui_text(28 + label_w + 7, y + 4, 11, ui_with_alpha(UI_TEXT_FAINT, alpha), UI_ALIGN_LEFT,
+                    SETTING_JP[s]);
         const u32 value_color = account ? UI_DANGER : is_selected ? UI_TEXT : UI_TEXT_DIM;
         const float value_right = is_selected && !account ? 364.0f : 378.0f;
         const float value_w = ui_text(value_right, y + 3, 12, ui_with_alpha(value_color, alpha),
@@ -1545,7 +1612,7 @@ static void draw_modal_top(const App *app, float p)
         pick[1] = partner.name;
     }
     ui_hint_row(200, 162, app->modal == MODAL_ERROR ? error : app->modal == MODAL_SEND_REPORT ? send :
-                          app->modal == MODAL_REPORT_SENT ? done :
+                          app->modal == MODAL_REPORT_SENT || app->modal == MODAL_TIP ? done :
                           app->modal == MODAL_CONFLICT ? (app->conflict_same_game ? resume_other : end_other) :
                           app->modal == MODAL_LIMIT_WAIT ? wait :
                           app->modal == MODAL_PROVIDER_PICK ? pick : confirm);
@@ -1588,9 +1655,9 @@ static void draw_shortcut_top(const App *app, const GfnGame *game)
     const int sheet = app->shortcut_sheet;
     const bool removing = shortcut_removing() && (sheet == SHORTCUT_SHEET_WORKING || sheet == SHORTCUT_SHEET_REMOVED);
     /* Below the status bar (wifi, battery, clock: rows 0-25). */
-    ui_text(16, 31, 12, UI_ACCENT, UI_ALIGN_LEFT, "近道");
-    const float tag_w = ui_text_width("近道", 12);
-    ui_label(16 + tag_w + 6, 33, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, "HOME MENU SHORTCUT");
+    if (ui_show_jp()) ui_text(16, 31, 12, UI_ACCENT, UI_ALIGN_LEFT, "近道");
+    const float tag_w = ui_show_jp() ? ui_text_width("近道", 12) + 6 : 0;
+    ui_label(16 + tag_w, 33, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, "HOME MENU SHORTCUT");
     ui_text_fit(384, 32, 11, UI_TEXT_DIM, UI_ALIGN_RIGHT, 170, game->title);
     /* The banner as the HOME Menu will show it (at 80 %), the icon beside it. */
     const float scale = 0.8f, bw = 256 * scale, bh = 128 * scale;
@@ -1721,27 +1788,33 @@ static void draw_details_top(const App *app)
     const bool played = play_history_get(game->app_id, &history) ||
                         (app->details_variant < game->variant_count &&
                          play_history_get(game->variants[app->details_variant].id, &history));
-    char line[96], value[48];
-    if (played && history.seconds) {
-        format_played(value, sizeof(value), history.seconds);
-        snprintf(line, sizeof(line), i18n_text("Played %s on Kasumi"), value);
-    } else {
-        snprintf(line, sizeof(line), "%s", played ? i18n_text("Played briefly on Kasumi") : i18n_text("Not played on Kasumi yet"));
-    }
-    ui_text_fit(x, y, 15, UI_TEXT, UI_ALIGN_LEFT, w, line);
-    y += 20;
+    /* The facts as tiles: time played, sessions, last played. */
     if (played) {
-        char when[24] = "";
+        char value[48] = "", sessions[16], when[24] = "-";
+        if (history.seconds) format_played(value, sizeof(value), history.seconds);
+        else snprintf(value, sizeof(value), "%s", i18n_text("Briefly"));
+        snprintf(sessions, sizeof(sessions), "%lu", (unsigned long)history.sessions);
         if (history.last_played) {
             const time_t at = (time_t)history.last_played;
             const struct tm *t = gmtime(&at);
             if (t) strftime(when, sizeof(when), "%d %b", t);
         }
-        /* One message per plural form: other languages don't add an s. */
-        snprintf(line, sizeof(line), i18n_text(history.sessions == 1 ? "%lu session%s%s" : "%lu sessions%s%s"),
-                 (unsigned long)history.sessions, when[0] ? i18n_text("  ·  last ") : "", when);
-        ui_text_fit(x, y, 15, UI_TEXT_DIM, UI_ALIGN_LEFT, w, line);
-        y += 20;
+        const char *labels[3] = { "PLAYED", "SESSIONS", "LAST PLAYED" };
+        const char *values[3] = { value, sessions, when };
+        const float tw = (w - 12.0f) / 3.0f;
+        for (int i = 0; i < 3; ++i) {
+            const float tx = x + (float)i * (tw + 6.0f);
+            ui_rect(tx, y, tw, 42, ui_with_alpha(UI_SURFACE, 0xB0));
+            ui_rect(tx, y, 2, 42, ui_with_alpha(light, 0xC0));
+            ui_label(tx + 9, y + 6, 10, UI_TEXT_FAINT, UI_ALIGN_LEFT, labels[i]);
+            ui_text_fit(tx + 9, y + 20, 15, UI_TEXT, UI_ALIGN_LEFT, tw - 14, values[i]);
+        }
+        y += 50;
+    } else {
+        ui_rect(x, y, w, 30, ui_with_alpha(UI_SURFACE, 0xB0));
+        ui_rect(x, y, 2, 30, ui_with_alpha(light, 0xC0));
+        ui_text_fit(x + 10, y + 7, 15, UI_TEXT, UI_ALIGN_LEFT, w - 16, "Not played on Kasumi yet");
+        y += 38;
     }
     const GamePrefs prefs = game_prefs_get(game->app_id);
     ui_text_fit(x, y, 15, UI_TEXT_DIM, UI_ALIGN_LEFT, w,
@@ -1762,8 +1835,8 @@ static void draw_options_sheet(const App *app, float p)
     ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, ui_with_alpha(UI_BG, (u8)(0xF0 * p)));
     ui_offset(0.0f, (1.0f - p) * 10.0f);
     /* Whose options these are: the game's own name, not just "this game". */
-    ui_text(16, 3, 12, UI_ACCENT, UI_ALIGN_LEFT, "設定");
-    ui_label(42, 5, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, "GAME OPTIONS");
+    if (ui_show_jp()) ui_text(16, 3, 12, UI_ACCENT, UI_ALIGN_LEFT, "設定");
+    ui_label(ui_show_jp() ? 42 : 16, 5, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT, "GAME OPTIONS");
     ui_text_fit(16, 18, 12, UI_TEXT, UI_ALIGN_LEFT, 222, game->title);
     ui_button(OPT_CLOSE, "DONE", "完了", UI_BUTTON_NORMAL, pressed(app, OPT_CLOSE));
     ui_hline(16, 36, 288, UI_LINE);
@@ -1922,7 +1995,7 @@ static void draw_details_bottom(const App *app, float overlay_p)
 {
     const GfnGame *game = app_game(app, app->selected);
     if (!game) return;
-    draw_status_strip(app, app->status);
+    draw_status_strip(app, "");
     ui_button(DET_PLAY, "PLAY", "遊ぶ", UI_BUTTON_PRIMARY, pressed(app, DET_PLAY));
     const bool gfn = app_service(app) == SERVICE_GFN;
     const bool choice = gfn && game->variant_count > 1;
@@ -2142,7 +2215,8 @@ static void draw_update_bottom(const App *app)
     }
 }
 
-static void draw_whats_new_top(const App *app)
+/* The release notes alone (a version without cards). */
+static void draw_notes_top(const App *app)
 {
     draw_title(200, 31, "新機能", "WHAT'S NEW");
     char heading[64];
@@ -2154,14 +2228,154 @@ static void draw_whats_new_top(const App *app)
     draw_footer(UI_TOP_WIDTH, hints);
 }
 
+/* A What's new card: what it is in a few words, and where it lives. */
+static void draw_whats_new_top(const App *app)
+{
+    if (app->whats_new_page < 0 || app->whats_new_page >= NEWS_COUNT) {
+        draw_notes_top(app);
+        return;
+    }
+    static int shown = -1;
+    static u64 changed_at;
+    if (shown != app->whats_new_page) {
+        shown = app->whats_new_page;
+        changed_at = plat_time_ms();
+    }
+    const float in = ui_ease_out(clamp01((float)(plat_time_ms() - changed_at) / 360.0f));
+    const NewsCard *c = &NEWS[app->whats_new_page];
+    char eyebrow[48];
+    snprintf(eyebrow, sizeof(eyebrow), i18n_text("WHAT'S NEW IN %s"), NEWS_RELEASE);
+    ui_label(200, 33, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, eyebrow);
+    const float rise = (1.0f - in) * 10.0f;
+    const u8 a8 = (u8)(255.0f * in);
+    ui_enso(200, 86 + rise, 30, ui_with_alpha(UI_ACCENT, a8));
+    ui_text(200, 71 + rise, 30, ui_with_alpha(UI_TEXT, a8), UI_ALIGN_CENTER, c->kanji);
+    draw_title(200, 124 + rise * 0.5f, c->jp, c->en);
+    ui_text_wrap(200, 151 + rise * 0.3f, 13, ui_with_alpha(UI_TEXT, a8), UI_ALIGN_CENTER, 352, 3, 16, c->body);
+    ui_dots(200, 208, (unsigned)NEWS_COUNT, (unsigned)app->whats_new_page, UI_ACCENT, UI_LINE_STRONG);
+    static const char *const hints[] = { "A", "Next", "B", "Back", "START", "Close", NULL };
+    static const char *const try_hints[] = { "A", "Next", "X", "Try it", "START", "Close", NULL };
+    ui_hint_row(200, 223, c->try_kind != NEWS_TRY_NONE ? try_hints : hints);
+}
+
+/* A frosted panel for text over the wallpaper (solid where there is none). */
+static void soft_panel(UiRect r)
+{
+    if (ui_glass(r)) ui_rect(r.x, r.y, r.w, r.h, UI_RGBA(0x00, 0x00, 0x00, 0x60));
+    else ui_rect(r.x, r.y, r.w, r.h, ui_with_alpha(UI_SURFACE, 0xD0));
+    ui_outline(r.x, r.y, r.w, r.h, 1.0f, UI_RGBA(0xFF, 0xFF, 0xFF, 0x22));
+}
+
+static void draw_face_diamond(float cx, float cy, bool playstation, bool position_layout, bool xbox);
+
+/* Each card's little picture, in the panel's top part. */
+static void draw_news_show(const App *app, const NewsCard *c, UiRect r)
+{
+    const float t = (float)ui_ticks() / 1000.0f;
+    const float cx = r.x + r.w / 2;
+    switch (c->show) {
+    case NEWS_SHOW_THEME:
+        for (int i = 0; i < UI_THEME_COUNT; ++i) {
+            const float sx = cx + (i - (UI_THEME_COUNT - 1) / 2.0f) * 24.0f;
+            const bool on = (unsigned)i == app->settings.theme;
+            if (on) ui_ring(sx, r.y + 34, 11, 1.5f, UI_TEXT, UI_BG);
+            ui_circle(sx, r.y + 34, i == UI_THEME_YUKI ? 8.0f : 6.5f, ui_theme_color((UiTheme)i));
+        }
+        ui_text(cx, r.y + 56, 15, UI_TEXT, UI_ALIGN_CENTER, ui_theme_name((UiTheme)app->settings.theme));
+        break;
+    case NEWS_SHOW_PICTURE: {
+        /* The lower screen showing the game, tapped. */
+        const UiRect s = { cx - 64, r.y + 10, 128, 80 };
+        ui_gradient(s.x, s.y, s.w, s.h, UI_RGBA(0x2C, 0x3C, 0x54, 0xFF), UI_RGBA(0x14, 0x1C, 0x28, 0xFF));
+        ui_rect(s.x + 10, s.y + 12, 46, 30, UI_RGBA(0x5A, 0x6E, 0x86, 0xFF));
+        ui_rect(s.x + 66, s.y + 12, 50, 8, UI_RGBA(0x8A, 0x9A, 0xAE, 0xFF));
+        ui_rect(s.x + 66, s.y + 26, 36, 8, UI_RGBA(0x8A, 0x9A, 0xAE, 0xFF));
+        ui_rect(s.x + 10, s.y + 54, 106, 14, UI_RGBA(0x3E, 0x50, 0x68, 0xFF));
+        ui_outline(s.x, s.y, s.w, s.h, 1.0f, UI_LINE_STRONG);
+        const float phase = fmodf(t, 1.6f) / 1.6f;
+        const float tx = s.x + 84, ty = s.y + 30;
+        ui_ring(tx, ty, 3.0f + phase * 14.0f, 1.5f, ui_with_alpha(UI_ACCENT, (u8)(230.0f * (1.0f - phase))),
+                UI_RGBA(0, 0, 0, 0));
+        ui_circle(tx, ty, 3.0f, UI_TEXT);
+        break;
+    }
+    case NEWS_SHOW_MAGNIFIER: {
+        /* A corner of the picture, shown again bigger. */
+        const UiRect s = { cx - 118, r.y + 18, 120, 72 };
+        ui_gradient(s.x, s.y, s.w, s.h, UI_RGBA(0x30, 0x40, 0x34, 0xFF), UI_RGBA(0x18, 0x22, 0x1C, 0xFF));
+        ui_outline(s.x, s.y, s.w, s.h, 1.0f, UI_LINE_STRONG);
+        const UiRect spot = { s.x + 86, s.y + 6, 28, 20 };
+        ui_circle(spot.x + 14, spot.y + 10, 6, UI_RGBA(0x9C, 0xC8, 0x8C, 0xFF));
+        ui_outline(spot.x, spot.y, spot.w, spot.h, 1.5f, UI_ACCENT);
+        const UiRect big = { cx + 22, r.y + 10, 96, 68 };
+        ui_rect(big.x, big.y, big.w, big.h, UI_RGBA(0x24, 0x32, 0x28, 0xFF));
+        ui_circle(big.x + 48, big.y + 34, 20, UI_RGBA(0x9C, 0xC8, 0x8C, 0xFF));
+        ui_outline(big.x, big.y, big.w, big.h, 1.5f, UI_ACCENT);
+        ui_line(spot.x + spot.w, spot.y, big.x, big.y, 1.0f, ui_with_alpha(UI_ACCENT, 0x90));
+        ui_line(spot.x + spot.w, spot.y + spot.h, big.x, big.y + big.h, 1.0f, ui_with_alpha(UI_ACCENT, 0x90));
+        ui_label(big.x + big.w / 2, big.y + big.h + 6, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "2× · 3×");
+        break;
+    }
+    case NEWS_SHOW_SLIDER: {
+        /* The slider going up and down, and what it does. */
+        const float x = cx - 92, y0 = r.y + 14, y1 = r.y + 88;
+        ui_rect(x - 2, y0, 4, y1 - y0, UI_LINE_STRONG);
+        const float v = 0.5f + 0.5f * sinf(t * 1.2f);
+        const float ky = y1 - v * (y1 - y0);
+        ui_rect(x - 9, ky - 5, 18, 10, UI_ACCENT);
+        ui_label(x, y1 + 4, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "3D");
+        ui_text(x + 26, y0 + 8, 13, UI_TEXT, UI_ALIGN_LEFT, "Camera speed");
+        ui_textf(x + 26, y0 + 26, 12, UI_ACCENT, UI_ALIGN_LEFT, "%u%%", (unsigned)(100.0f + v * 100.0f + 0.5f));
+        ui_text(x + 26, y0 + 46, 13, UI_TEXT, UI_ALIGN_LEFT, "Dim lower screen");
+        ui_rect(x + 26, y0 + 66, 90, 6, UI_LINE);
+        ui_rect(x + 26, y0 + 66, 90.0f * (1.0f - v), 6, UI_TEXT_DIM);
+        break;
+    }
+    case NEWS_SHOW_LABELS:
+        ui_button((UiRect){ cx - 128, r.y + 18, 116, 50 }, "PLAY", "遊ぶ", UI_BUTTON_PRIMARY, false);
+        ui_button((UiRect){ cx + 12, r.y + 18, 116, 50 }, "PLAY", NULL, UI_BUTTON_PRIMARY, false);
+        ui_label(cx - 70, r.y + 76, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Shown");
+        ui_label(cx + 70, r.y + 76, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "Hidden");
+        break;
+    case NEWS_SHOW_FIXES: {
+        static const char *const fixes[] = { "Fortnite on Xbox", "A second game in a row", "Clearer error messages" };
+        for (int i = 0; i < 3; ++i) {
+            const float y = r.y + 18 + (float)i * 26;
+            ui_circle(cx - 108, y + 7, 8, ui_with_alpha(UI_ACCENT, 0x40));
+            ui_line(cx - 112, y + 7, cx - 109, y + 10, 2.0f, UI_ACCENT);
+            ui_line(cx - 109, y + 10, cx - 103, y + 3, 2.0f, UI_ACCENT);
+            ui_text_fit(cx - 92, y, 13, UI_TEXT, UI_ALIGN_LEFT, 210, fixes[i]);
+        }
+        break;
+    }
+    }
+}
+
 static void draw_whats_new_bottom(const App *app)
 {
-    const UiRect card = { 30, 40, 260, 120 };
-    ui_panel(card, UI_ACCENT);
-    ui_seal(144, card.y + 16, 32);
-    ui_text(160, card.y + 58, 14, UI_TEXT, UI_ALIGN_CENTER, "Kasumi was updated");
-    ui_text(160, card.y + 80, 12, UI_ACCENT, UI_ALIGN_CENTER, app->whats_new_version);
-    ui_button(NEW_CONTINUE, "CONTINUE", "続ける", UI_BUTTON_PRIMARY, pressed(app, NEW_CONTINUE));
+    if (app->whats_new_page < 0 || app->whats_new_page >= NEWS_COUNT) {
+        const UiRect card = { 30, 40, 260, 120 };
+        ui_panel(card, UI_ACCENT);
+        ui_seal(144, card.y + 16, 32);
+        ui_text(160, card.y + 58, 14, UI_TEXT, UI_ALIGN_CENTER, "Kasumi was updated");
+        ui_text(160, card.y + 80, 12, UI_ACCENT, UI_ALIGN_CENTER, app->whats_new_version);
+        ui_button(NEW_CONTINUE, "CONTINUE", "続ける", UI_BUTTON_PRIMARY, pressed(app, NEW_CONTINUE));
+        return;
+    }
+    const int page = app->whats_new_page;
+    const NewsCard *c = &NEWS[page];
+    ui_label(160, 9, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "WHAT'S NEW");
+    ui_textf(304, 8, 11, UI_TEXT_FAINT, UI_ALIGN_RIGHT, "%d / %d", page + 1, NEWS_COUNT);
+    const UiRect panel = { 12, 38, 296, 142 };
+    soft_panel(panel);
+    draw_news_show(app, c, (UiRect){ panel.x, panel.y, panel.w, 114 });
+    if (c->where) ui_text_fit(160, panel.y + panel.h - 20, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, panel.w - 16, c->where);
+    const bool first = page == 0, last = page == NEWS_COUNT - 1;
+    ui_button(GUIDE_BACK, first ? "CLOSE" : "BACK", first ? "閉じる" : "戻る", UI_BUTTON_NORMAL,
+              pressed(app, GUIDE_BACK));
+    if (c->try_kind != NEWS_TRY_NONE)
+        ui_button(GUIDE_SKIP, "TRY IT", "試す", UI_BUTTON_ACTIVE, pressed(app, GUIDE_SKIP));
+    ui_button(GUIDE_NEXT, last ? "DONE" : "NEXT", last ? "完了" : "次へ", UI_BUTTON_PRIMARY, pressed(app, GUIDE_NEXT));
 }
 
 /* ---- Discord invite (once) ----------------------------------------------------- */
@@ -2194,10 +2408,48 @@ static void draw_guide_top(const App *app)
     ui_enso(200, 78, 30, UI_ACCENT);
     ui_text(200, 63, 30, UI_TEXT, UI_ALIGN_CENTER, g->kanji);
     draw_title(200, 118, g->jp, g->en);
-    ui_text_wrap(200, 146, 12, UI_TEXT, UI_ALIGN_CENTER, 340, 4, 15, g->body);
+    ui_text_wrap(200, 146, 12, UI_TEXT, UI_ALIGN_CENTER, 372, 4, 15, g->body);
     ui_dots(200, 212, GUIDE_PAGES, (unsigned)page, UI_ACCENT, UI_LINE_STRONG);
     static const char *const hints[] = { "A", "Next", "B", "Back", "START", "Skip", NULL };
-    ui_hint_row(200, 223, hints);
+    static const char *const choice_hints[] = { "◀ ▶", "Change", "A", "Next", "B", "Back", NULL };
+    ui_hint_row(200, 223, g->setting >= 0 ? choice_hints : hints);
+}
+
+static void draw_face_diamond(float cx, float cy, bool playstation, bool position_layout, bool xbox);
+static void draw_face_slot(int slot, bool xbox, float cx, float cy, float size);
+
+/* What a tour choice looks like, live, between the value and the tip. */
+static void draw_guide_preview(const App *app, int setting)
+{
+    const AppSettings *s = &app->settings;
+    switch (setting) {
+    case SETTING_LANGUAGE:
+        ui_text_fit(160, 108, 15, UI_TEXT, UI_ALIGN_CENTER, 280, "Choose where to play");
+        ui_text_fit(160, 132, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, 280, "Settings, games and messages follow.");
+        break;
+    case SETTING_KANJI_LABELS:
+        ui_button((UiRect){ 100, 98, 120, 52 }, "PLAY", "遊ぶ", UI_BUTTON_PRIMARY, false);
+        break;
+    case SETTING_LAYOUT: {
+        const bool position = s->button_layout == GFN_LAYOUT_POSITION;
+        ui_label(96, 90, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "3DS");
+        draw_face_diamond(96, 134, false, position, s->xbox_names);
+        ui_line(146, 134, 166, 134, 2.0f, UI_ACCENT);
+        ui_triangle(166, 129, 174, 134, 166, 139, UI_ACCENT);
+        ui_label(224, 90, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "SENDS");
+        draw_face_diamond(224, 134, true, position, s->xbox_names);
+        break;
+    }
+    case SETTING_PAD_NAMES: {
+        static const float dx[4] = { 0, 17, 0, -17 }, dy[4] = { -17, 0, 17, 0 };
+        for (int i = 0; i < 4; ++i) draw_face_slot(i, s->xbox_names, 110 + dx[i], 128 + dy[i], 12);
+        ui_text(150, 104, 12, UI_TEXT, UI_ALIGN_LEFT, s->xbox_names ? "A  ·  B  ·  X  ·  Y" : "Cross  ·  Circle");
+        ui_text(150, 120, 12, UI_TEXT, UI_ALIGN_LEFT, s->xbox_names ? "LB  ·  RB  ·  LT  ·  RT" : "Square  ·  Triangle");
+        ui_text(150, 136, 12, UI_TEXT_DIM, UI_ALIGN_LEFT, s->xbox_names ? "Menu  ·  View" : "L1  ·  R1  ·  L2  ·  R2");
+        break;
+    }
+    default: break;
+    }
 }
 
 static void draw_guide_bottom(const App *app)
@@ -2205,10 +2457,24 @@ static void draw_guide_bottom(const App *app)
     const int page = app->guide_page < 0 ? 0 : app->guide_page;
     ui_label(160, 8, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "GETTING STARTED");
     ui_textf(160, 24, 12, UI_ACCENT, UI_ALIGN_CENTER, "%d / %d", page + 1, GUIDE_PAGES);
-    const UiRect card = { 16, 50, 288, 110 };
-    ui_panel(card, UI_ACCENT);
-    ui_label(160, card.y + 14, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "TIP");
-    ui_text_wrap(160, card.y + 34, 13, UI_TEXT, UI_ALIGN_CENTER, card.w - 28, 4, 17, GUIDE[page].tip);
+    const int setting = GUIDE[page].setting;
+    if (setting >= 0) {
+        /* A choice: the value between arrows, its dots, a preview, where it lives. */
+        soft_panel((UiRect){ 8, 36, 304, 146 });
+        draw_arrow(GUIDE_VALUE_PREV, -1, true, pressed(app, GUIDE_VALUE_PREV));
+        draw_arrow(GUIDE_VALUE_NEXT, 1, true, pressed(app, GUIDE_VALUE_NEXT));
+        ui_text_fit(160, 54, 15, UI_TEXT, UI_ALIGN_CENTER, 186, setting_value(app, setting));
+        unsigned count = 0;
+        const unsigned option = setting_option(app, setting, &count);
+        if (count > 1 && count <= 12) ui_dots(160, 77, count, option, UI_ACCENT, UI_LINE_STRONG);
+        draw_guide_preview(app, setting);
+        ui_text_fit(160, 168, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 288, GUIDE[page].tip);
+    } else {
+        const UiRect card = { 16, 50, 288, 110 };
+        ui_panel(card, UI_ACCENT);
+        ui_label(160, card.y + 14, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER, "TIP");
+        ui_text_wrap(160, card.y + 34, 13, UI_TEXT, UI_ALIGN_CENTER, card.w - 28, 4, 17, GUIDE[page].tip);
+    }
     ui_button(GUIDE_BACK, "BACK", "戻る", UI_BUTTON_NORMAL, pressed(app, GUIDE_BACK));
     ui_button(GUIDE_SKIP, "SKIP", "省略", UI_BUTTON_NORMAL, pressed(app, GUIDE_SKIP));
     const bool last = page == GUIDE_PAGES - 1;
@@ -2613,9 +2879,7 @@ static void draw_bitrate_preview(const App *app)
 /* Settings home, lower screen: a tile per section. */
 static void draw_settings_grid(const App *app)
 {
-    ui_text(160, 2, 12, UI_ACCENT, UI_ALIGN_CENTER, "設定");
-    ui_label(160, 16, 11, UI_TEXT, UI_ALIGN_CENTER, "SETTINGS");
-    ui_hline(0, 29, UI_BOTTOM_WIDTH, UI_LINE);
+    /* The top screen titles it: the tiles take the whole lower screen. */
     const int count = screens_section_count();
     for (int i = 0; i < count && i < 6; ++i) {
         const UiRect r = set_tile(i);
@@ -2623,11 +2887,12 @@ static void draw_settings_grid(const App *app)
         const UiRect f = ui_key(r, on ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, r));
         const float cx = f.x + f.w / 2;
         /* Brush icons (gfx/sec_*.png), in the theme colour when chosen. */
-        if (!ui_image_tint((UiImage)(UI_IMAGE_SEC_CONTROLS + i), cx - 20, f.y + 5, 1.0f,
+        if (!ui_image_tint((UiImage)(UI_IMAGE_SEC_CONTROLS + i), cx - 20, f.y + 8, 1.0f,
                            on ? UI_ACCENT : UI_TEXT_DIM))
-            ui_text(cx, f.y + 13, 17, on ? UI_ACCENT : UI_TEXT_DIM, UI_ALIGN_CENTER, SECTION_INFO[i].kanji);
+            ui_text(cx, f.y + 16, 17, on ? UI_ACCENT : UI_TEXT_DIM, UI_ALIGN_CENTER, SECTION_INFO[i].kanji);
         const SettingEntry *h = section_header(i);
-        ui_text_fit(cx, f.y + 48, 10, on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_CENTER, f.w - 8, h ? h->en : "");
+        /* Two lines when the name needs them ("ACCOUNT & UPDATES"). */
+        ui_text_wrap(cx, f.y + 52, 10, on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_CENTER, f.w - 8, 2, 11, h ? h->en : "");
     }
     ui_button(SET_BACK, "BACK", "戻る", UI_BUTTON_NORMAL, pressed(app, SET_BACK));
 }
@@ -2647,10 +2912,11 @@ static void draw_settings_bottom(const App *app)
         return;
     }
     const int setting = screens_setting_at(app->setting_index);
-    ui_text(160, 2, 12, UI_ACCENT, UI_ALIGN_CENTER, SETTING_JP[setting]);
-    ui_label(160, 16, 11, UI_TEXT, UI_ALIGN_CENTER, SETTING_LABELS[setting]);
+    if (ui_show_jp()) ui_text(160, 2, 12, UI_ACCENT, UI_ALIGN_CENTER, SETTING_JP[setting]);
+    ui_label(160, ui_show_jp() ? 16 : 9, 11, UI_TEXT, UI_ALIGN_CENTER, SETTING_LABELS[setting]);
     ui_hline(0, 29, UI_BOTTOM_WIDTH, UI_LINE);
-    ui_text_wrap(160, 36, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 292, 3, 14,
+    soft_panel((UiRect){ 8, 33, 304, 148 });
+    ui_text_wrap(160, 38, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 292, 3, 14,
                  setting_description(app, setting));
 
     const bool account = setting == SETTING_ACCOUNT;
@@ -2686,7 +2952,7 @@ static void draw_settings_bottom(const App *app)
                 account ? UI_DANGER : UI_TEXT, UI_ALIGN_CENTER, setting_value(app, setting));
         unsigned count = 0;
         const unsigned option = setting_option(app, setting, &count);
-        if (count > 1 && setting != SETTING_BITRATE)
+        if (count > 1 && setting != SETTING_BITRATE && setting != SETTING_THEME)
             ui_dots(160, value_y + (setting == SETTING_GYRO ? 24.0f : 34.0f), count, option,
                     UI_ACCENT, UI_LINE_STRONG);
     }
@@ -2774,7 +3040,7 @@ static void draw_touchpad(void)
         ui_rect(p.x, y, 1, 4, UI_LINE_STRONG);
         ui_rect(p.x + p.w - 1, y, 1, 4, UI_LINE_STRONG);
     }
-    ui_text(160, p.y + 22, 12, UI_ACCENT, UI_ALIGN_CENTER, "マウス・キーボード");
+    if (ui_show_jp()) ui_text(160, p.y + 22, 12, UI_ACCENT, UI_ALIGN_CENTER, "マウス・キーボード");
     ui_label(160, p.y + 40, 11, UI_TEXT, UI_ALIGN_CENTER, "MOUSE & KEYBOARD");
     ui_text_fit(160, p.y + 58, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 176, "Drag here to move, tap to click");
     ui_text_fit(160, p.y + 73, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 176, "C-Stick moves, A clicks, KEYS types");
@@ -2820,7 +3086,7 @@ static void draw_stick_button(UiRect r, const char *label, const char *jp, bool 
     const float cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     ui_ring(cx, cy - 8, 16, 1.2f, is_pressed ? UI_BG : UI_LINE_STRONG, is_pressed ? UI_ACCENT : UI_BG);
     ui_text(cx, cy - 16, 15, is_pressed ? UI_BG : UI_TEXT, UI_ALIGN_CENTER, label);
-    ui_text(cx, cy + 16, 12, is_pressed ? UI_BG : UI_TEXT_FAINT, UI_ALIGN_CENTER, jp);
+    if (ui_show_jp()) ui_text(cx, cy + 16, 12, is_pressed ? UI_BG : UI_TEXT_FAINT, UI_ALIGN_CENTER, jp);
 }
 
 static void draw_stream_menu(const App *app, float p)
@@ -2828,7 +3094,7 @@ static void draw_stream_menu(const App *app, float p)
     ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, ui_with_alpha(UI_BG, (u8)(0xC8 * p)));
     ui_offset(0.0f, (1.0f - p) * 10.0f);
     draw_card(MENU_PANEL, p);
-    ui_text(160, MENU_PANEL.y + 8, 12, UI_ACCENT, UI_ALIGN_CENTER, "一時停止");
+    if (ui_show_jp()) ui_text(160, MENU_PANEL.y + 8, 12, UI_ACCENT, UI_ALIGN_CENTER, "一時停止");
     ui_label(160, MENU_PANEL.y + 23, 11, UI_TEXT, UI_ALIGN_CENTER, "STREAM MENU");
     const char *layout = app->settings.button_layout == GFN_LAYOUT_POSITION ? "LAYOUT: POS" : "LAYOUT: ABC";
     const char *gyro = app->settings.gyro_mode == GFN_GYRO_ALWAYS ? "GYRO: ON" :
@@ -2865,7 +3131,7 @@ static void draw_controls_sheet(const App *app, float p)
 {
     ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, ui_with_alpha(UI_BG, (u8)(0xF0 * p)));
     ui_offset(0.0f, (1.0f - p) * 10.0f);
-    ui_text(160, 4, 12, UI_ACCENT, UI_ALIGN_CENTER, "操作");
+    if (ui_show_jp()) ui_text(160, 4, 12, UI_ACCENT, UI_ALIGN_CENTER, "操作");
     ui_label(160, 18, 11, UI_TEXT, UI_ALIGN_CENTER, "CONTROLS");
     ui_hline(16, 33, 288, UI_LINE);
 
@@ -2882,6 +3148,23 @@ static void draw_controls_sheet(const App *app, float p)
     }
     float y = 64;
     const float dy = 17;
+    if (app->transport->pointer_mode) {
+        /* Mouse mode: what drives the PC's pointer now. */
+        const bool steam = app->transport->steam, picture = app->picture_view;
+        controls_row(y, "TOUCH", picture ? "Tap: click there · hold: right-click" : "Drag: move · tap: click"); y += dy;
+        controls_row(y, "A", "Left click (hold to drag)"); y += dy;
+        if (steam) { controls_row(y, "B", "Right click"); y += dy; }
+        controls_row(y, "C-STICK", picture ? "Mouse wheel" : "Move the mouse"); y += dy;
+        controls_row(y, "CIRCLE", "Left stick"); y += dy;
+        controls_row(y, "KEYS", "Type on the PC's keyboard"); y += dy;
+        controls_row(y, "MOUSE", steam && !picture ? "Show the game here, tap to click"
+                                                  : "Back to controller mode"); y += dy;
+        controls_row(y, "START+SELECT", "Hold for the stream menu"); y += dy;
+        static const char *const mouse_hints[] = { "B", "Close", NULL };
+        ui_hint_row(160, 222, mouse_hints);
+        ui_offset(0.0f, 0.0f);
+        return;
+    }
     controls_row(y, "CIRCLE", "Left stick"); y += dy;
     controls_row(y, "C-STICK", s->gyro_mode != GFN_GYRO_OFF ? "Right stick + gyro" : "Right stick"); y += dy;
     controls_row(y, s->swap_shoulders ? "ZL ZR" : "L R", xbox ? "LB / RB" : "L1 / R1"); y += dy;
@@ -3059,8 +3342,8 @@ static void draw_look_pad(const App *app, bool r3_held, bool both_held)
 
     const u64 now = ui_ticks();
     const bool stick = app->look_mode == 1;
-    ui_text(p.x + 8, p.y + 5, 11, UI_ACCENT, UI_ALIGN_LEFT, "視点");
-    ui_label(p.x + 32, p.y + 6, 11, UI_TEXT_DIM, UI_ALIGN_LEFT, stick ? "PUSH TO LOOK" : "DRAG TO LOOK");
+    if (ui_show_jp()) ui_text(p.x + 8, p.y + 5, 11, UI_ACCENT, UI_ALIGN_LEFT, "視点");
+    ui_label(p.x + (ui_show_jp() ? 32 : 8), p.y + 6, 11, UI_TEXT_DIM, UI_ALIGN_LEFT, stick ? "PUSH TO LOOK" : "DRAG TO LOOK");
     ui_label(p.x + 8, p.y + p.h - 18, 11, UI_TEXT_FAINT, UI_ALIGN_LEFT,
              app->settings.xbox_names ? "DOUBLE-TAP  RS" : "DOUBLE-TAP  R3");
 
@@ -3132,6 +3415,25 @@ static void draw_look_layout(const App *app, uint16_t held)
 
 /* The usual layout: L3 and R3 columns, stats (or the mouse pad or zoom map)
  * between them, PS below. */
+/* The magnifier: part of the picture, larger, in the middle panel. The
+ * panel is also where it is dragged. */
+static void draw_magnifier(const App *app)
+{
+    const UiRect p = STR_PANEL;
+    const float zoom = settings_lower_panel_zoom(app->settings.lower_panel);
+    ui_rect_r(p, UI_RGBA(0x00, 0x00, 0x00, 0xFF));
+    if (!ui_draw_video_region(p.x + 1, p.y + 1, p.w - 2, p.h - 2, app->mag_x, app->mag_y, zoom))
+        ui_text(p.x + p.w / 2, p.y + p.h / 2 - 6, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "Waiting for the picture...");
+    ui_outline(p.x, p.y, p.w, p.h, 1.0f, UI_LINE_STRONG);
+    ui_rect(p.x + 3, p.y + 3, 22, 13, ui_with_alpha(UI_BG, 0xC0));
+    ui_text(p.x + 14, p.y + 4, 11, UI_ACCENT, UI_ALIGN_CENTER,
+            app->settings.lower_panel == LOWER_PANEL_MAG3 ? "x3" : "x2");
+    if (app->stream_started_at && plat_time_ms() - app->stream_started_at < 8000) {
+        ui_rect(p.x + 1, p.y + p.h - 17, p.w - 2, 16, ui_with_alpha(UI_BG, 0xC0));
+        ui_label(p.x + p.w / 2, p.y + p.h - 15, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, "DRAG TO CHOOSE THE SPOT");
+    }
+}
+
 static void draw_classic_layout(const App *app, uint16_t held)
 {
     const WebRtcTransport *t = app->transport;
@@ -3143,6 +3445,8 @@ static void draw_classic_layout(const App *app, uint16_t held)
         draw_touchpad();
     } else if (mvd_video_zoomed()) {
         draw_zoom_map();
+    } else if (app->magnifier_view) {
+        draw_magnifier(app);
     } else {
         draw_stats(app);
         /* The stats panel is also both sticks pressed together. */
@@ -3183,18 +3487,21 @@ static void draw_stream_bottom(const App *app, float overlay_p)
         remote_keyboard_draw(t, app->touching, app->touch_x, app->touch_y);
         return;
     }
-    draw_stream_header(app);
-
     const uint16_t held = app->touch_buttons | (app->look_r3 ? GFN_PAD_RIGHT_THUMB : 0);
-    if (app->look_mode) draw_look_layout(app, held);
-    else draw_classic_layout(app, held);
+    if (app->picture_view) {
+        draw_picture_bottom(app);
+    } else {
+        draw_stream_header(app);
+        if (app->look_mode) draw_look_layout(app, held);
+        else draw_classic_layout(app, held);
+    }
 
     char zoom[16];
     const unsigned level = mvd_video_zoom_level();
     if (app->zone_index >= 0 && level) snprintf(zoom, sizeof(zoom), i18n_text("ZONE %d"), app->zone_index + 1);
     else snprintf(zoom, sizeof(zoom), "%s", level == 3 ? "2.0x" : level == 2 ? "1.5x" : level == 1 ? "1.2x" : "拡大");
-    const char *labels[4] = { "KEYS", "MOUSE", "ZOOM", "MENU" };
-    const char *jp[4] = { "キー", "マウス", zoom, "メニュー" };
+    const char *labels[4] = { "KEYS", app->picture_view ? "PICTURE" : "MOUSE", "ZOOM", "MENU" };
+    const char *jp[4] = { "キー", app->picture_view ? "画面" : "マウス", zoom, "メニュー" };
     const bool active[4] = { false, t->pointer_mode, level != 0, false };
     for (int i = 0; i < 4; ++i) {
         const UiRect r = stream_button(i);
@@ -3226,7 +3533,7 @@ static void draw_welcome_back(const App *app)
     ui_rect(p.x, p.y, p.w, p.h, ui_with_alpha(UI_BG, (u8)(0xF0 * e)));
     ui_outline(p.x, p.y, p.w, p.h, 1.0f, ui_with_alpha(UI_ACCENT, alpha));
     ui_enso(160, p.y + 26, 15, ui_with_alpha(UI_ACCENT, alpha));
-    ui_text(160, p.y + 48, 15, ui_with_alpha(UI_ACCENT, alpha), UI_ALIGN_CENTER, "おかえり");
+    if (ui_show_jp()) ui_text(160, p.y + 48, 15, ui_with_alpha(UI_ACCENT, alpha), UI_ALIGN_CENTER, "おかえり");
     ui_label(160, p.y + 67, 11, ui_with_alpha(UI_TEXT, alpha), UI_ALIGN_CENTER, "WELCOME BACK");
     char away[48];
     if (app->welcome_away_s >= 90)
@@ -3242,7 +3549,7 @@ static void draw_modal_bottom(const App *app, float p)
     /* Nearly opaque: the library's own text showed through the title. */
     ui_rect(0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, ui_with_alpha(UI_BG, (u8)(0xF0 * p)));
     ui_offset(0.0f, (1.0f - p) * 10.0f);
-    ui_text(160, 68, 12, UI_ACCENT, UI_ALIGN_CENTER, app->modal_jp);
+    if (ui_show_jp()) ui_text(160, 68, 12, UI_ACCENT, UI_ALIGN_CENTER, app->modal_jp);
     ui_label(160, 84, 11, UI_TEXT, UI_ALIGN_CENTER, app->modal_title);
     const bool error = app->modal == MODAL_ERROR, resume = app->modal == MODAL_RESUME;
     if (app->modal == MODAL_REPORT_SENT) {
@@ -3263,6 +3570,12 @@ static void draw_modal_bottom(const App *app, float p)
     if (app->modal == MODAL_PAID_ONLY) {
         ui_button(MODAL_LEFT, "PLAY ANYWAY", "開始", UI_BUTTON_PRIMARY, pressed(app, MODAL_LEFT));
         ui_button(MODAL_RIGHT, "BACK", "戻る", UI_BUTTON_NORMAL, pressed(app, MODAL_RIGHT));
+        ui_offset(0.0f, 0.0f);
+        return;
+    }
+    if (app->modal == MODAL_TIP) {
+        ui_text_wrap(160, 102, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 288, 6, 14, app->modal_text);
+        ui_button(MODAL_TIP_OK, "OK", "了解", UI_BUTTON_PRIMARY, pressed(app, MODAL_TIP_OK));
         ui_offset(0.0f, 0.0f);
         return;
     }
@@ -3323,10 +3636,17 @@ static void draw_bottom_screen(const App *app)
         } else if (ui_backdrop()) {
             /* The theme's wallpaper; the header band is glass, so the status
              * line and titles read over any pattern. */
-            const UiRect band = { 0, 0, UI_BOTTOM_WIDTH, 30 };
-            ui_glass(band);
-            ui_rect(0, 0, UI_BOTTOM_WIDTH, 30, UI_RGBA(0x00, 0x00, 0x00, 0x50));
-            ui_hline(0, 30, UI_BOTTOM_WIDTH, UI_RGBA(0xFF, 0xFF, 0xFF, 0x30));
+            const bool grid = app->view == VIEW_SETTINGS && app->settings_section < 0 && !app->mapping_open &&
+                              !app->gallery_open && app->guide_page < 0 && !app->whats_new_open;
+            if (!grid) {
+                const UiRect band = { 0, 0, UI_BOTTOM_WIDTH, 30 };
+                ui_glass(band);
+                ui_rect(0, 0, UI_BOTTOM_WIDTH, 30, UI_RGBA(0x00, 0x00, 0x00, 0x50));
+                ui_hline(0, 30, UI_BOTTOM_WIDTH, UI_RGBA(0xFF, 0xFF, 0xFF, 0x30));
+            }
+            /* The home screen keeps its weather below too. */
+            if (app->view == VIEW_HUB && app->guide_page < 0 && !app->whats_new_open)
+                ui_ambient_fx(UI_BOTTOM_WIDTH, 24.0f, UI_HEIGHT, 0.4f, 10);
         } else {
             ui_gradient(0, 0, UI_BOTTOM_WIDTH, 110, ui_with_alpha(UI_ACCENT, 0x14), ui_with_alpha(UI_ACCENT, 0x00));
             ui_texture(UI_IMAGE_GRID, 0, 0, UI_BOTTOM_WIDTH, UI_HEIGHT, UI_RGBA(0xFF, 0xFF, 0xFF, 0x48));
@@ -3369,7 +3689,8 @@ static void draw_bottom_screen(const App *app)
 
 uint16_t screens_stream_held_buttons(const App *app, int x, int y)
 {
-    if (app->view != VIEW_STREAM || app->keyboard_open || app->stream_menu || app->controls_open)
+    if (app->view != VIEW_STREAM || app->keyboard_open || app->stream_menu || app->controls_open ||
+        app->picture_view)
         return 0;
     const uint16_t both = GFN_PAD_LEFT_THUMB | GFN_PAD_RIGHT_THUMB;
     if (app->look_mode) {
@@ -3382,8 +3703,9 @@ uint16_t screens_stream_held_buttons(const App *app, int x, int y)
     if (ui_hit(STR_L3, x, y)) return GFN_PAD_LEFT_THUMB;
     if (ui_hit(STR_R3, x, y)) return GFN_PAD_RIGHT_THUMB;
     if (ui_hit(STR_GUIDE, x, y)) return GFN_PAD_GUIDE;
-    /* The stats panel, unless it is the mouse pad or the zoom map. */
-    if (!app->transport->pointer_mode && !mvd_video_zoomed() && ui_hit(STR_PANEL, x, y)) return both;
+    /* The stats panel, unless it is the mouse pad, the zoom map or the magnifier. */
+    if (!app->transport->pointer_mode && !mvd_video_zoomed() && !app->magnifier_view && ui_hit(STR_PANEL, x, y))
+        return both;
     return 0;
 }
 
@@ -3407,8 +3729,14 @@ AppAction screens_touch(const App *app, int x, int y)
 {
     if (app->busy) return ACTION_NONE;
     g_touched_option_row = -1;
-    if (app->whats_new_open && app->view != VIEW_STREAM)
-        return ui_hit(NEW_CONTINUE, x, y) ? ACTION_WHATS_NEW_CLOSE : ACTION_NONE;
+    if (app->whats_new_open && app->view != VIEW_STREAM) {
+        if (app->whats_new_page < 0 || app->whats_new_page >= NEWS_COUNT)
+            return ui_hit(NEW_CONTINUE, x, y) ? ACTION_WHATS_NEW_CLOSE : ACTION_NONE;
+        if (ui_hit(GUIDE_BACK, x, y)) return app->whats_new_page == 0 ? ACTION_WHATS_NEW_CLOSE : ACTION_NEWS_BACK;
+        if (NEWS[app->whats_new_page].try_kind != NEWS_TRY_NONE && ui_hit(GUIDE_SKIP, x, y)) return ACTION_NEWS_TRY;
+        if (ui_hit(GUIDE_NEXT, x, y)) return ACTION_NEWS_NEXT;
+        return ACTION_NONE;
+    }
     if (app->discord_open && app->view != VIEW_STREAM)
         return ui_hit(NEW_CONTINUE, x, y) ? ACTION_DISCORD_CLOSE : ACTION_NONE;
     if (app->update_open && app->view != VIEW_STREAM && app->guide_page < 0) {
@@ -3422,6 +3750,10 @@ AppAction screens_touch(const App *app, int x, int y)
         return ACTION_NONE;
     }
     if (app->guide_page >= 0 && app->view != VIEW_STREAM) {
+        if (app->guide_page < GUIDE_PAGES && GUIDE[app->guide_page].setting >= 0) {
+            if (ui_hit(GUIDE_VALUE_PREV, x, y)) return ACTION_GUIDE_VALUE_PREV;
+            if (ui_hit(GUIDE_VALUE_NEXT, x, y)) return ACTION_GUIDE_VALUE_NEXT;
+        }
         if (ui_hit(GUIDE_BACK, x, y)) return ACTION_GUIDE_BACK;
         if (ui_hit(GUIDE_SKIP, x, y)) return ACTION_GUIDE_SKIP;
         if (ui_hit(GUIDE_NEXT, x, y)) return ACTION_GUIDE_NEXT;
@@ -3429,6 +3761,7 @@ AppAction screens_touch(const App *app, int x, int y)
     }
     if (app->modal != MODAL_NONE) {
         if (app->modal == MODAL_REPORT_SENT) return ui_hit(MODAL_ONLY, x, y) ? ACTION_CONFIRM : ACTION_NONE;
+        if (app->modal == MODAL_TIP) return ui_hit(MODAL_TIP_OK, x, y) ? ACTION_CONFIRM : ACTION_NONE;
         if (ui_hit(MODAL_LEFT, x, y)) return app->modal == MODAL_ERROR ? ACTION_RETRY : ACTION_CONFIRM;
         if (app->modal != MODAL_REPORT_SENT && ui_hit(MODAL_RIGHT, x, y)) return ACTION_DISMISS;
         return ACTION_NONE;
@@ -3547,9 +3880,12 @@ AppAction screens_touch(const App *app, int x, int y)
             if (!ui_hit(MENU_PANEL, x, y)) return ACTION_MENU_RESUME;
             break;
         }
-        if (app->look_mode && ui_hit(LOOK_HIDE, x, y)) return ACTION_LOOK_TOGGLE;
-        if (app->mic_available && ui_hit(app->look_mode ? LOOK_MIC : STR_MIC, x, y)) return ACTION_MIC_TOGGLE;
-        if (app->look_available && !app->look_mode && ui_hit(STR_LOOK, x, y)) return ACTION_LOOK_TOGGLE;
+        /* Picture mode: the picture fills the space; only the buttons below it. */
+        if (!app->picture_view) {
+            if (app->look_mode && ui_hit(LOOK_HIDE, x, y)) return ACTION_LOOK_TOGGLE;
+            if (app->mic_available && ui_hit(app->look_mode ? LOOK_MIC : STR_MIC, x, y)) return ACTION_MIC_TOGGLE;
+            if (app->look_available && !app->look_mode && ui_hit(STR_LOOK, x, y)) return ACTION_LOOK_TOGGLE;
+        }
         if (ui_hit(stream_button(0), x, y)) return ACTION_STREAM_KEYBOARD;
         if (ui_hit(stream_button(1), x, y)) return ACTION_STREAM_POINTER;
         if (ui_hit(stream_button(2), x, y)) return ACTION_STREAM_ZOOM;

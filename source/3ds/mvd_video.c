@@ -84,7 +84,8 @@ static unsigned g_output_stride;
  * on the burst that follows a network stall (maxGap ~400 ms), and every
  * overflow froze the picture until a keyframe ("decoder-backlog"). The ring
  * holds 48 AUs (1.6 s) in about the same memory. */
-enum { AU_ENTRIES = 48, AU_RING_SIZE = 2 * 1024 * 1024, AU_MAX = AU_RING_SIZE / 4, WIDE_OUTPUTS = 6 };
+enum { AU_ENTRIES = 48, AU_RING_SIZE = 2 * 1024 * 1024, AU_MAX = AU_RING_SIZE / 4, WIDE_OUTPUTS = 6,
+       WIDE_OUTPUTS_MIN = 4 };
 static PlatThread g_decoder;
 static volatile bool g_decoder_quit;
 static PlatLock g_queue_lock;
@@ -121,6 +122,8 @@ static void await_idr(void)
  * vblanks; if the pacer falls behind, the decoder recycles the oldest. */
 enum { OUT_FREE, OUT_DECODING, OUT_READY, OUT_PRESENTING };
 static u16 *g_wide_outputs[WIDE_OUTPUTS];
+/* How many of them this decoder got (wide mode). */
+static unsigned g_wide_count = WIDE_OUTPUTS;
 static int g_output_state[WIDE_OUTPUTS];
 static int g_ready_fifo[WIDE_OUTPUTS];
 static size_t g_output_bytes[WIDE_OUTPUTS];
@@ -333,12 +336,23 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     bool buffers_ok = g_input && g_output;
     if (g_wide) {
         g_wide_outputs[0] = g_output;
-        for (unsigned i = 1; i < WIDE_OUTPUTS; ++i) {
-            g_wide_outputs[i] = linearMemAlign(output_size, 0x80);
-            buffers_ok = buffers_ok && g_wide_outputs[i];
-        }
         g_ring = linearMemAlign(AU_RING_SIZE, 0x80);
         buffers_ok = buffers_ok && g_ring;
+        /* Six pictures want nearly all the memory there is: the 960x544 work
+         * buffer plus everything here is ~23.9 MB of ~24.5 MB. A second game
+         * in a run often found ~23.8 MB and every setup failed until Kasumi
+         * restarted (1.1.2 export: 483 failures, 102 mvd-broken flags). Four
+         * are enough to keep decoding; each one less frees 1 MB. */
+        g_wide_count = 1;
+        while (buffers_ok && g_wide_count < WIDE_OUTPUTS) {
+            u16 *more = linearMemAlign(output_size, 0x80);
+            if (!more) break;
+            g_wide_outputs[g_wide_count++] = more;
+        }
+        if (buffers_ok && g_wide_count < WIDE_OUTPUTS_MIN) buffers_ok = false;
+        if (buffers_ok && g_wide_count < WIDE_OUTPUTS)
+            diagnostic_log("MVD", "short of memory: %u picture buffers instead of %u (linear free %lu KiB)",
+                           g_wide_count, (unsigned)WIDE_OUTPUTS, (unsigned long)(linearSpaceFree() / 1024));
     }
     if (!buffers_ok) {
         snprintf(g_status, sizeof(g_status), "MVD linear allocation failed");
@@ -391,7 +405,7 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
         return false;
     }
     if (g_wide) {
-        for (unsigned i = 1; i < WIDE_OUTPUTS; ++i)
+        for (unsigned i = 1; i < g_wide_count; ++i)
             memset(g_wide_outputs[i], 0, output_size);
         plat_lock_init(&g_queue_lock);
         plat_lock_init(&g_frame_lock);
@@ -1018,7 +1032,7 @@ static void decoder_main(void *arg)
          * ready frame rather than stalling decode (references must flow). */
         plat_lock(&g_frame_lock);
         int target = -1;
-        for (unsigned i = 0; i < WIDE_OUTPUTS && target < 0; ++i)
+        for (unsigned i = 0; i < g_wide_count && target < 0; ++i)
             if (g_output_state[i] == OUT_FREE) target = (int)i;
         if (target < 0 && g_ready_count) {
             target = g_ready_fifo[0];
@@ -1027,7 +1041,7 @@ static void decoder_main(void *arg)
         }
         if (target >= 0) g_output_state[target] = OUT_DECODING;
         plat_unlock(&g_frame_lock);
-        if (target < 0) target = 0; /* unreachable: 6 outputs, 1 presenting */
+        if (target < 0) target = 0; /* unreachable: 4+ outputs, 1 presenting */
         const unsigned rendered_before = g_frames;
         unsigned char *au = g_ring + g_entry_offset[slot];
         if (!g_process_failed)

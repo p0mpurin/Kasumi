@@ -32,6 +32,11 @@ static unsigned g_loop_max_ms, g_loop_slow;
 /* What the last frame showed, for render_map_touch. */
 static bool g_keyboard;
 
+/* Where the last frame went, in screen pixels: touches click there. */
+static UiRect g_video_rect;
+
+UiRect render_video_rect(void) { return g_video_rect; }
+
 static void draw_video(void)
 {
     bool fresh = false;
@@ -57,6 +62,7 @@ static void draw_video(void)
     if (UI_SCREEN_HEIGHT / (float)h < scale) scale = UI_SCREEN_HEIGHT / (float)h;
     const float dw = (float)w * scale, dh = (float)h * scale;
     const float x = floorf((UI_SCREEN_WIDTH - dw) / 2.0f), y = floorf((UI_SCREEN_HEIGHT - dh) / 2.0f);
+    g_video_rect = (UiRect){ x, y, dw, dh };
     vita2d_draw_texture_part_scale(frame, x, y, cx * (float)w, cy * (float)h, cw * (float)w, ch * (float)h,
                                    dw / (cw * (float)w), dh / (ch * (float)h));
 }

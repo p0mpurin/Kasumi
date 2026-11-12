@@ -90,12 +90,21 @@ void steam_session_stats(const SteamSession *s, SteamSessionStats *out);
 /* The PC's mouse and keyboard: relative motion, the left button, and keys
  * by USB HID usage (SDL scancode) with SDL modifier bits (1 = left shift). */
 void steam_session_mouse_move(SteamSession *s, int dx, int dy);
+/* EStreamMouseButton */
+enum { STEAM_MOUSE_LEFT = 1, STEAM_MOUSE_RIGHT = 2, STEAM_MOUSE_MIDDLE = 16 };
+/* The pointer to a spot in the picture, 0..1 across and down. */
+void steam_session_mouse_to(SteamSession *s, float x, float y);
 bool steam_session_mouse_button(SteamSession *s, bool down);
+bool steam_session_mouse_button_id(SteamSession *s, unsigned button, bool down);
+/* One notch of the mouse wheel. */
+bool steam_session_mouse_wheel(SteamSession *s, bool up);
 bool steam_session_key(SteamSession *s, unsigned scancode, bool down, unsigned modifiers);
 /* Asks the PC to quit the game (sent now; steam_session_close waits for
  * it to arrive). False if the stream isn't up. */
 /* Closes the game in front on the PC (Alt+F4); false when none is. */
 bool steam_session_stop_game(SteamSession *s);
 bool steam_session_game_running(const SteamSession *s);
+/* What the PC shows (SetActivity): 1 Big Picture, 2 a game, 3 the desktop. */
+int steam_session_activity(const SteamSession *s);
 /* Leaves the stream (the game keeps running on the PC). */
 void steam_session_close(SteamSession *s);

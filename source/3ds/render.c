@@ -53,6 +53,7 @@ static void render_wide_video(const App *app, bool draw_bottom)
     static u32 last_seen_vblank, last_present_vblank;
     static u64 present_ticks, present_max;
     static unsigned presented, repeated, skipped, drained, last_log_frames;
+    static bool sixty;
     static unsigned backlog_streak, depth_sum;
     /* Spare frames kept against late arrivals. Build 64 logged ~2 frames a
      * second arriving 50-140 ms after the previous one (Wi-Fi bunching),
@@ -92,7 +93,6 @@ static void render_wide_video(const App *app, bool draw_bottom)
          * reserve (test report ZUFZFS). Decoded frames over ~2 s. */
         static unsigned rate_frames;
         static u64 rate_since;
-        static bool sixty;
         const unsigned decoded_now = mvd_video_decoded_frames();
         if (!rate_since || decoded_now < rate_frames) {
             /* Until measured, trust the rate asked for (the first 2 s of a
@@ -206,7 +206,11 @@ static void render_wide_video(const App *app, bool draw_bottom)
      * pass: build 116 dropped it, and a menu move waited for the 250 ms
      * refresh (the stream menu felt laggy). */
     static bool bottom_pending;
-    draw_bottom = draw_bottom || bottom_pending;
+    /* Picture mode and the magnifier show the game on the lower screen too,
+     * at up to 30 a second: at 60 the second screen would eat the budget that
+     * keeps the top one on time. */
+    const bool mirror = present && (app->picture_view || app->magnifier_view) && (!sixty || (presented & 1));
+    draw_bottom = draw_bottom || bottom_pending || mirror;
     if (!present && !draw_bottom) return;
     const u64 start = plat_ticks();
     /* A video frame waits for the GPU: build 115 skipped the pass instead

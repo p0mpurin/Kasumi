@@ -55,6 +55,8 @@ typedef struct {
     /* Xbox: when a 1280x720 stream began (most games never switch to our
      * 800x480), and when the decoder was set up for it. */
     uint64_t xcloud_hd_since, decoder_started_at;
+    /* Xbox: Fortnite stayed at 1280x720, so it is decoded like the others. */
+    bool xcloud_hd_fallback;
     unsigned keyframe_requests;
     unsigned audio_packets;
     unsigned audio_decoded;
@@ -67,6 +69,9 @@ typedef struct {
     unsigned keyboard_keys;
     bool pointer_mode;
     bool keyboard_mode;
+    /* Steam Link picture mode (app.h): the C-Stick turns the mouse wheel. */
+    bool picture_mode;
+    uint64_t last_wheel_at;
     /* The answer carried a mic section (voice chat can be sent). */
     bool mic_negotiated;
     bool data_open;
@@ -165,8 +170,16 @@ void webrtc_transport_set_pointer_mode(WebRtcTransport *transport, bool enabled)
 /* Steam Link: close the game on the PC (Alt+F4) before the stream closes.
  * 1 sent, 0 no game in front (Big Picture or the desktop), -1 not sent. */
 int webrtc_transport_steam_quit_game(WebRtcTransport *transport);
+/* Steam Link: what the PC shows (steam_session_activity); 0 otherwise. */
+int webrtc_transport_steam_activity(WebRtcTransport *transport);
 bool webrtc_transport_mouse_move(WebRtcTransport *transport, int16_t dx, int16_t dy);
 bool webrtc_transport_mouse_button(WebRtcTransport *transport, bool pressed);
+/* Steam Link only (the others take relative moves and the left button):
+ * the pointer to a spot in the picture (0..1), any EStreamMouseButton, and
+ * one notch of the wheel. False elsewhere. */
+bool webrtc_transport_mouse_to(WebRtcTransport *transport, float x, float y);
+bool webrtc_transport_mouse_button_id(WebRtcTransport *transport, unsigned button, bool pressed);
+bool webrtc_transport_mouse_wheel(WebRtcTransport *transport, bool up);
 /* Voice chat: answer the offer's mic track at the next connect, and send
  * one 20 ms Opus frame on it (any thread; false when not connected). */
 void webrtc_transport_set_mic(bool wanted);

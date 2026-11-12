@@ -20,7 +20,7 @@ enum {
     CTL_AUTH_REQUEST = 1, CTL_AUTH_RESPONSE = 2, CTL_NEGOTIATION_INIT = 3, CTL_NEGOTIATION_SET_CONFIG = 4,
     CTL_NEGOTIATION_COMPLETE = 5, CTL_CLIENT_HANDSHAKE = 6, CTL_SERVER_HANDSHAKE = 7, CTL_KEEPALIVE = 9,
     CTL_START_AUDIO = 50, CTL_STOP_AUDIO = 51, CTL_START_VIDEO = 52, CTL_STOP_VIDEO = 53,
-    CTL_MOUSE_MOTION = 54, CTL_MOUSE_DOWN = 56, CTL_MOUSE_UP = 57, CTL_KEY_DOWN = 58, CTL_KEY_UP = 59,
+    CTL_MOUSE_MOTION = 54, CTL_MOUSE_WHEEL = 55, CTL_MOUSE_DOWN = 56, CTL_MOUSE_UP = 57, CTL_KEY_DOWN = 58, CTL_KEY_UP = 59,
     CTL_VIDEO_DECODER_INFO = 80, CTL_SET_TITLE = 81, CTL_VIDEO_ENCODER_INFO = 90, CTL_SET_TARGET_BITRATE = 94,
     CTL_SET_ACTIVITY = 98, CTL_REMOTE_HID = 106
 };
@@ -1320,14 +1320,47 @@ void steam_session_mouse_move(SteamSession *s, int dx, int dy)
     send_control(s, CTL_MOUSE_MOTION, &m);
 }
 
-bool steam_session_mouse_button(SteamSession *s, bool down)
+/* The pointer to a spot in the picture: 0..1 across and down (the touch
+ * screen's picture mode). Steam maps it onto the PC's screen. */
+void steam_session_mouse_to(SteamSession *s, float x, float y)
+{
+    if (!s || s->state != STEAM_SESSION_STREAMING) return;
+    if (x < 0.0f) x = 0.0f;
+    if (x > 1.0f) x = 1.0f;
+    if (y < 0.0f) y = 0.0f;
+    if (y > 1.0f) y = 1.0f;
+    uint8_t data[24];
+    PbWriter m;
+    pb_writer(&m, data, sizeof(data));
+    pb_float(&m, 2, x);
+    pb_float(&m, 3, y);
+    send_control(s, CTL_MOUSE_MOTION, &m);
+}
+
+bool steam_session_mouse_button_id(SteamSession *s, unsigned button, bool down)
 {
     if (!s || s->state != STEAM_SESSION_STREAMING) return false;
     uint8_t data[8];
     PbWriter m;
     pb_writer(&m, data, sizeof(data));
-    pb_varint(&m, 2, 1);   /* k_EStreamMouseButtonLeft */
+    pb_varint(&m, 2, button);
     return send_control(s, down ? CTL_MOUSE_DOWN : CTL_MOUSE_UP, &m);
+}
+
+bool steam_session_mouse_button(SteamSession *s, bool down)
+{
+    return steam_session_mouse_button_id(s, STEAM_MOUSE_LEFT, down);
+}
+
+/* One notch of the wheel: up is positive (k_EStreamMouseWheelUp = 120). */
+bool steam_session_mouse_wheel(SteamSession *s, bool up)
+{
+    if (!s || s->state != STEAM_SESSION_STREAMING) return false;
+    uint8_t data[16];
+    PbWriter m;
+    pb_writer(&m, data, sizeof(data));
+    pb_int(&m, 2, up ? 120 : -120);
+    return send_control(s, CTL_MOUSE_WHEEL, &m);
 }
 
 bool steam_session_key(SteamSession *s, unsigned scancode, bool down, unsigned modifiers)
@@ -1339,6 +1372,11 @@ bool steam_session_key(SteamSession *s, unsigned scancode, bool down, unsigned m
     pb_varint(&m, 2, scancode);
     if (modifiers) pb_varint(&m, 3, modifiers);
     return send_control(s, down ? CTL_KEY_DOWN : CTL_KEY_UP, &m);
+}
+
+int steam_session_activity(const SteamSession *s)
+{
+    return s ? s->activity : 0;
 }
 
 bool steam_session_game_running(const SteamSession *s)

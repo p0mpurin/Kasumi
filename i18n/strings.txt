@@ -1,3 +1,5 @@
+Waiting for the picture...
+Connection unstable - waiting for video
 UPDATE
 Continue: %s
 MAINTENANCE
@@ -128,12 +130,11 @@ ADDED TO THE HOME MENU
 TRY AGAIN
 CLOSE
 Press HOME to see it. Opening it starts this game for you.
-Played %s on Kasumi
-Played briefly on Kasumi
+Briefly
+PLAYED
+SESSIONS
+LAST PLAYED
 Not played on Kasumi yet
-%lu session%s%s
-%lu sessions%s%s
-  ·  last 
 Its own options (X to change)
 Your usual settings
 Play
@@ -218,18 +219,34 @@ CHECK AGAIN
 LATER
 WHAT'S NEW
 Kasumi %s
+WHAT'S NEW IN %s
+Next
+Try it
+Camera speed
+Dim lower screen
+Shown
+Hidden
+Fortnite on Xbox
+A second game in a row
+Clearer error messages
 Kasumi was updated
 CONTINUE
+TRY IT
+NEXT
 JOIN THE KASUMI DISCORD
 New versions first, help from other players, and a say in what Kasumi gets next.
 discord.gg/K9Jy3t7YHE
 Also in Settings > System > Kasumi Discord
 SCAN WITH YOUR PHONE
-Next
 Skip
+Settings, games and messages follow.
+3DS
+Cross  ·  Circle
+LB  ·  RB  ·  LT  ·  RT
+Square  ·  Triangle
+Menu  ·  View
 GETTING STARTED
 SKIP
-NEXT
 Signed in; session %s
 Paired with %.60s
 Kasumi game hub
@@ -274,7 +291,6 @@ HOLD L TO AIM
 HOLD ZL TO AIM
 SMOOTH
 SHARP
-3DS
 XBOX
 PLAYSTATION
 L  %s     ZL  %s     R  %s     ZR  %s
@@ -312,8 +328,22 @@ CONTROLS
 SOUND: OFF
 SOUND: ON
 DISCONNECT
+TOUCH
+Tap: click there · hold: right-click
+Drag: move · tap: click
+Left click (hold to drag)
+Right click
+Mouse wheel
+Move the mouse
 CIRCLE
 Left stick
+KEYS
+Type on the PC's keyboard
+MOUSE
+Show the game here, tap to click
+Back to controller mode
+START+SELECT
+Hold for the stream menu
 Right stick + gyro
 Right stick
 ZL ZR
@@ -323,15 +353,10 @@ L2 / R2 triggers
 Menu
 View
 Share / View
-TOUCH
 LS / RS / Xbox · middle: both
 L3 / R3 / PS · middle: both
-START+SELECT
-Hold for the stream menu
 Your own button mapping is in use
 Gyro aim: %s  ·  change it in the stream menu
-Connection unstable - waiting for video
-MOUSE
 Hold START + SELECT for the menu
 MIC ON
 MIC OFF
@@ -345,10 +370,11 @@ DOUBLE-TAP  RS
 DOUBLE-TAP  R3
 LS+RS
 HIDE
+DRAG TO CHOOSE THE SPOT
 LS + RS
 GYRO
 ZONE %d
-KEYS
+PICTURE
 ZOOM
 MENU
 WELCOME BACK
@@ -380,6 +406,11 @@ Tab
 Refresh
 YOUR PCS
 IN USE - TAP TO RELOAD ITS GAMES
+Played %s on Kasumi
+Played briefly on Kasumi
+%lu session%s%s
+%lu sessions%s%s
+  ·  last 
 Its own options (tap OPTIONS to change)
 How fast the right stick turns the camera in this game.
 Reverse the right stick in this game. Gyro is not inverted.
@@ -400,8 +431,6 @@ Updates, provider, sign out
 PLAY AGAIN
 Wi-Fi %u/3: move closer to the router
 Wi-Fi %u/3
-The Vita plays like a PlayStation pad. L2 / R2 and L3 / R3 are on the rear touchpad's corners (or the screen's edges: Settings > Controls). PS is in the stream menu.
-Hold START + SELECT, or tap the handle at the top of the screen, for the stream menu.
 Scroll
 Version %s
 IN THE GAME
@@ -431,7 +460,6 @@ A Microsoft account; most games need Game Pass Ultimate.
 SIGN IN WITH MICROSOFT
 Your own PC: play whatever Steam on it can run, over your Wi-Fi.
 A PC with Steam on, on the same Wi-Fi as the 3DS.
-PICTURE
 SOUND & LOOK
 NETWORK
 SYSTEM
@@ -477,6 +505,8 @@ Update channel
 GeForce NOW provider
 Cloud service
 Language
+Japanese labels
+Lower screen panel
 STEAM
 Steam
 EPIC
@@ -541,6 +571,8 @@ Trackpad
 Zoom
 60 fps (beta)
 30 fps
+Magnifier 3x
+Magnifier 2x
 Muted
 Keep playing
 Sleep
@@ -604,7 +636,7 @@ Full camera speed with a light push. For games that turn slowly.
 The right stick moves the camera the usual way.
 Pushing the right stick up looks down, like a flight stick. Gyro aim is not inverted.
 Both directions of the right stick are reversed. Gyro aim is not inverted.
-The colour and the wallpaper behind the menus. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
+The colour and the wallpaper behind the menus. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi, Shiro or Yuki.
 Game audio volume in Kasumi, on top of the Vita's own volume buttons.
 Look through the screenshots you took in games (stream menu > Screenshot). Tap to open; the arrows browse, DELETE removes one.
 Your button mapping (below) decides every button, so this layout is not used.
@@ -641,7 +673,9 @@ In games, the rear touchpad's corners: top left L2, top right R2, bottom left L3
 A short push turns at full speed: quick, for small thumbs or fast games.
 A long push for full speed: finer control when aiming slowly.
 How far you push the touch C-stick for full speed. Medium suits most games.
-The 3D slider does nothing in games. Slide it to choose zoom or a button.
+The 3D slider does nothing in games. Choose zoom, camera speed, dimming the lower screen or a button.
+In a game, slide the 3D slider up to speed up the C-Stick. All the way down is your Camera stick speed; all the way up is twice that.
+In a game, slide the 3D slider up to dim the lower screen; the very top turns it off. Menus light it up again.
 In a game, slide the 3D slider up to zoom in, in three steps; all the way down shows the whole picture.
 In a game, the 3D slider past halfway holds %s until you slide it back down.
 No C-STICK button in games: the lower screen keeps its stats and buttons.
@@ -667,8 +701,12 @@ A lighter push on the C-Stick turns the camera at full speed.
 The C-Stick moves the camera the usual way.
 Pushing the C-Stick up looks down, like a flight stick. Gyro aim is not inverted.
 Both directions of the C-Stick are reversed. Gyro aim is not inverted.
-The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi or Shiro.
+The colour and the lower screen's wallpaper. Seiji, Sakura, Kin, Ai, Fuji, Beni, Matcha, Kaki, Sumi, Shiro or Yuki.
 The language of Kasumi's menus. Game titles and store names stay as they are.
+The panel in the middle of the lower screen shows the stream's stats. The magnifier shows part of the picture larger instead: a minimap, ammo or small text.
+The panel shows part of the picture larger. Drag in it to choose which part; each game remembers its spot. Wide screen mode only.
+The small Japanese line under each button and beside headings. Hide it for English only; the kanji artwork stays.
+English only on buttons and headings. The kanji artwork (seals, ensō) stays.
 A Kasumi theme for the 3DS HOME Menu, made by morrisonion. A downloads his latest version to /Themes; install it with Anemone3DS.
 No sound on this 3DS yet: its sound firmware (dspfirm.cdc) is missing. Run DSP1 once from the Homebrew Launcher, then restart Kasumi.
 Game audio volume on this console, on top of the 3DS volume slider.
@@ -712,6 +750,8 @@ synced %ld h ago
 synced %ld days ago
 From %s  ·  800x480 wide  ·  %u fps
 Xbox Cloud  ·  800x480 wide  ·  60 fps
+★ Favourite  ·  Y removes  ·  X: game options
+Y: add to favourites  ·  X: game options
 %lu h %02lu m
 %lu min
 Steady 1
@@ -733,18 +773,51 @@ Update installed
 Update didn't finish
 A new version is ready
 WELCOME TO KASUMI
-Play on the New 3DS from GeForce NOW, Xbox Cloud Gaming, or your own PC with Steam Link. The game runs elsewhere; the 3DS shows the picture and sends your buttons.
-Next you pick a service on the hub. B always brings you back to it.
-Cloud services show a short code to enter on your phone or computer; no password is typed on the 3DS. Steam Link shows a code to type into Steam on your PC.
-Logins and paired PCs stay only on this console's SD card.
-The 3DS plays like a PlayStation or Xbox pad: bottom is Cross / A, right is Circle / B. L3, R3 and Home / PS are on the lower screen.
-Hold START + SELECT during play for the stream menu.
+GeForce NOW, Xbox Cloud Gaming and your own PC's Steam games, played on your 3DS. First, a few quick choices.
+Signing in never asks for a password here: you type a short code on your phone or PC.
+LANGUAGE
+The language of Kasumi's menus. Left and right change it; game titles stay as they are.
+Later: Settings > System > Language
+JAPANESE LABELS
+A small Japanese line sits under button names. Keep it for the look, or hide it for English only.
+Later: Settings > System > Japanese labels
+The Vita has no L2, R2, L3 or R3: put them on the rear touchpad's corners or the screen's edges. PS is in the stream menu.
+Later: Settings > Controls > L2 / R2 / L3 / R3
+BUTTON LAYOUT
+Position: each button acts like the one in the same place on a PlayStation or Xbox pad. Letters: A sends A. The picture shows what each one sends.
+Later: Settings > Controls > Button layout
+BUTTON NAMES
+How menus and hints name the pad's buttons: PlayStation (Cross, L1) or Xbox (A, LB). What they do stays the same.
+Later: Settings > Controls > Button names
 PICTURE & WI-FI
-Stay close to your router (3 bars). For cloud games, Adaptive is the default; Steady 1 Mbps helps if the picture stutters. ZOOM crops for small text.
+Stay near your router. If the picture stutters, try Steady 1 Mbps; ZOOM on the lower screen crops in for small text.
+Stay near your router. If the picture stutters, try Steady 1 Mbps in Settings > Picture.
 Settings > Network > Connection check tests your Wi-Fi.
-EXTRAS
-Gyro aiming, screenshots, zoom zones, themes, favourites and options for each game. Open a game from the library to see them.
-Settings > System > Getting started shows this guide again.
+IN A GAME
+Hold START + SELECT, or tap the handle at the top, for the stream menu: screenshots, buttons, keyboard and quitting.
+Hold START + SELECT for the stream menu. The lower screen has KEYS for typing, MOUSE for PC menus and ZOOM.
+Steam Link: start games from Big Picture. On the PC desktop, Steam's desktop controls make the left stick scroll.
+WHERE THINGS ARE
+Settings has six parts, from Controls to Account. Each game has its own options too: X on its page.
+Settings > System > Getting started shows this tour again.
+WINTER THEME
+Yuki brings ice to the lower screen and snow over the menus. Until 7 January it snows in every theme.
+Settings > Sound & look > Theme
+TAP TO CLICK
+On Steam Link, press MOUSE twice: the game shows on the lower screen. Tap to click, hold to right-click, C-Stick scrolls.
+On Steam Link, press MOUSE, then MOUSE again: tap the game to click, hold to right-click.
+Made for point-and-click games like Fallout.
+MAGNIFIER
+Part of the picture, bigger, on the lower screen: a minimap, ammo or small text. Drag it to pick the spot.
+Settings > Picture > Lower screen panel
+3D SLIDER
+Two new jobs for the 3D slider: speed up the C-Stick while you play, or dim the lower screen.
+Settings > Controls > 3D slider
+YOUR WAY
+A short tour sets your language, button layout and button names. The Japanese under buttons can be hidden now.
+Settings > System > Japanese labels
+FIXED
+Fortnite on Xbox no longer stops at 720p, a second game in a row shows its picture, and errors say what to do.
 Still working on the last request
 Requesting a sign-in code from NVIDIA...
 Requesting a sign-in code from Microsoft...
@@ -771,10 +844,12 @@ Creating your cloud session...
 Closing the cloud session...
 Reconnecting to the cloud rig...
 Restarting your cloud session...
+Camera speed %u%%
 Settings could not be saved to SD
 Checking for updates...
 OK - Kasumi will remind you when the next version is out
 Finish your game first - updates never run during a session
+Theme: Yuki. Settings > Sound & look > Theme changes it back
 Couldn't save to the SD card: check it isn't full or locked
 Finish what's running first, then switch
 SIGN OUT?
@@ -837,7 +912,10 @@ This game has its own buttons (game page > X > Options)
 Your button mapping is in use (Settings > Controls)
 Disconnect leaves the game running on %.40s. Quit closes it there.
 LEAVE THE GAME?
+Mouse mode. MOUSE again shows the game to tap
 Mouse & keyboard mode: drag to move the mouse, tap or A to click
+Mouse mode. MOUSE again: tap right on the game
+Tap to click, hold to right-click, C-Stick scrolls
 Controller mode: buttons and sticks act as a gamepad
 Mic muted
 Mic on: your team can hear you
@@ -874,6 +952,8 @@ stream was running; no error
 dark=%d kbps=%u pli=%u errors=%u state=%d status=%d game=\"%.40s\" msg=\"%.100s\"
 No sound: this 3DS's sound firmware is missing. Run DSP1 once, then restart Kasumi
 No sound on this 3DS: run DSP1 once (see Settings > Sound & Look)
+STEAM DESKTOP CONTROLS
+The PC is on its desktop, where Steam's desktop controls make the left stick scroll. Start games from Big Picture, or on the PC set Steam > Settings > Controller > Desktop layout to Gamepad.
 Sign in to Kasumi first, then open the shortcut again
 Connection failed - trying again
 Your free hour is over. Press A to start the game again (you may queue again).
@@ -1094,6 +1174,7 @@ Starting the Xbox...
 Connecting your account to the Xbox...
 The Xbox didn't accept the sign-in. Try again.
 Xbox ready; connecting the stream...
+Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play with the same account.
 Xbox Cloud Gaming couldn't start the game%s%.110s
 The Xbox session ended. Start the game again.
 Xbox session ended
@@ -1115,9 +1196,9 @@ Found %.40s at %s
 This 3DS isn't connected to Wi-Fi. Connect it, then try again.
 \"%.20s\" isn't a PC address. It looks like 192.168.1.20.
 Looking for a PC running Steam on this Wi-Fi...
-Nothing with Steam answered at %s. Check the address and that Steam is running there.
+Nothing with Steam answered at %s. Is Steam open there? Its firewall must allow UDP 27031-27036 (Windows: Private network).
 No other PC with Steam found. Press X to type its address.
-No PC with Steam answered on this Wi-Fi. Start Steam on your PC, or press X to type its address.
+No PC with Steam answered on this Wi-Fi. Start Steam on your PC, or press X to type its address. Firewalls must allow UDP 27031-27036.
 Couldn't prepare the pairing. Press X to try again.
 On %.40s, Steam asks for a code: type %s there
 The code typed on the PC didn't match; nothing changed.
@@ -1426,3 +1507,5 @@ Kasumi.vpk
 Memory card write failed
 Could not save %s
 Saved %s: install it with VitaShell
+Not enough memory for HTTP headers
+this Wi-Fi blocks or changes the secure connection; school and work Wi-Fi often do

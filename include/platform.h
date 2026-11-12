@@ -134,6 +134,11 @@ void plat_notify_light(u32 color);
 bool plat_lid_closed(void);
 /* Screen backlights, off to save power while the lid is shut. */
 void plat_screens_on(bool on);
+/* The lower screen's backlight, as a percent of what the player chose on the
+ * console: 100 is theirs, 0 is off. It goes back to 100 by itself whenever the
+ * console leaves Kasumi, so keep calling this to dim it again afterwards.
+ * False if the console refused; consoles without one do nothing. */
+bool plat_lower_screen_light(unsigned percent);
 
 /* Sound: numbered channels, each playing a queue of 16-bit PCM buffers in
  * order, mixed together. Kasumi's channels: 0 the stream, 8 the queue

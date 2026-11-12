@@ -23,8 +23,8 @@ APP_AUTHOR := p0mpurin
 # Release version: GitHub releases are tagged v$(VERSION). The CIA's own
 # version field carries MAJOR.MINOR.MICRO. Run `make clean` after changing it.
 VERSION_MAJOR := 1
-VERSION_MINOR := 1
-VERSION_MICRO := 2
+VERSION_MINOR := 2
+VERSION_MICRO := 0
 VERSION_SUFFIX :=
 VERSION := $(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)$(VERSION_SUFFIX)
 # makerom drops the minor number from the CIA's title version (1.1.0 came out

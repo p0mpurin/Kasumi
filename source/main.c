@@ -29,6 +29,8 @@
 #include "updater.h"
 #include "play_history.h"
 #include "screenshot.h"
+#include "screens_model.h"
+#include "steam_session.h"
 #include "zoom_zones.h"
 #include "gfn_client.h"
 #include "gfn_input.h"
@@ -45,6 +47,9 @@
 #include "settings.h"
 #include "stream_profile.h"
 #include "render.h"
+#if PLAT_HAS_WIDE_MODE
+#include "ui_3ds.h"
+#endif
 #include "ui.h"
 #include "webrtc_transport.h"
 #include "xcloud.h"
@@ -68,6 +73,9 @@ static void finish_history(void);
 static void log_session_end(const char *by);
 static void apply_game_options(const GamePrefs *prefs);
 static void launch_with_options(const GfnGame *base, unsigned variant);
+/* Whose games.json entry the running game's options came from: the library
+ * entry, not the store variant launched (launch_with_options). */
+static char g_prefs_id[48];
 static char g_notice[96];
 static u64 g_notice_until;
 
@@ -361,6 +369,10 @@ static bool g_paid_confirmed;
 
 static void launch_game(const GfnGame *game)
 {
+    /* The magnifier starts in the middle unless this game's options say
+     * otherwise (apply_game_options). */
+    g_app.mag_x = g_app.mag_y = 0.5f;
+    snprintf(g_prefs_id, sizeof(g_prefs_id), "%s", game->app_id);
     /* NVIDIA refuses paid-only games on the free tier, and only after the
      * queue: say so first. */
     if (current_service() == SERVICE_GFN && game->needs_paid && !g_paid_confirmed) {
@@ -474,30 +486,84 @@ static void retry_session(void)
 static void apply_session_input(void);
 static void open_mapping(const GamePrefs *prefs);
 
+/* Which step of the 3D slider it is on. A step changes only 0.03 past its
+ * edge, so a slider resting on an edge does not flicker between two. A level
+ * below 0 means there is no step yet. */
+static int slider_step(const float *edges, int count, int level)
+{
+    const float v = plat_input()->slider_3d;
+    int next = 0;
+    while (next < count && v >= edges[next]) ++next;
+    if (next == level || level < 0) return next;
+    const float edge = edges[next > level ? next - 1 : next];
+    return v > edge - 0.03f && v < edge + 0.03f ? level : next;
+}
+
 /* The 3D slider as zoom (Settings > Controls > 3D slider, a player's idea):
  * down is the whole picture, up zooms in three steps around the current
- * zoom centre. A step changes only 0.03 past its edge, so a slider resting
- * on an edge does not flicker between two. */
+ * zoom centre. */
 static void slider_zoom_tick(bool streaming)
 {
     static int level = -1;
-    if (!streaming || g_app.settings.slider != 1 || !mvd_video_active()) {
+    if (!streaming || g_app.settings.slider != GFN_SLIDER_ZOOM || !mvd_video_active()) {
         level = -1;
         return;
     }
     static const float edges[3] = { 0.08f, 0.40f, 0.75f };
-    const float v = plat_input()->slider_3d;
-    int next = 0;
-    while (next < 3 && v >= edges[next]) ++next;
+    const int next = slider_step(edges, 3, level);
     if (next == level) return;
-    if (level >= 0) {
-        const float edge = edges[next > level ? next - 1 : next];
-        if (v > edge - 0.03f && v < edge + 0.03f) return;
-    }
     level = next;
     unsigned x = 50, y = 50;
     mvd_video_zoom_position(&x, &y);
     mvd_video_set_zoom((unsigned)level, x, y);
+}
+
+/* The 3D slider as the lower screen's brightness: down is the player's own,
+ * up dims it, the very top turns it off. Anything that needs reading or
+ * tapping on that screen lights it up again. */
+static void slider_light_tick(bool streaming)
+{
+    static int level = -1;
+    static bool refused_logged;
+    const bool in_use = g_app.stream_menu || g_app.controls_open || g_app.modal != MODAL_NONE ||
+                        g_transport.keyboard_mode;
+    if (!streaming || g_app.settings.slider != GFN_SLIDER_LOWER_LIGHT || in_use) {
+        level = -1;
+        plat_lower_screen_light(100);
+        return;
+    }
+    static const float edges[5] = { 0.08f, 0.30f, 0.52f, 0.74f, 0.93f };
+    static const unsigned light[6] = { 100, 65, 40, 22, 8, 0 };
+    level = slider_step(edges, 5, level);
+    unsigned percent = light[level];
+    /* These two show the game there: dim, but never dark. */
+    if (percent < 22 && (g_app.picture_view || g_app.magnifier_view)) percent = 22;
+    if (!plat_lower_screen_light(percent) && !refused_logged) {
+        refused_logged = true;
+        diagnostic_log("APP", "lower screen light: the console refused");
+    }
+}
+
+/* The 3D slider as camera speed (gfn_input.c does the speed). There is nothing
+ * to see it by, so the number shows briefly, in tens, when it moves; not for
+ * where the slider already was when the game started. */
+static void slider_camera_tick(bool streaming)
+{
+    static unsigned shown;
+    if (!streaming || g_app.settings.slider != GFN_SLIDER_CAMERA) {
+        shown = 0;
+        return;
+    }
+    const unsigned percent = gfn_input_camera_percent();
+    const unsigned rounded = (percent + 5) / 10 * 10;
+    if (!shown) {
+        shown = rounded;
+        return;
+    }
+    if (rounded == shown || (percent > shown ? percent - shown : shown - percent) < 7) return;
+    shown = rounded;
+    snprintf(g_notice, sizeof(g_notice), i18n_text("Camera speed %u%%"), rounded);
+    g_notice_until = plat_time_ms() + 1500;
 }
 
 static void save_settings(void)
@@ -511,7 +577,7 @@ static void save_settings(void)
 
 /* ---- Software update ------------------------------------------------------- */
 
-static char g_whats_new_notes[1600];
+static char g_whats_new_notes[3072];
 
 static void start_update_check(bool quiet)
 {
@@ -570,12 +636,76 @@ static void handle_updates(u32 down, u32 repeat, AppAction action)
     }
 }
 
+static void open_settings_section(int section);
+
+/* Closing the cards marks this release's as seen, however far they got. */
+static void close_whats_new(void)
+{
+    g_app.whats_new_open = false;
+    if (g_app.whats_new_page >= 0 && strcmp(g_app.settings.news_seen, NEWS_RELEASE)) {
+        snprintf(g_app.settings.news_seen, sizeof(g_app.settings.news_seen), "%s", NEWS_RELEASE);
+        save_settings();
+    }
+}
+
+/* Settings, opened on one setting's page. */
+static void open_setting(int setting)
+{
+    g_app.settings_open = true;
+    for (int position = 0; position < 256; ++position) {
+        if (screens_setting_at(position) != setting) continue;
+        open_settings_section(screens_section_of(position));
+        g_app.setting_index = position;
+        return;
+    }
+    g_app.settings_section = -1;
+}
+
+/* A card's Try it: the theme at once, or its setting, or the tour. */
+static void news_try(void)
+{
+    const NewsCard *card = &NEWS[g_app.whats_new_page];
+    switch (card->try_kind) {
+    case NEWS_TRY_THEME:
+        g_app.settings.theme = UI_THEME_YUKI;
+        ui_set_theme(UI_THEME_YUKI);
+        save_settings();
+        show_notice("Theme: Yuki. Settings > Sound & look > Theme changes it back");
+        break;
+    case NEWS_TRY_SETTING:
+        close_whats_new();
+        open_setting(card->setting);
+        break;
+    case NEWS_TRY_TOUR:
+        close_whats_new();
+        g_app.guide_page = 0;
+        break;
+    default: break;
+    }
+}
+
 static void handle_whats_new(u32 down, u32 repeat, AppAction action)
 {
-    if (repeat & PLAT_KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
-    if (repeat & PLAT_KEY_DOWN) ++g_app.notes_scroll;
-    if ((down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_START)) || action == ACTION_WHATS_NEW_CLOSE)
-        g_app.whats_new_open = false;
+    if (g_app.whats_new_page < 0 || g_app.whats_new_page >= NEWS_COUNT) {
+        /* The release notes alone. */
+        if (repeat & PLAT_KEY_UP) g_app.notes_scroll = g_app.notes_scroll > 0 ? g_app.notes_scroll - 1 : 0;
+        if (repeat & PLAT_KEY_DOWN) ++g_app.notes_scroll;
+        if ((down & (PLAT_KEY_A | PLAT_KEY_B | PLAT_KEY_START)) || action == ACTION_WHATS_NEW_CLOSE)
+            close_whats_new();
+        return;
+    }
+    if ((down & PLAT_KEY_START) || action == ACTION_WHATS_NEW_CLOSE) {
+        close_whats_new();
+    } else if ((down & (PLAT_KEY_X | PLAT_KEY_Y)) || action == ACTION_NEWS_TRY) {
+        if (NEWS[g_app.whats_new_page].try_kind != NEWS_TRY_NONE) news_try();
+    } else if ((down & (PLAT_KEY_A | PLAT_KEY_RIGHT)) || action == ACTION_NEWS_NEXT) {
+        if (++g_app.whats_new_page >= NEWS_COUNT) {
+            g_app.whats_new_page = NEWS_COUNT - 1;
+            close_whats_new();
+        }
+    } else if ((down & (PLAT_KEY_B | PLAT_KEY_LEFT)) || action == ACTION_NEWS_BACK) {
+        if (g_app.whats_new_page > 0) --g_app.whats_new_page;
+    }
 }
 
 static u64 g_shortcut_launch_at;
@@ -1029,6 +1159,153 @@ static void touchpad_end(void)
     }
 }
 
+/* The magnifier (Settings > Picture > Lower screen panel): dragging in the
+ * panel moves the picture under it, like a map, and the spot is kept for
+ * this game when the stylus lifts. */
+static bool g_mag_dragging, g_mag_moved;
+static int g_mag_last_x, g_mag_last_y;
+
+static void magnifier_drag(bool touch_down, int x, int y)
+{
+#if PLAT_HAS_WIDE_MODE
+    const UiRect panel = screens_stream_panel();
+    if (touch_down) {
+        g_mag_dragging = ui_hit(panel, x, y);
+        g_mag_last_x = x;
+        g_mag_last_y = y;
+        return;
+    }
+    if (!g_mag_dragging) return;
+    const int dx = x - g_mag_last_x, dy = y - g_mag_last_y;
+    g_mag_last_x = x;
+    g_mag_last_y = y;
+    if (!dx && !dy) return;
+    unsigned vw = 0, vh = 0;
+    mvd_video_wide_size(&vw, &vh);
+    if (!vw || !vh) return;
+    /* The part shown is 1/zoom of the picture across, and as much down as
+     * keeps the panel's shape. */
+    const float zoom = settings_lower_panel_zoom(g_app.settings.lower_panel);
+    const float fw = 1.0f / zoom, fh = fw * (float)vw * (panel.h - 2) / ((panel.w - 2) * (float)vh);
+    /* Twice the finger's travel: the part shown is small, and crossing the
+     * picture one panel at a time took many strokes. */
+    g_app.mag_x -= 2.0f * (float)dx * fw / (panel.w - 2);
+    g_app.mag_y -= 2.0f * (float)dy * fh / (panel.h - 2);
+    ui_video_region_clamp(panel.w - 2, panel.h - 2, zoom, &g_app.mag_x, &g_app.mag_y);
+    g_mag_moved = true;
+#else
+    (void)touch_down; (void)x; (void)y;
+#endif
+}
+
+static void magnifier_release(void)
+{
+    g_mag_dragging = false;
+    const char *id = g_prefs_id[0] ? g_prefs_id : g_current_game.app_id;
+    if (!g_mag_moved || !id[0]) return;
+    g_mag_moved = false;
+    GamePrefs prefs = game_prefs_get(id);
+    prefs.mag_x = (int)(g_app.mag_x * 1000.0f + 0.5f);
+    prefs.mag_y = (int)(g_app.mag_y * 1000.0f + 0.5f);
+    game_prefs_set(id, &prefs);
+    g_session_prefs.mag_x = prefs.mag_x;
+    g_session_prefs.mag_y = prefs.mag_y;
+}
+
+/* Steam Link picture mode: the lower screen shows the game, and the stylus
+ * points at it. Touching moves the PC's pointer to that spot (dragging keeps
+ * it following, for hover); a short tap clicks there; holding still clicks
+ * the right button. A pressed while dragging drags. */
+#define PICTURE_RIGHT_CLICK_MS 600
+
+/* Steam Link's absolute mouse. The 3DS draws the picture again on its lower
+ * screen, which needs the GPU's wide path; the Vita's is under the finger. */
+static bool picture_mode_possible(void)
+{
+#if PLAT_HAS_WIDE_MODE
+    return g_transport.steam && mvd_video_wide();
+#else
+    return g_transport.steam;
+#endif
+}
+
+static bool g_picture_active, g_picture_right_done;
+static u64 g_picture_started_at, g_picture_moved_at;
+static int g_picture_start_x, g_picture_start_y;
+static unsigned g_picture_travel;
+
+/* A touch on the lower screen as a spot in the picture (0..1), if it is on it. */
+static bool picture_point(int x, int y, float *nx, float *ny)
+{
+    const UiRect r = screens_picture_rect();
+    if (r.w <= 0.0f || r.h <= 0.0f || !ui_hit(r, x, y)) return false;
+    *nx = ((float)x - r.x) / r.w;
+    *ny = ((float)y - r.y) / r.h;
+#if !PLAT_HAS_WIDE_MODE
+    /* One screen: the picture under the finger may be zoomed. */
+    float cx, cy, cw, ch;
+    mvd_video_view_crop(&cx, &cy, &cw, &ch);
+    *nx = cx + *nx * cw;
+    *ny = cy + *ny * ch;
+#endif
+    return true;
+}
+
+static void picture_touch_begin(int x, int y)
+{
+    float nx, ny;
+    if (!g_transport.input_ready || !picture_point(x, y, &nx, &ny)) return;
+    g_picture_active = true;
+    g_picture_right_done = false;
+    g_picture_started_at = g_picture_moved_at = plat_time_ms();
+    g_picture_start_x = x;
+    g_picture_start_y = y;
+    g_picture_travel = 0;
+    webrtc_transport_mouse_to(&g_transport, nx, ny);
+    g_app.picture_mark_x = (float)x;
+    g_app.picture_mark_y = (float)y;
+    g_app.picture_mark_at = plat_time_ms();
+}
+
+static void picture_touch_move(int x, int y)
+{
+    if (!g_picture_active) return;
+    const u64 now = plat_time_ms();
+    const unsigned from_start = (unsigned)(abs(x - g_picture_start_x) + abs(y - g_picture_start_y));
+    if (from_start > g_picture_travel) g_picture_travel = from_start;
+    /* Held still: the right button, once. */
+    if (!g_picture_right_done && g_picture_travel <= 6 && now - g_picture_started_at >= PICTURE_RIGHT_CLICK_MS) {
+        g_picture_right_done = true;
+        webrtc_transport_mouse_button_id(&g_transport, STEAM_MOUSE_RIGHT, true);
+        webrtc_transport_mouse_button_id(&g_transport, STEAM_MOUSE_RIGHT, false);
+        g_app.picture_mark_at = now;
+        diagnostic_log("INPUT", "picture right click");
+        return;
+    }
+    float nx, ny;
+    if (g_picture_travel > 3 && now - g_picture_moved_at >= 16 && picture_point(x, y, &nx, &ny)) {
+        webrtc_transport_mouse_to(&g_transport, nx, ny);
+        g_picture_moved_at = now;
+        g_app.picture_mark_x = (float)x;
+        g_app.picture_mark_y = (float)y;
+        g_app.picture_mark_at = now;
+    }
+}
+
+static void picture_touch_end(void)
+{
+    if (!g_picture_active) return;
+    g_picture_active = false;
+    if (g_picture_right_done || g_picture_travel > 8 ||
+        plat_time_ms() - g_picture_started_at >= PICTURE_RIGHT_CLICK_MS || g_mouse_a_held || g_mouse_tap_held)
+        return;
+    if (webrtc_transport_mouse_button(&g_transport, true)) {
+        g_mouse_tap_held = true;
+        g_mouse_tap_release_at = plat_time_ms() + 55;
+        g_app.picture_mark_at = plat_time_ms();
+    }
+}
+
 static void update_pointer_click(u32 down, u32 held)
 {
     if (g_mouse_tap_held && plat_time_ms() >= g_mouse_tap_release_at) {
@@ -1036,8 +1313,16 @@ static void update_pointer_click(u32 down, u32 held)
         g_mouse_tap_held = false;
     }
     const bool can_click = g_app.view == VIEW_STREAM && g_transport.pointer_mode &&
-                           !g_transport.keyboard_mode && !g_app.stream_menu &&
-                           g_transport.input_ready;
+                           !g_transport.keyboard_mode && !g_app.stream_menu && !g_app.controls_open &&
+                           g_app.modal == MODAL_NONE && g_transport.input_ready;
+    /* Steam Link: B is the right button (GeForce NOW's mouse has only the left). */
+    static bool b_held;
+    if (b_held && (!can_click || !(held & PLAT_KEY_B))) {
+        webrtc_transport_mouse_button_id(&g_transport, STEAM_MOUSE_RIGHT, false);
+        b_held = false;
+    }
+    if (can_click && g_transport.steam && (down & PLAT_KEY_B) && !b_held)
+        b_held = webrtc_transport_mouse_button_id(&g_transport, STEAM_MOUSE_RIGHT, true);
     if (g_mouse_a_held && (!can_click || !(held & PLAT_KEY_A)) &&
         (!can_click || plat_time_ms() >= g_mouse_a_min_release_at)) {
         webrtc_transport_mouse_button(&g_transport, false);
@@ -1119,6 +1404,7 @@ static void handle_modal(u32 down, AppAction action)
             const GamePrefs none = game_prefs_none();
             apply_game_options(&none);
             const GamePrefs prefs = game_prefs_get(g_current_game.app_id);
+            snprintf(g_prefs_id, sizeof(g_prefs_id), "%s", g_current_game.app_id);
             apply_game_options(&prefs);
             diagnostic_log("APP", "resuming %s", g_current_game.title);
         } else {
@@ -1566,14 +1852,28 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
 static void finish_guide(void)
 {
     g_app.guide_page = -1;
-    if (!g_app.settings.guide_done) {
-        g_app.settings.guide_done = true;
-        save_settings();
-    }
+    g_app.settings.guide_done = true;
+    g_app.settings.guide_version = GUIDE_VERSION;
+    /* The tour's choices are settings: kept even when it is skipped. */
+    save_settings();
 }
 
 static void handle_guide(u32 down, AppAction action)
 {
+    const int setting = g_app.guide_page >= 0 && g_app.guide_page < GUIDE_PAGES
+                        ? GUIDE[g_app.guide_page].setting : -1;
+    if (setting >= 0) {
+        /* A choice page: left / right change the value, A and B turn pages. */
+        int direction = 0;
+        if ((down & PLAT_KEY_LEFT) || action == ACTION_GUIDE_VALUE_PREV) direction = -1;
+        else if ((down & PLAT_KEY_RIGHT) || action == ACTION_GUIDE_VALUE_NEXT) direction = 1;
+        if (direction) {
+            screens_setting_change(&g_app, setting, direction);
+            settings_apply_input(&g_app.settings);
+            return;
+        }
+        down &= ~(u32)(PLAT_KEY_LEFT | PLAT_KEY_RIGHT);
+    }
     if ((down & PLAT_KEY_START) || action == ACTION_GUIDE_SKIP) {
         finish_guide();
     } else if ((down & (PLAT_KEY_A | PLAT_KEY_RIGHT)) || action == ACTION_GUIDE_NEXT) {
@@ -1614,6 +1914,9 @@ static void apply_game_options(const GamePrefs *prefs)
             show_notice("This game uses its own Bitrate (game page, X > Options)");
     }
     g_session_prefs = *prefs;
+    /* The magnifier looks where this game's was left (the middle at first). */
+    g_app.mag_x = prefs->mag_x >= 0 ? (float)prefs->mag_x / 1000.0f : 0.5f;
+    g_app.mag_y = prefs->mag_y >= 0 ? (float)prefs->mag_y / 1000.0f : 0.5f;
     apply_game_map(prefs);
 }
 
@@ -1644,6 +1947,7 @@ static void launch_with_options(const GfnGame *base, unsigned variant)
         snprintf(game.store, sizeof(game.store), "%s", game.variants[variant].store);
     }
     launch_game(&game);
+    snprintf(g_prefs_id, sizeof(g_prefs_id), "%s", base->app_id);
     /* launch_game applied the global picture settings; layer this game's. */
     apply_game_options(&prefs);
     diagnostic_log("APP", "game options bitrate=%d gyro=%d gyroSpeed=%d camera=%d invert=%d layout=%d map=%d",
@@ -2056,11 +2360,29 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
         g_transport.keyboard_mode = true;
         remote_keyboard_open();
         return;
-    case ACTION_STREAM_POINTER:
-        webrtc_transport_set_pointer_mode(&g_transport, !g_transport.pointer_mode);
-        show_notice(g_transport.pointer_mode ? "Mouse & keyboard mode: drag to move the mouse, tap or A to click"
-                                             : "Controller mode: buttons and sticks act as a gamepad");
+    case ACTION_STREAM_POINTER: {
+        /* Steam Link: pad -> mouse pad -> picture -> pad. */
+        const bool picture_ok = picture_mode_possible();
+        if (!g_transport.pointer_mode) {
+            webrtc_transport_set_pointer_mode(&g_transport, true);
+            g_app.picture_mode = false;
+#if PLAT_HAS_WIDE_MODE
+            show_notice(picture_ok ? "Mouse mode. MOUSE again shows the game to tap"
+                                   : "Mouse & keyboard mode: drag to move the mouse, tap or A to click");
+#else
+            show_notice(picture_ok ? "Mouse mode. MOUSE again: tap right on the game"
+                                   : "Mouse & keyboard mode: drag to move the mouse, tap or A to click");
+#endif
+        } else if (picture_ok && !g_app.picture_mode) {
+            g_app.picture_mode = true;
+            show_notice("Tap to click, hold to right-click, C-Stick scrolls");
+        } else {
+            webrtc_transport_set_pointer_mode(&g_transport, false);
+            g_app.picture_mode = false;
+            show_notice("Controller mode: buttons and sticks act as a gamepad");
+        }
         return;
+    }
     case ACTION_STREAM_ZOOM:
         /* With saved zones, ZOOM steps through them (then back to full). */
         if (zoom_zones_count()) {
@@ -2090,7 +2412,12 @@ static void handle_stream(u32 down, u32 held, AppAction action, bool touch_down,
     /* Centre panel: touchpad in pointer mode, otherwise the zoom map. */
     const UiRect panel = screens_stream_panel();
     if (held & PLAT_KEY_TOUCH) {
-        if (g_transport.pointer_mode) {
+        if (g_app.picture_view) {
+            if (touch_down) picture_touch_begin(touch.x, touch.y);
+            else picture_touch_move(touch.x, touch.y);
+        } else if (g_app.magnifier_view) {
+            magnifier_drag(touch_down, touch.x, touch.y);
+        } else if (g_transport.pointer_mode) {
             if (touch_down && ui_hit(panel, touch.x, touch.y) && g_transport.input_ready)
                 touchpad_begin(touch.x, touch.y);
             else touchpad_move(touch.x, touch.y);
@@ -2967,6 +3294,37 @@ static void sound_hint_tick(void)
     }
 }
 
+/* Steam Link on the PC's desktop: Steam Input applies its desktop layout to
+ * every remote controller there, so the left stick turns the mouse wheel
+ * (zooming in many games) instead of moving. A player found the stick
+ * "does nothing but zoom" in games started from the desktop. After 1.5 s
+ * of pushing the stick on the desktop, say why and how to change it, once. */
+static void steam_desktop_tip_tick(void)
+{
+    static u64 pushed_ms, last_at;
+    const u64 now = plat_time_ms();
+    const u64 step = last_at && now > last_at ? now - last_at : 0;
+    last_at = now;
+    if (g_app.settings.steam_desktop_tip_seen || g_app.view != VIEW_STREAM || !g_app.stream_started_at ||
+        !steam_link_selected() || g_app.modal != MODAL_NONE || g_app.stream_menu || g_app.controls_open ||
+        g_app.keyboard_open || g_transport.pointer_mode ||
+        webrtc_transport_steam_activity(&g_transport) != 3) {
+        pushed_ms = 0;
+        return;
+    }
+    const PlatInput *in = plat_input();
+    const int reach = PLAT_LSTICK_REACH / 2;
+    if (abs(in->lstick_x) < reach && abs(in->lstick_y) < reach) return;
+    pushed_ms += step > 100 ? 100 : step;
+    if (pushed_ms < 1500) return;
+    g_app.settings.steam_desktop_tip_seen = true;
+    save_settings();
+    diagnostic_log("STEAM", "desktop stick tip shown");
+    open_modal(MODAL_TIP, "操作", "STEAM DESKTOP CONTROLS",
+               "The PC is on its desktop, where Steam's desktop controls make the left stick scroll. Start games "
+               "from Big Picture, or on the PC set Steam > Settings > Controller > Desktop layout to Gamepad.");
+}
+
 /* A finished session's summary goes out from the menus when idle. */
 static bool g_stats_inflight, g_stats_failed;
 
@@ -3657,6 +4015,7 @@ int main(int argc, char **argv)
     regions_load();
     settings_load(&g_app.settings);
     i18n_set((Lang)g_app.settings.language);
+    ui_set_kanji_labels(g_app.settings.kanji_labels);
     /* Files the menus consult, read once before the background writer
      * starts: on a slow card a read waits behind any write. */
     report_stats_pending();
@@ -3669,7 +4028,10 @@ int main(int argc, char **argv)
                  rand() & 0xFFFF, rand() & 0xFFFF, rand() & 0xFFFF);
         settings_save(&g_app.settings);
     }
+    /* A new player gets the tour. One who has played before gets What's new
+     * instead (it offers the tour), not both. */
     g_app.guide_page = g_app.settings.guide_done ? -1 : 0;
+    if (g_app.settings.guide_done) g_app.settings.guide_version = GUIDE_VERSION;
     /* Kasumi opens on the hub: the services as cards (the guide first for a
      * new player). */
     open_hub();
@@ -3734,16 +4096,29 @@ int main(int argc, char **argv)
     g_app.continue_index = -1;
     g_app.queue_eta = -1;
     updater_init(argc > 0 && argv ? argv[0] : NULL);
-    /* First start of a freshly installed version: show what changed, once. */
-    if (updater_take_whats_new(g_app.whats_new_version, sizeof(g_app.whats_new_version),
-                               g_whats_new_notes, sizeof(g_whats_new_notes))) {
+    /* What's new, once per release: the cards for anyone who played an
+     * older one, however it was installed (FBI too, not only the updater).
+     * A new player has the tour, so theirs count as seen. The updater's
+     * notes alone stand in for a release without cards. */
+    const bool updater_notes = updater_take_whats_new(g_app.whats_new_version, sizeof(g_app.whats_new_version),
+                                                      g_whats_new_notes, sizeof(g_whats_new_notes));
+    g_app.whats_new_notes = g_whats_new_notes;
+    if (!g_app.settings.guide_done) {
+        snprintf(g_app.settings.news_seen, sizeof(g_app.settings.news_seen), "%s", NEWS_RELEASE);
+    } else if (strcmp(g_app.settings.news_seen, NEWS_RELEASE) && NEWS_COUNT > 0) {
         g_app.whats_new_open = true;
-        g_app.whats_new_notes = g_whats_new_notes;
+        g_app.whats_new_page = 0;
+        diagnostic_log("UI", "what's new %s shown", NEWS_RELEASE);
+    } else if (updater_notes) {
+        g_app.whats_new_open = true;
+        g_app.whats_new_page = -1;
     }
     /* Opened from a game's HOME Menu shortcut: launch it once signed in. */
     if (shortcut_take_launch(&g_shortcut_game, &g_shortcut_variant)) {
         g_shortcut_launch_at = plat_time_ms();
         g_app.whats_new_open = false;
+        /* The tour waits for a start from Kasumi's own icon. */
+        g_app.guide_page = -1;
         g_app.hub_open = false;
         char text[128];
         snprintf(text, sizeof(text), i18n_text("Starting %.90s..."), g_shortcut_game.title);
@@ -3824,8 +4199,19 @@ int main(int argc, char **argv)
         const AppView previous_view = g_app.view;
         enter_tick();
         g_app.service_loading = net_worker_current_job() == NET_JOB_SWITCH_SERVICE;
-        /* Covers stop downloading while a game starts or runs. */
+        /* Covers stop downloading while a game starts or runs. When its
+         * stream connects, they and the gallery's picture give their memory
+         * to the video decoder, which needs nearly all of it. */
         game_art_pause(gfn_session_active(&g_client) || g_transport.peer != NULL);
+        {
+            static bool had_peer;
+            const bool peer = g_transport.peer != NULL;
+            if (peer && !had_peer) {
+                game_art_release();
+                if (!g_app.gallery_open) gallery_release();
+            }
+            had_peer = peer;
+        }
         g_app.view = derive_view();
         if (g_app.view == VIEW_HUB) refresh_current_status();
         /* Steam Link pairing ended with a PC still paired ("Paired with
@@ -3847,6 +4233,7 @@ int main(int argc, char **argv)
         }
         keep_login_tick();
         sound_hint_tick();
+        steam_desktop_tip_tick();
         shortcut_tick();
         shortcut_launch_tick();
         library_upgrade_tick();
@@ -3879,23 +4266,37 @@ int main(int argc, char **argv)
             }
         }
         phase_end(PHASE_HANDLE);
-        if (in->up & PLAT_KEY_TOUCH) touchpad_end();
+        if (in->up & PLAT_KEY_TOUCH) {
+            touchpad_end();
+            picture_touch_end();
+            magnifier_release();
+        }
         if (queue_alert_active() && (down || touch_down)) queue_alert_stop();
         update_pointer_click(down, held);
         ui_sounds(down, action);
 
         /* Game input: touch-held L3/R3/PS, and nothing while menus are up. */
         const bool streaming = g_app.view == VIEW_STREAM;
+        g_app.picture_view = streaming && g_app.picture_mode && g_transport.pointer_mode &&
+                             !g_transport.keyboard_mode && picture_mode_possible();
+        g_transport.picture_mode = g_app.picture_view;
         /* The touch camera's layout, unless the lower screen is the mouse
          * pad, the zoom map or the keyboard. */
         const unsigned look = streaming && !g_transport.pointer_mode && !g_transport.keyboard_mode &&
                               !mvd_video_zoomed() ? touch_camera_mode() : 0;
         g_app.look_available = look != 0;
         g_app.look_mode = g_app.settings.touch_camera_shown ? look : 0;
+#if PLAT_HAS_WIDE_MODE
+        g_app.magnifier_view = streaming && g_app.settings.lower_panel != LOWER_PANEL_STATS && mvd_video_wide() &&
+                               !g_app.look_mode && !g_transport.pointer_mode && !g_transport.keyboard_mode &&
+                               !mvd_video_zoomed() && !g_app.picture_view;
+#endif
         look_tick(touch_down, g_app.touching, touch);
         g_app.touch_buttons = streaming ? stream_touch_buttons(touch_down, touch) : 0;
         gfn_input_set_virtual_buttons(g_app.touch_buttons | (g_app.look_r3 ? GFN_PAD_RIGHT_THUMB : 0));
         slider_zoom_tick(streaming);
+        slider_light_tick(streaming);
+        slider_camera_tick(streaming);
         mic_tick(streaming);
         /* The phone keyboard lives as long as the game. */
         if (phone_keyboard_running()) {
@@ -3957,6 +4358,7 @@ int main(int argc, char **argv)
         if (draw_bottom) last_bottom_draw = now;
         was_touching = g_app.touching;
         if (g_app.view != VIEW_STREAM) game_art_pump();
+        else game_art_collect();
         if (g_app.gallery_open) gallery_pump();
         render(&g_app, draw_bottom);
         const char *render_notice = render_take_notice();

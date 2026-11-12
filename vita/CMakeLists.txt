@@ -91,6 +91,11 @@ target_link_directories(Kasumi PRIVATE
   "${ROOT}/build-transport-vita/dist"
   "${ROOT}/build-aecm-vita")
 
+# vita-elf-create appends about 5 KB of module data after the code segment. The
+# linker only leaves the gap to the next 64 KB boundary, so when the code ended
+# just under one the data overran it and the tool died with heap corruption
+# (0xC0000374). The script's own headroom symbol always leaves room.
+target_link_options(Kasumi PRIVATE -Wl,--defsym=__sce_headroom=0x4000)
 target_link_libraries(Kasumi
   -Wl,--start-group
   jansson_vita peer srtp2 mbedtls mbedx509 mbedcrypto aecm

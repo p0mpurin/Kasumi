@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /* The console-independent half of ui.h: themes and accents, animation
  * timing, text layout and every component, all drawn through the
@@ -20,7 +21,7 @@ static UiTheme g_theme;
 UiTheme ui_theme(void) { return g_theme; }
 
 /* 青磁 celadon, 桜 cherry, 金 gold, 藍 indigo, 藤 wisteria, 紅 crimson,
- * 抹茶 matcha, 柿 persimmon, 墨 ink, 白 white. */
+ * 抹茶 matcha, 柿 persimmon, 墨 ink, 白 white, 雪 snow. */
 static const struct {
     const char *name;
     u8 r, g, b;
@@ -35,7 +36,24 @@ static const struct {
     { "Kaki", 0xEC, 0x93, 0x52 },
     { "Sumi", 0xC8, 0xC4, 0xBC },
     { "Shiro", 0xEC, 0xE8, 0xDE },
+    { "Yuki", 0xB4, 0xD2, 0xEA },
 };
+
+bool ui_snow_season(void)
+{
+    if (g_theme == UI_THEME_YUKI) return true;
+    /* Read once a minute: the date hardly changes between frames. */
+    static u64 checked_at;
+    static bool winter;
+    const u64 now = plat_time_ms();
+    if (!checked_at || now - checked_at >= 60000) {
+        checked_at = now;
+        const time_t t = time(NULL);
+        const struct tm *local = localtime(&t);
+        winter = local && (local->tm_mon == 11 || (local->tm_mon == 0 && local->tm_mday <= 7));
+    }
+    return winter;
+}
 
 void ui_set_theme(UiTheme theme)
 {
@@ -83,6 +101,136 @@ u32 ui_theme_color(UiTheme theme)
 {
     if (theme >= UI_THEME_COUNT) theme = UI_THEME_AI;
     return UI_RGBA(THEMES[theme].r, THEMES[theme].g, THEMES[theme].b, 0xFF);
+}
+
+/* ---- Theme weather ------------------------------------------------------------- */
+
+typedef enum { FX_PETAL, FX_LEAF, FX_SNOW, FX_GOLD, FX_FIREFLY, FX_RAIN, FX_ASH } FxKind;
+
+static const struct {
+    FxKind kind;
+    u8 r, g, b;
+} THEME_FX[UI_THEME_COUNT] = {
+    { FX_FIREFLY, 0xC4, 0xF4, 0xCC }, /* Seiji: fireflies over celadon */
+    { FX_PETAL, 0xF0, 0xC4, 0xD2 },   /* Sakura: cherry petals */
+    { FX_GOLD, 0xF6, 0xD4, 0x7C },    /* Kin: gold dust rising */
+    { FX_RAIN, 0xB0, 0xC8, 0xF0 },    /* Ai: fine rain */
+    { FX_PETAL, 0xCC, 0xB4, 0xF2 },   /* Fuji: wisteria petals */
+    { FX_LEAF, 0xE4, 0x5C, 0x58 },    /* Beni: red maple leaves */
+    { FX_LEAF, 0xA4, 0xCC, 0x74 },    /* Matcha: young green leaves */
+    { FX_LEAF, 0xF0, 0x9A, 0x52 },    /* Kaki: autumn leaves */
+    { FX_ASH, 0xC0, 0xBC, 0xB4 },     /* Sumi: drifting ash */
+    { FX_PETAL, 0xF6, 0xF2, 0xEC },   /* Shiro: white plum petals */
+    { FX_SNOW, 0xF2, 0xF6, 0xFC },    /* Yuki: snow */
+};
+
+static float fx_hash(unsigned i, unsigned k)
+{
+    unsigned x = i * 374761393u + k * 668265263u;
+    x = (x ^ (x >> 13)) * 1274126177u;
+    return (float)((x ^ (x >> 16)) & 0xFFFFu) / 65536.0f;
+}
+
+static float fx_clamp(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
+
+/* A petal or leaf: a pointed shape along angle, turned edge-on by flip. */
+static void fx_blade(float x, float y, float size, float angle, float flip, float width, u32 color)
+{
+    const float ux = cosf(angle) * size, uy = sinf(angle) * size;
+    const float px = -uy * width * flip, py = ux * width * flip;
+    ui_triangle(x - ux, y - uy, x + px, y + py, x + ux, y + uy, color);
+    ui_triangle(x - ux, y - uy, x - px, y - py, x + ux, y + uy, color);
+}
+
+void ui_ambient_fx(float width, float top, float height, float strength, unsigned count)
+{
+    if (strength <= 0.01f) return;
+    UiTheme theme = g_theme < UI_THEME_COUNT ? g_theme : UI_THEME_AI;
+    FxKind kind = THEME_FX[theme].kind;
+    u32 color = UI_RGBA(THEME_FX[theme].r, THEME_FX[theme].g, THEME_FX[theme].b, 0xFF);
+    if (ui_snow_season()) {
+        kind = FX_SNOW;
+        color = UI_RGBA(0xF2, 0xF6, 0xFC, 0xFF);
+    }
+    const float t = (float)ui_ticks() / 1000.0f;
+    const float span = height - top + 30.0f;
+    if (kind == FX_SNOW || kind == FX_RAIN) count = count * 2;
+    for (unsigned i = 0; i < count; ++i) {
+        const float near = fx_hash(i, 9);
+        float x, y, a;
+        switch (kind) {
+        case FX_SNOW:
+            y = top - 6.0f + fmodf(t * (6.0f + 14.0f * near) + fx_hash(i, 2) * span, span);
+            x = fmodf(fx_hash(i, 3) * (width + 20.0f) + t * 2.0f +
+                      sinf(t * (0.4f + 0.6f * fx_hash(i, 4)) + (float)i * 1.7f) * (6.0f + 10.0f * near) + 400.0f,
+                      width + 20.0f) - 10.0f;
+            a = strength * (0.30f + 0.55f * near);
+            break;
+        case FX_RAIN:
+            y = top - 12.0f + fmodf(t * (150.0f + 90.0f * near) + fx_hash(i, 2) * span, span);
+            x = fmodf(fx_hash(i, 3) * (width + 40.0f) - t * (30.0f + 20.0f * near) + 800.0f, width + 40.0f) - 20.0f;
+            a = strength * (0.16f + 0.24f * near);
+            break;
+        case FX_GOLD:
+            y = height + 6.0f - fmodf(t * (4.0f + 7.0f * near) + fx_hash(i, 2) * span, span);
+            x = fmodf(fx_hash(i, 3) * (width + 20.0f) + sinf(t * (0.3f + 0.5f * fx_hash(i, 4)) + (float)i) * 10.0f +
+                      400.0f, width + 20.0f) - 10.0f;
+            a = strength * (0.25f + 0.6f * near) * (0.55f + 0.45f * sinf(t * (1.5f + 2.0f * fx_hash(i, 6)) + (float)i));
+            break;
+        case FX_FIREFLY: {
+            const float bx = fx_hash(i, 3) * width, by = top + 20.0f + fx_hash(i, 2) * (height - top - 30.0f);
+            x = bx + sinf(t * (0.20f + 0.25f * fx_hash(i, 4)) + (float)i) * 28.0f;
+            y = by + sinf(t * (0.17f + 0.20f * fx_hash(i, 5)) + (float)i * 2.3f) * 14.0f;
+            const float pulse = sinf(t * (0.9f + 0.8f * fx_hash(i, 6)) + (float)i * 1.3f);
+            a = strength * fx_clamp(pulse * 1.4f) * (0.5f + 0.5f * near);
+            break;
+        }
+        case FX_ASH:
+            y = top - 6.0f + fmodf(t * (3.0f + 6.0f * near) + fx_hash(i, 2) * span, span);
+            x = fmodf(fx_hash(i, 3) * (width + 20.0f) + sinf(t * 0.5f + (float)i) * 12.0f + t * 3.0f + 400.0f,
+                      width + 20.0f) - 10.0f;
+            a = strength * (0.20f + 0.40f * near);
+            break;
+        default: /* petals and leaves drift down on the wind, turning */
+            y = top - 10.0f + fmodf(t * (8.0f + 11.0f * fx_hash(i, 1)) + fx_hash(i, 2) * span, span);
+            x = fmodf(fx_hash(i, 3) * (width + 40.0f) + t * (5.0f + 7.0f * fx_hash(i, 7)) +
+                      sinf(t * (0.5f + fx_hash(i, 4)) + (float)i) * 16.0f + 400.0f, width + 40.0f) - 20.0f;
+            a = strength * (0.35f + 0.5f * fx_hash(i, 8));
+            break;
+        }
+        /* Fade in under the top edge and out at the bottom. */
+        if (y < top) continue;
+        a *= fx_clamp((y - top) / 22.0f) * fx_clamp((height - y) / 16.0f + 0.2f);
+        const u8 a8 = (u8)(255.0f * fx_clamp(a));
+        if (a8 < 4) continue;
+        switch (kind) {
+        case FX_SNOW: ui_circle(x, y, 0.7f + 1.5f * near, ui_with_alpha(color, a8)); break;
+        case FX_RAIN: ui_line(x, y, x - 2.0f, y + 7.0f + 5.0f * near, 1.0f, ui_with_alpha(color, a8)); break;
+        case FX_GOLD:
+            ui_circle(x, y, 2.6f * (0.6f + near), ui_with_alpha(color, (u8)(a8 / 5)));
+            ui_circle(x, y, 0.6f + 0.8f * near, ui_with_alpha(color, a8));
+            break;
+        case FX_FIREFLY:
+            ui_circle(x, y, 4.0f, ui_with_alpha(color, (u8)(a8 / 6)));
+            ui_circle(x, y, 2.0f, ui_with_alpha(color, (u8)(a8 / 3)));
+            ui_circle(x, y, 0.9f, ui_with_alpha(color, a8));
+            break;
+        case FX_ASH: ui_circle(x, y, 0.6f + 1.1f * near, ui_with_alpha(color, a8)); break;
+        case FX_LEAF: {
+            const float spin = t * (0.8f + 1.6f * fx_hash(i, 6)) + (float)i;
+            const float flip = 0.25f + 0.75f * fabsf(cosf(spin * 0.9f));
+            const u32 shade = ui_mix(color, UI_RGBA(0, 0, 0, 0xFF), 0.25f * fx_hash(i, 10));
+            fx_blade(x, y, 3.0f + 2.4f * fx_hash(i, 5), spin, flip, 0.62f, ui_with_alpha(shade, a8));
+            break;
+        }
+        default: {
+            const float spin = t * (0.6f + 1.4f * fx_hash(i, 6)) + (float)i;
+            const float flip = 0.3f + 0.7f * fabsf(cosf(spin * 0.8f));
+            fx_blade(x, y, 2.2f + 2.0f * fx_hash(i, 5), spin, flip, 0.45f, ui_with_alpha(color, a8));
+            break;
+        }
+        }
+    }
 }
 
 static u64 g_started_at;
@@ -337,13 +485,18 @@ void ui_dots(float cx, float cy, unsigned count, unsigned active, u32 on, u32 of
     }
 }
 
+static bool g_kanji_labels = true;
+
+void ui_set_kanji_labels(bool on) { g_kanji_labels = on; }
+bool ui_show_jp(void) { return g_kanji_labels && ui_has_japanese(); }
+
 void ui_section(float x, float y, float w, const char *jp, const char *en)
 {
     float cursor = x;
     /* In Japanese the kanji heading says it all. */
     if (ui_has_japanese() && i18n_get() == LANG_JA && jp && jp[0]) {
         ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp);
-    } else if (ui_has_japanese()) {
+    } else if (ui_show_jp()) {
         cursor += ui_text(cursor, y, 11.0f, UI_ACCENT, UI_ALIGN_LEFT, jp) + 6.0f;
         ui_label(cursor, y + 1.0f, 11.0f, UI_TEXT_FAINT, UI_ALIGN_LEFT, en);
     } else {
@@ -622,8 +775,10 @@ void ui_surface(UiRect r, u32 border, u32 fill)
 #define KEY_LIP 2.0f
 UiRect ui_key(UiRect r, UiButtonStyle style, bool pressed)
 {
-    u32 face = UI_RAISED, border = UI_LINE_STRONG, lip = UI_RGBA(0x2A, 0x2A, 0x31, 0xFF);
-    u32 tick = UI_TEXT_DIM;
+    /* Ordinary keys stay quiet (thin rim, faint corners) so the main
+     * action, solid in the accent colour, leads the screen. */
+    u32 face = UI_RAISED, border = UI_LINE, lip = UI_RGBA(0x2A, 0x2A, 0x31, 0xFF);
+    u32 tick = UI_TEXT_FAINT;
     u8 bevel = 0x22, sheen = 0x0C;
     if (style == UI_BUTTON_PRIMARY) {
         face = UI_ACCENT; border = UI_ACCENT; lip = UI_ACCENT_DEEP; tick = UI_ACCENT_INK;
@@ -645,12 +800,12 @@ UiRect ui_key(UiRect r, UiButtonStyle style, bool pressed)
         /* The lip only shows below the face, so draw just that strip. */
         if (!pressed) ui_rect(r.x + 1.0f, r.y + face_h, r.w - 2.0f, KEY_LIP, UI_RGBA(0x00, 0x00, 0x00, 0xA0));
         ui_glass(inner);
-        const u8 wash = style == UI_BUTTON_PRIMARY ? 0xE0 : style == UI_BUTTON_DANGER ? 0xB0 : 0x48;
+        const u8 wash = style == UI_BUTTON_PRIMARY ? 0xE0 : style == UI_BUTTON_DANGER ? 0xB0 : 0x38;
         ui_rect(inner.x, inner.y, inner.w, inner.h, ui_with_alpha(style == UI_BUTTON_NORMAL ? UI_SURFACE : face, wash));
         if (style == UI_BUTTON_ACTIVE)
             ui_rect(inner.x, inner.y, inner.w, inner.h, ui_with_alpha(UI_ACCENT, 0x30));
         if (pressed) ui_rect(inner.x, inner.y, inner.w, inner.h, UI_RGBA(0xFF, 0xFF, 0xFF, 0x18));
-        frame(top, style == UI_BUTTON_NORMAL ? UI_RGBA(0xFF, 0xFF, 0xFF, 0x48) : ui_with_alpha(border, 0xE0));
+        frame(top, style == UI_BUTTON_NORMAL ? UI_RGBA(0xFF, 0xFF, 0xFF, 0x30) : ui_with_alpha(border, 0xE0));
         ui_gradient(inner.x, inner.y + 1.0f, inner.w, inner.h * 0.5f - 1.0f, UI_RGBA(0xFF, 0xFF, 0xFF, 0x1C),
                     UI_RGBA(0xFF, 0xFF, 0xFF, 0x00));
         ui_rect(inner.x, inner.y, inner.w, 1.0f, UI_RGBA(0xFF, 0xFF, 0xFF, 0x60));
@@ -680,8 +835,9 @@ void ui_button(UiRect r, const char *label, const char *jp, UiButtonStyle style,
     const float label_size = sharp ? 15.0f : r.h >= 40.0f ? 14.0f : 12.0f;
     const float jp_size = sharp ? 15.0f : r.h >= 40.0f ? 12.0f : 11.0f;
     const bool room = f.h >= label_size + 2.0f + jp_size + 2.0f || !sharp;
-    /* The kanji line repeats the label in Japanese: not when that is the language. */
-    if (i18n_get() == LANG_JA && ui_has_japanese()) jp = NULL;
+    /* The kanji line repeats the label in Japanese: not when that is the
+     * language, nor with Japanese labels turned off. */
+    if ((i18n_get() == LANG_JA && ui_has_japanese()) || !g_kanji_labels) jp = NULL;
     if (jp && jp[0] && r.h >= 30.0f && room && (ui_has_japanese() || !ui_text_is_japanese(jp))) {
         const float block = label_size + 2.0f + jp_size;
         const float top = f.y + (f.h - block) / 2.0f;

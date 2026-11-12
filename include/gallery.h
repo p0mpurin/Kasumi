@@ -14,6 +14,8 @@ void gallery_mark_dirty(void);
 
 bool gallery_open(void);
 void gallery_close(void);
+/* Frees the closed gallery's picture (512 KB of video memory) for a stream. */
+void gallery_release(void);
 unsigned gallery_count(void);
 unsigned gallery_index(void);
 void gallery_step(int direction);

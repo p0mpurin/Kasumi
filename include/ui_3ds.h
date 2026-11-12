@@ -25,6 +25,16 @@ void ui_begin_top_video(void);
  * so it must be single-buffered. Menus double-buffer it again. */
 void ui_top_classic_video(void);
 void ui_draw_video(void);
+/* The whole picture (no zoom) again, fitted into a rectangle of the lower
+ * screen: Steam Link's picture mode, where the player taps where to click.
+ * Draws nothing before the first wide frame. */
+bool ui_draw_video_in(float x, float y, float w, float h);
+/* Part of the picture, zoom times larger, filling a w x h rectangle of the
+ * lower screen with its shape kept: the magnifier. cx, cy (0..1) is the
+ * centre looked at; ui_video_region_clamp keeps it where the whole region
+ * stays inside the picture. */
+void ui_video_region_clamp(float w, float h, float zoom, float *cx, float *cy);
+bool ui_draw_video_region(float x, float y, float w, float h, float cx, float cy, float zoom);
 /* The picture's size inside the wide surface (mvd_video_wide_size). */
 void ui_set_video_size(unsigned width, unsigned height);
 /* Show only part of the picture (fractions, 0..1), filling the same area:

@@ -26,7 +26,7 @@
     extern const unsigned char _binary_bg_##name##_t3x_start[], _binary_bg_##name##_t3x_end[]; \
     extern const unsigned char _binary_glass_##name##_t3x_start[], _binary_glass_##name##_t3x_end[];
 THEME_GFX(seiji) THEME_GFX(sakura) THEME_GFX(kin) THEME_GFX(ai) THEME_GFX(fuji)
-THEME_GFX(beni) THEME_GFX(matcha) THEME_GFX(kaki) THEME_GFX(sumi) THEME_GFX(shiro)
+THEME_GFX(beni) THEME_GFX(matcha) THEME_GFX(kaki) THEME_GFX(sumi) THEME_GFX(shiro) THEME_GFX(yuki)
 #define THEME_ART(name) _binary_bg_##name##_t3x_start, _binary_bg_##name##_t3x_end, \
     _binary_glass_##name##_t3x_start, _binary_glass_##name##_t3x_end
 
@@ -36,6 +36,7 @@ static const struct {
 } THEME_ART_DATA[UI_THEME_COUNT] = {
     { THEME_ART(seiji) }, { THEME_ART(sakura) }, { THEME_ART(kin) }, { THEME_ART(ai) }, { THEME_ART(fuji) },
     { THEME_ART(beni) }, { THEME_ART(matcha) }, { THEME_ART(kaki) }, { THEME_ART(sumi) }, { THEME_ART(shiro) },
+    { THEME_ART(yuki) },
 };
 
 /* The theme's wallpaper and its blurred copy. A replaced pair is freed at
@@ -546,6 +547,54 @@ void ui_draw_video(void)
     const C2D_Image image = { &g_video_tex, &sub };
     /* Full width, half height: 800x480 -> 800x240 with a 2:1 row average. */
     C2D_DrawImageAt(image, g_video_x, g_video_y / 2.0f, 0.0f, NULL, g_video_scale, 0.5f * g_video_scale);
+}
+
+bool ui_draw_video_in(float x, float y, float w, float h)
+{
+    if (!g_video_ready || !g_video_w || !g_video_h || w <= 0.0f || h <= 0.0f) return false;
+    const C2D_Image image = { &g_video_tex, &g_video_subtex };
+    return C2D_DrawImageAt(image, x, y, 0.0f, NULL, w / (float)g_video_w, h / (float)g_video_h);
+}
+
+/* The region's size as fractions of the picture. */
+static void video_region_size(float w, float h, float zoom, float *fw, float *fh)
+{
+    if (zoom < 1.0f) zoom = 1.0f;
+    *fw = 1.0f / zoom;
+    *fh = *fw * (float)g_video_w * h / (w * (float)g_video_h);
+    if (*fh > 1.0f) {
+        *fw /= *fh;
+        *fh = 1.0f;
+    }
+}
+
+void ui_video_region_clamp(float w, float h, float zoom, float *cx, float *cy)
+{
+    if (w <= 0.0f || h <= 0.0f || !g_video_w || !g_video_h) return;
+    float fw, fh;
+    video_region_size(w, h, zoom, &fw, &fh);
+    if (*cx < fw / 2) *cx = fw / 2;
+    if (*cx > 1.0f - fw / 2) *cx = 1.0f - fw / 2;
+    if (*cy < fh / 2) *cy = fh / 2;
+    if (*cy > 1.0f - fh / 2) *cy = 1.0f - fh / 2;
+}
+
+bool ui_draw_video_region(float x, float y, float w, float h, float cx, float cy, float zoom)
+{
+    if (!g_video_ready || !g_video_w || !g_video_h || w <= 0.0f || h <= 0.0f) return false;
+    float fw, fh;
+    video_region_size(w, h, zoom, &fw, &fh);
+    ui_video_region_clamp(w, h, zoom, &cx, &cy);
+    const float x0 = cx - fw / 2, y0 = cy - fh / 2;
+    Tex3DS_SubTexture sub = g_video_subtex;
+    sub.width = (u16)w;
+    sub.height = (u16)h;
+    sub.left = x0 * (float)g_video_w / MVD_TEX_WIDTH;
+    sub.right = (x0 + fw) * (float)g_video_w / MVD_TEX_WIDTH;
+    sub.top = 1.0f - y0 * (float)g_video_h / MVD_TEX_HEIGHT;
+    sub.bottom = 1.0f - (y0 + fh) * (float)g_video_h / MVD_TEX_HEIGHT;
+    const C2D_Image image = { &g_video_tex, &sub };
+    return C2D_DrawImageAt(image, x, y, 0.0f, NULL, 1.0f, 1.0f);
 }
 
 void ui_begin_bottom(void)

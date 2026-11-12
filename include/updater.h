@@ -35,7 +35,7 @@ typedef struct {
     char latest[32];
     char published[16];
     bool prerelease;
-    char notes[1600];
+    char notes[3072];
     unsigned long size_bytes;
     /* 0..1000 for the current phase. */
     unsigned progress;

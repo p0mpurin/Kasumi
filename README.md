@@ -56,8 +56,9 @@ looking at, and *Continue* puts your last game one press away.
 **Steam Link.** Pair once by typing a code into Steam on your PC; no NVIDIA
 or Microsoft account needed. Play Steam Big Picture, your desktop, your
 recently played games and non-Steam games you added to Steam. The right stick
-can drive the PC's mouse, the on-screen or phone keyboard types on the PC, up
-to four PCs can be paired (press Y in the Steam library), and *Quit game*
+can drive the PC's mouse, and in picture mode the lower screen shows the game so
+you tap where to click, made for point-and-click games. The on-screen or phone
+keyboard types on the PC, up to four PCs can be paired (press Y in the Steam library), and *Quit game*
 closes the game on the PC when you leave.
 
 **Xbox Cloud Gaming** *(beta)*. Sign in with your Microsoft account from your
@@ -182,8 +183,9 @@ VitaShell, and HOME Menu shortcuts and the HOME Menu theme are 3DS-only.
 
 ## Getting started
 
-1. Open Kasumi and follow the short guide, then pick a service on the hub.
-   Only the service you pick asks you to sign in.
+1. Open Kasumi and follow the short tour: it sets your language, Japanese
+   labels, button layout and button names. Then pick a service on the hub. Only
+   the service you pick asks you to sign in.
 2. Press **A** on its card to set it up. No password is ever typed on the 3DS:
    - **GeForce NOW** and **Xbox**: open the web address shown on your phone
      or computer and enter the code. Most GeForce NOW accounts are NVIDIA's
@@ -221,6 +223,18 @@ VitaShell, and HOME Menu shortcuts and the HOME Menu theme are 3DS-only.
 | L R / ZL ZR | L1 R1 / L2 R2 (swappable) |
 | Touch screen | L3, R3 and PS buttons; KEYS, POINTER, ZOOM and MENU |
 | START + SELECT (hold) | Stream menu |
+
+**Mouse:** MOUSE on the lower screen turns the touch screen into a trackpad; A
+clicks. On Steam Link, B right-clicks, and pressing MOUSE again shows the game
+on the lower screen: tap to click there, hold to right-click, C-Stick scrolls.
+
+**Magnifier:** **Settings > Picture > Lower screen panel** shows part of the
+picture 2x or 3x larger in the middle of the lower screen, for a minimap, ammo
+or small text. Drag in it to choose the spot; each game remembers its own.
+
+**3D slider:** **Settings > Controls > 3D slider** gives it a job in games: zoom,
+camera speed (up to twice your setting), dimming the lower screen (the very top
+turns it off, menus light it up again), or holding a button.
 
 **Remote keyboard:** tap keys or use the D-Pad and A. B deletes, Y is space,
 START is Enter, L is Shift (twice for Caps Lock), R switches symbols, ZL is
@@ -272,6 +286,14 @@ two services need no PC at all.
 Some PC games only take keyboard and mouse, like Minecraft Java Edition. In
 Steam on the PC, turn on Steam Input for that game and pick a keyboard and
 mouse layout, or add a controller mod (Controlify, for Minecraft).
+
+**The left stick only scrolls or zooms (Steam Link).**
+On the PC's desktop, Steam applies its desktop controls, where the left stick is
+a scroll wheel. Start the game from Big Picture, or on the PC set **Steam >
+Settings > Controller > Desktop layout** to Gamepad.
+
+**Can I hide the Japanese under the button names?**
+Yes: **Settings > System > Japanese labels**. The kanji artwork stays.
 
 **Kasumi can't find my PC (Steam Link).**
 Some routers, guest networks and PC firewalls block the search. Press **X** on

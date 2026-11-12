@@ -1,4 +1,5 @@
 #include "http_client.h"
+#include "i18n.h"
 #include "platform.h"
 
 #include <curl/curl.h>
@@ -376,8 +377,15 @@ static bool perform(CURL **handle, volatile bool *cancel, long timeout, HttpProg
             result == CURLE_SSL_CACERT_BADFILE || result == CURLE_SSL_CERTPROBLEM ||
             result == CURLE_SSL_CIPHER || result == CURLE_SSL_ISSUER_ERROR)
             diagnostic_flag("tls-error", "%s %s: %s", method, host, curl_easy_strerror(result));
-        snprintf(response->error, sizeof(response->error), "%s",
-                 result == CURLE_ABORTED_BY_CALLBACK ? "Cancelled" : curl_easy_strerror(result));
+        /* 1.1.2 export: players saw curl's "SSL peer certificate or SSH
+         * remote key was not OK". On the consoles with most of them only one
+         * service's address failed while the rest worked: a network that
+         * blocks or inspects it (school and work Wi-Fi), not our CA list. */
+        const char *text = result == CURLE_ABORTED_BY_CALLBACK ? "Cancelled"
+                           : result == CURLE_PEER_FAILED_VERIFICATION
+                               ? i18n_text("this Wi-Fi blocks or changes the secure connection; school and work Wi-Fi often do")
+                               : curl_easy_strerror(result);
+        snprintf(response->error, sizeof(response->error), "%s", text);
         /* How much arrived before it stopped (the connection check uses it
          * when a server ignores Range and the size cap cuts the body). */
         response->size = buffer.size;

@@ -94,8 +94,9 @@ void ui_exit(void);
 /* Each theme: an accent colour and a wallpaper for the lower screen. */
 typedef enum { UI_THEME_SEIJI, UI_THEME_SAKURA, UI_THEME_KIN, UI_THEME_AI, UI_THEME_FUJI,
                UI_THEME_BENI, UI_THEME_MATCHA, UI_THEME_KAKI, UI_THEME_SUMI, UI_THEME_SHIRO,
-               UI_THEME_COUNT } UiTheme;
+               UI_THEME_YUKI, UI_THEME_COUNT } UiTheme;
 void ui_set_theme(UiTheme theme);
+UiTheme ui_theme(void);
 /* Inside a service the accent is the service's colour; pop restores the
  * theme's. */
 void ui_push_accent(u32 color);
@@ -103,6 +104,14 @@ void ui_pop_accent(void);
 const char *ui_theme_name(UiTheme theme);
 /* Accent colour of a theme, for swatches. */
 u32 ui_theme_color(UiTheme theme);
+/* Snow instead of petals: the Yuki theme, and every theme from 1 December
+ * to 7 January (the console's own date). */
+bool ui_snow_season(void);
+/* The theme's weather over a backdrop, between top and height: petals for
+ * Sakura, Fuji and Shiro, leaves for Beni, Matcha and Kaki, gold dust rising
+ * for Kin, fireflies for Seiji, rain for Ai, ash for Sumi, snow for Yuki (and
+ * every theme in the snow season). count scales with the screen's size. */
+void ui_ambient_fx(float width, float top, float height, float strength, unsigned count);
 
 /* The picture filter for wide video, done on the GPU while drawing:
  * sharpening 0 (off) ... 3 and colour 0 (natural) ... 2. */
@@ -183,6 +192,12 @@ void ui_triangle(float x0, float y0, float x1, float y1, float x2, float y2, u32
 /* Text is sized in pixels of glyph height (the system font is 30 px). */
 /* False when the system font cannot draw kana/kanji. */
 bool ui_has_japanese(void);
+/* Settings > Sound & look > Japanese labels: the Japanese line under each
+ * button and the small Japanese headings beside English ones. The large
+ * kanji art (霞, 完, the section emblems) stays either way. */
+void ui_set_kanji_labels(bool on);
+/* Japanese labels are on and the font can draw them. */
+bool ui_show_jp(void);
 float ui_text_width(const char *text, float size);
 float ui_text(float x, float y, float size, u32 color, UiAlign align, const char *text);
 float ui_textf(float x, float y, float size, u32 color, UiAlign align,

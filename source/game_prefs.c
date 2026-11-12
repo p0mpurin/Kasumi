@@ -72,7 +72,7 @@ void game_prefs_write_map(json_t *e, const GfnButtonMap *map)
 GamePrefs game_prefs_none(void)
 {
     return (GamePrefs){ .bitrate = -1, .gyro = -1, .layout = -1, .camera_speed = -1, .camera_invert = -1,
-                        .gyro_speed = -1, .touch_camera = -1 };
+                        .gyro_speed = -1, .touch_camera = -1, .mag_x = -1, .mag_y = -1 };
 }
 
 bool game_prefs_custom(const GamePrefs *prefs)
@@ -94,6 +94,8 @@ GamePrefs game_prefs_get(const char *app_id)
     prefs.camera_invert = read_int(e, "camera_invert");
     prefs.gyro_speed = read_int(e, "gyro_speed");
     prefs.touch_camera = read_int(e, "touch_camera");
+    prefs.mag_x = read_int(e, "mag_x");
+    prefs.mag_y = read_int(e, "mag_y");
     prefs.has_map = game_prefs_read_map(e, &prefs.map);
     return prefs;
 }
@@ -101,7 +103,7 @@ GamePrefs game_prefs_get(const char *app_id)
 void game_prefs_set(const char *app_id, const GamePrefs *prefs)
 {
     if (!g_prefs || !app_id || !app_id[0]) return;
-    const bool empty = !prefs->favourite && !game_prefs_custom(prefs);
+    const bool empty = !prefs->favourite && !game_prefs_custom(prefs) && prefs->mag_x < 0;
     if (empty) {
         json_object_del(g_prefs, app_id);
     } else {
@@ -112,6 +114,10 @@ void game_prefs_set(const char *app_id, const GamePrefs *prefs)
         if (prefs->camera_invert >= 0) json_object_set_new(entry, "camera_invert", json_integer(prefs->camera_invert));
         if (prefs->gyro_speed >= 0) json_object_set_new(entry, "gyro_speed", json_integer(prefs->gyro_speed));
         if (prefs->touch_camera >= 0) json_object_set_new(entry, "touch_camera", json_integer(prefs->touch_camera));
+        if (prefs->mag_x >= 0 && prefs->mag_y >= 0) {
+            json_object_set_new(entry, "mag_x", json_integer(prefs->mag_x));
+            json_object_set_new(entry, "mag_y", json_integer(prefs->mag_y));
+        }
         if (prefs->has_map) game_prefs_write_map(entry, &prefs->map);
         json_object_set_new(g_prefs, app_id, entry);
     }

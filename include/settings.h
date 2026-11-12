@@ -16,6 +16,7 @@ typedef enum {
 } DeadzoneLevel;
 
 enum { LID_PAUSE, LID_SLEEP, LID_KEEP_PLAYING, LID_MODE_COUNT };
+enum { LOWER_PANEL_STATS, LOWER_PANEL_MAG2, LOWER_PANEL_MAG3, LOWER_PANEL_COUNT };
 /* Where the extra buttons go (Settings > Controls on the Vita). */
 enum { EXTRA_BUTTONS_REAR, EXTRA_BUTTONS_FRONT, EXTRA_BUTTONS_OFF, EXTRA_BUTTONS_COUNT };
 /* Automatic diagnostic reports: not asked yet, yes, or no. */
@@ -52,6 +53,9 @@ typedef struct {
      * sharpening 0 = off ... 3 = strong, colour 0 = natural ... 2 = vivid+. */
     unsigned video_sharpen;
     unsigned video_color;
+    /* The lower screen's middle panel in games (Wide): LOWER_PANEL_*. The
+     * magnifier shows part of the picture larger (issue #11: minimaps). */
+    unsigned lower_panel;
     GfnGyroMode gyro_mode;
     unsigned gyro_speed;
     /* C-Stick speed and inversion (GfnInputConfig). */
@@ -68,13 +72,16 @@ typedef struct {
     /* Where the buttons a console lacks go (the Vita's L2 / R2 / L3 / R3):
      * EXTRA_BUTTONS_REAR, _FRONT or _OFF. */
     unsigned extra_buttons;
-    /* The 3D slider in games (player suggestion): 0 off, 1 zoom, 2+ holds a
-     * button while it is up (gfn_slider_choice_output). */
+    /* The 3D slider in games (player suggestion): GFN_SLIDER_*, or a button
+     * held while it is up (gfn_slider_choice_output). */
     unsigned slider;
     /* Appearance and audio. */
     unsigned theme;
     /* The language the screens use (Lang, i18n.h). */
     unsigned language;
+    /* The Japanese line under button names and the small Japanese headings
+     * (ui_set_kanji_labels). Players asked for English only (1.2). */
+    bool kanji_labels;
     /* Stream volume in steps of 20 %: 0 = mute ... 5 = 100 %. */
     unsigned volume;
     bool mute_in_menus;
@@ -87,6 +94,9 @@ typedef struct {
     bool mic;
     /* The one-time Discord invite card was shown (beta.35). */
     bool discord_seen;
+    /* The one-time Steam Link note "on the PC desktop the left stick scrolls"
+     * was shown (1.2: Steam Input's desktop layout applies there). */
+    bool steam_desktop_tip_seen;
     /* Closing the lid mid-game (LID_*): pause with the connection kept,
      * sleep and reconnect on opening, or keep playing with the screens off. */
     unsigned lid_mode;
@@ -112,8 +122,11 @@ typedef struct {
     /* Random, made on this console: tells reports from one console apart.
      * Not linked to the NVIDIA account. */
     char install_id[20];
-    /* The first-run guide was finished or skipped. */
+    /* The release whose What's new cards were seen ("1.2"): NEWS_RELEASE. */
+    char news_seen[16];
+    /* The first-run guide was finished or skipped, and which GUIDE_VERSION. */
     bool guide_done;
+    unsigned guide_version;
     /* A service was picked on the hub at least once; until then Kasumi opens
      * on it instead of asking for an NVIDIA sign-in. */
     bool hub_done;
@@ -137,3 +150,5 @@ void settings_apply_input(const AppSettings *settings);
 /* Push the picture settings into the stream profile. */
 void settings_apply_picture(const AppSettings *settings);
 unsigned settings_deadzone_percent(DeadzoneLevel level);
+/* How much of the picture's width the magnifier shows, as 1 / zoom. */
+float settings_lower_panel_zoom(unsigned lower_panel);

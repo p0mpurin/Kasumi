@@ -430,8 +430,10 @@ bool steam_link_begin_login(GfnClient *c, const char *choice)
     if (typed && !found) {
         char why[160], address[20];
         steam_ip_format(g.typed_ip, address, sizeof(address));
-        snprintf(why, sizeof(why), i18n_text("Nothing with Steam answered at %s. Check the address and that Steam is "
-                 "running there."), address);
+        /* Issue #20 (a Linux PC): most often a firewall dropping Steam's
+         * search (Linux firewalld / ufw, Windows on a "Public" network). */
+        snprintf(why, sizeof(why), i18n_text("Nothing with Steam answered at %s. Is Steam open there? Its firewall "
+                 "must allow UDP 27031-27036 (Windows: Private network)."), address);
         return login_failed(c, why);
     }
     if (typed && update_paired_address(c, &hosts[0])) return false;
@@ -441,7 +443,7 @@ bool steam_link_begin_login(GfnClient *c, const char *choice)
     if (!found && g.paired) return login_failed(c, "No other PC with Steam found. Press X to type its address.");
     if (!found)
         return login_failed(c, "No PC with Steam answered on this Wi-Fi. Start Steam on your PC, or press X to "
-                               "type its address.");
+                               "type its address. Firewalls must allow UDP 27031-27036.");
     /* A PC not paired yet first (pairing another), then one with someone
      * signed in to Steam. */
     int pick = -1;

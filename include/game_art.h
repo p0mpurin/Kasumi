@@ -17,6 +17,11 @@ void game_art_init(void);
 void game_art_exit(void);
 /* While a game starts or runs: no downloads (the stream has the Wi-Fi). */
 void game_art_pause(bool paused);
+/* Hands the covers' memory back for a stream's video decoder; they load
+ * again from the card once the menus want them. */
+void game_art_release(void);
+/* In a stream, where game_art_pump does not run: frees what was released. */
+void game_art_collect(void);
 
 /* UI thread: ask for a game's art (cheap; repeated calls are fine). */
 void game_art_want(const GfnGame *game);

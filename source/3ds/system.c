@@ -45,6 +45,7 @@ bool plat_services_init(char *error, size_t error_size)
 
 void plat_services_exit(void)
 {
+    plat_lower_screen_light(100);
     if (g_soc_ready) socExit();
     g_soc_ready = false;
     free(g_soc_buffer);
@@ -72,12 +73,55 @@ void plat_full_speed(void) { osSetSpeedupEnable(true); }
 bool plat_main_loop(void) { return aptMainLoop(); }
 void plat_allow_sleep(bool allowed) { aptSetSleepAllowed(allowed); }
 
+/* Raw backlight values run from 0x10 to 0xAC (3dbrew, GSPLCD:SetBrightnessRaw);
+ * the console caps anything outside them. */
+#define LOWER_LIGHT_MIN 0x10u
+#define LOWER_LIGHT_MAX 0xACu
+static unsigned g_lower_light = 100;
+static u32 g_lower_normal;
+static bool g_lower_refused;
+
+bool plat_lower_screen_light(unsigned percent)
+{
+    if (percent > 100) percent = 100;
+    if (percent == g_lower_light) return true;
+    if (g_lower_refused) return false;
+    if (R_FAILED(gspLcdInit())) {
+        g_lower_refused = true;
+        return false;
+    }
+    /* Read fresh each time it leaves 100: the player may have changed it in
+     * the HOME Menu. Without a believable value, leave the screen alone rather
+     * than risk putting it back wrong. */
+    if (g_lower_light == 100) {
+        u32 raw = 0;
+        if (R_FAILED(GSPLCD_GetBrightness(GSPLCD_SCREEN_BOTTOM, &raw)) || raw < LOWER_LIGHT_MIN || raw > LOWER_LIGHT_MAX) {
+            gspLcdExit();
+            g_lower_refused = true;
+            return false;
+        }
+        g_lower_normal = raw;
+    }
+    if (percent == 0) {
+        GSPLCD_PowerOffBacklight(GSPLCD_SCREEN_BOTTOM);
+    } else {
+        GSPLCD_SetBrightnessRaw(GSPLCD_SCREEN_BOTTOM,
+                                LOWER_LIGHT_MIN + (g_lower_normal - LOWER_LIGHT_MIN) * percent / 100);
+        if (g_lower_light == 0) GSPLCD_PowerOnBacklight(GSPLCD_SCREEN_BOTTOM);
+    }
+    gspLcdExit();
+    g_lower_light = percent;
+    return true;
+}
+
 static aptHookCookie g_apt_cookie;
 static void (*g_system_handler)(PlatSystemEvent event);
 
 static void apt_hook(APT_HookType hook, void *param)
 {
     (void)param;
+    /* The HOME Menu and sleep get the player's own brightness back. */
+    if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP || hook == APTHOOK_ONEXIT) plat_lower_screen_light(100);
     PlatSystemEvent event = PLAT_SYS_OTHER;
     if (hook == APTHOOK_ONSLEEP) event = PLAT_SYS_SLEEP;
     else if (hook == APTHOOK_ONSUSPEND) event = PLAT_SYS_SUSPEND;
