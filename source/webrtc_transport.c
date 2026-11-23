@@ -727,7 +727,13 @@ static void on_state(PeerConnectionState state, void *userdata)
         /* A DTLS close_notify from the rig closes a working stream. Beta.27
          * report SAFA4K counted it as "connecting" and never reconnected. */
         t->state = WEBRTC_FAILED;
-        snprintf(t->status, sizeof(t->status), i18n_text("WebRTC transport %s"), peer_connection_state_to_string(state));
+        if (state == PEER_CONNECTION_FAILED && t->xcloud && xcloud_is_home_session() && !t->connected_at) {
+            t->no_reconnect = true;
+            snprintf(t->status, sizeof(t->status),
+                     i18n_text("Couldn't reach your Xbox over WebRTC. Outside home Wi-Fi, enable UPnP or forward UDP 9002."));
+        } else {
+            snprintf(t->status, sizeof(t->status), i18n_text("WebRTC transport %s"), peer_connection_state_to_string(state));
+        }
     } else {
         t->state = WEBRTC_CHECKING;
         snprintf(t->status, sizeof(t->status), i18n_text("WebRTC %s"), peer_connection_state_to_string(state));
@@ -1121,6 +1127,8 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
     config.datachannel = DATA_CHANNEL_BINARY; config.onvideopacket = on_video;
     config.onaudiopacket = on_audio; config.user_data = g_owner;
     config.ice_servers[0].urls = "stun:s1.stun.gamestream.nvidia.com:19308";
+    if (xcloud_is_home_session())
+        config.ice_servers[1].urls = "stun:stun.l.google.com:19302";
     PeerConnection *pc = peer_connection_create(&config);
     if (!pc) return NULL;
     peer_connection_set_max_video_hold_ms(pc, stream_profile_weak() ? 900 : 700);

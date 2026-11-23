@@ -1307,6 +1307,7 @@ void xcloud_session_tick(GfnClient *c)
         }
     } else if (!strcmp(state, "Provisioned")) {
         c->session_state = GFN_SESSION_READY;
+        g.provisioning_at = 0;
         g.next_keepalive_at = now + 30000;
         snprintf(c->status, sizeof(c->status), i18n_text("Xbox ready; connecting the stream..."));
     } else if (!strcmp(state, "Failed")) {
@@ -1345,14 +1346,24 @@ bool xcloud_recover_session(GfnClient *c)
     const char *state = json_string_value(json_object_get(root, "state"));
     const bool alive = r.status == 200 && state &&
                        (!strcmp(state, "Provisioned") || !strcmp(state, "ReadyToConnect") ||
-                        !strcmp(state, "Provisioning"));
+                        !strcmp(state, "Provisioning") ||
+                        (g.home_session && !strcmp(state, "WaitingForResources")));
     /* state points into root: decide before it is freed. */
     const bool provisioned = alive && !strcmp(state, "Provisioned");
     diagnostic_log("XCLOUD", "recover: http=%ld state=%s", r.status, state ? state : "-");
     json_decref(root);
     http_response_free(&r);
     if (alive) {
-        c->session_state = provisioned ? GFN_SESSION_READY : GFN_SESSION_SETUP;
+        if (provisioned) {
+            c->session_state = GFN_SESSION_READY;
+            g.provisioning_at = 0;
+        } else {
+            const u64 now = plat_time_ms();
+            c->session_state = GFN_SESSION_SETUP;
+            g.started_at = now;
+            g.provisioning_at = now;
+            g.connect_sent = false;
+        }
         return true;
     }
     session_failed(c, "The Xbox session ended. Start the stream again.", "ended");
@@ -1453,8 +1464,13 @@ static void add_ice_candidate(NvstSignal *s, const char *cand)
     json_t *entry = json_pack("{s:s}", "candidate", cand);
     char *line = entry ? json_dumps(entry, JSON_COMPACT) : NULL;
     json_decref(entry);
-    if (line && strlen(line) < sizeof(s->remote_ice[0]))
-        snprintf(s->remote_ice[s->remote_ice_count++], sizeof(s->remote_ice[0]), "%s", line);
+    if (line && strlen(line) < sizeof(s->remote_ice[0])) {
+        bool dup = false;
+        for (unsigned i = 0; i < s->remote_ice_count; ++i) {
+            if (!strcmp(s->remote_ice[i], line)) { dup = true; break; }
+        }
+        if (!dup) snprintf(s->remote_ice[s->remote_ice_count++], sizeof(s->remote_ice[0]), "%s", line);
+    }
     free(line);
 }
 
@@ -1579,6 +1595,30 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
         add_ice_candidate(s, candidate);
     }
     json_decref(remote);
+    if (g.home_session) {
+        char cfg_path[220];
+        xcloud_session_subpath(cfg_path, sizeof(cfg_path), session_id, "configuration");
+        HttpResponse cfg_r;
+        if (gs_request_raw(base, token, "GET", cfg_path, NULL, &cfg_r, NULL, 0)) {
+            if (cfg_r.status == 200) {
+                json_t *cfg = response_json(&cfg_r);
+                json_t *sd = json_object_get(cfg, "serverDetails");
+                const char *ip = json_string_value(json_object_get(sd, "ipV4Address"));
+                if (!ip || !ip[0]) ip = json_string_value(json_object_get(sd, "ipAddress"));
+                json_int_t port = integer(sd, "ipV4Port");
+                if (port <= 0) port = integer(sd, "port");
+                if (port <= 0) port = 9002;
+                if (ip && ip[0] && !strchr(ip, ':') && port > 0 && port <= 65535) {
+                    char cand[128];
+                    snprintf(cand, sizeof(cand), "a=candidate:20 1 UDP 1 %s %lld typ host ", ip, (long long)port);
+                    add_ice_candidate(s, cand);
+                    diagnostic_log("XHOME", "config serverDetails IPv4 %s:%lld", ip, (long long)port);
+                }
+                json_decref(cfg);
+            }
+            http_response_free(&cfg_r);
+        }
+    }
     diagnostic_log("XCLOUD", "remote candidates %u (IPv4/Teredo)", s->remote_ice_count);
     if (!s->remote_ice_count || !s->offer_sdp) return signal_fail(s, peer, "The Xbox sent no usable address");
     s->xcloud_peer = peer;
