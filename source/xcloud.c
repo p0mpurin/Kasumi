@@ -379,6 +379,7 @@ static bool ensure_web_xsts(GfnClient *c)
     const int64_t now = (int64_t)time(NULL);
     if (g.web_xsts[0] && g.uhs[0] && now + 300 < g.web_xsts_expires_at) return true;
     if (!msa_access(c)) return false;
+    login_save(c);
     static char user_tok[4096];
     if (!xbl_user_token(c, user_tok, sizeof(user_tok))) return false;
     if (!xsts_authorize(c, user_tok, "http://xboxlive.com", g.web_xsts, sizeof(g.web_xsts), g.uhs, sizeof(g.uhs)))
@@ -470,9 +471,14 @@ static bool streaming_token(GfnClient *c)
     if (!xbl_user_token(c, user_tok, sizeof(user_tok))) return false;
     if (!xsts_authorize(c, user_tok, "http://gssv.xboxlive.com/", xsts, sizeof(xsts), NULL, 0)) return false;
 
+    /* Tokens still good before this renewal: a failed request (Wi-Fi, a
+     * service hiccup) keeps them while they last instead of signing out. */
+    const int64_t now = (int64_t)time(NULL);
+    const bool had_home = g.home_token[0] && g.home_base[0] && now + 60 < g.home_token_expires_at;
+    const bool had_cloud = g.has_cloud && g.base[0] && c->access_token[0] && now + 60 < c->token_expires_at;
     const bool home_ok = login_offering(c, xsts, "xhome", g.home_token, sizeof(g.home_token),
                                         &g.home_token_expires_at, g.home_base, sizeof(g.home_base),
-                                        g.home_region, sizeof(g.home_region));
+                                        g.home_region, sizeof(g.home_region)) || had_home;
     g.home_checked = true;
     if (!home_ok) {
         g.home_token[0] = g.home_base[0] = g.home_region[0] = '\0';
@@ -489,6 +495,7 @@ static bool streaming_token(GfnClient *c)
             break;
         }
     }
+    cloud_ok = cloud_ok || had_cloud;
     g.has_cloud = cloud_ok;
     if (!cloud_ok) {
         g.base[0] = g.region[0] = g.offering[0] = '\0';
@@ -647,15 +654,27 @@ static bool gs_request_raw(const char *base, const char *token, const char *meth
     }
     snprintf(g_auth_header, sizeof(g_auth_header), "Authorization: Bearer %s", token);
     /* The device info picks the stream: Microsoft fits the picture to the
-     * client's screen; os.name="android" keeps xHome/xCloud at 720p max. */
+     * client's screen. Xbox Cloud Gaming keeps the values tuned against the
+     * web player (android gets the smallest picture, 720p); Remote Play uses
+     * the ones its contributor tested with a console. */
     char info[900];
-    snprintf(info, sizeof(info),
-             "X-MS-Device-Info: {\"appInfo\":{\"env\":{\"clientAppId\":\"www.xbox.com\",\"clientAppType\":\"browser\","
-             "\"clientAppVersion\":\"21.1.98\",\"clientSdkVersion\":\"8.5.3\",\"httpEnvironment\":\"prod\","
-             "\"sdkInstallId\":\"\"}},\"dev\":{\"hw\":{\"make\":\"Microsoft\",\"model\":\"unknown\",\"sdktype\":\"web\"},"
-             "\"os\":{\"name\":\"android\",\"ver\":\"22631.2715\",\"platform\":\"desktop\"},\"displayInfo\":{\"dimensions\":"
-             "{\"widthInPixels\":%u,\"heightInPixels\":%u},\"pixelDensity\":{\"dpiX\":1,\"dpiY\":1}}}}",
-             XCLOUD_STREAM_WIDTH, XCLOUD_STREAM_HEIGHT);
+    if (g.home_session)
+        snprintf(info, sizeof(info),
+                 "X-MS-Device-Info: {\"appInfo\":{\"env\":{\"clientAppId\":\"www.xbox.com\",\"clientAppType\":\"browser\","
+                 "\"clientAppVersion\":\"21.1.98\",\"clientSdkVersion\":\"8.5.3\",\"httpEnvironment\":\"prod\","
+                 "\"sdkInstallId\":\"\"}},\"dev\":{\"hw\":{\"make\":\"Microsoft\",\"model\":\"unknown\",\"sdktype\":\"web\"},"
+                 "\"os\":{\"name\":\"android\",\"ver\":\"22631.2715\",\"platform\":\"desktop\"},\"displayInfo\":{\"dimensions\":"
+                 "{\"widthInPixels\":%u,\"heightInPixels\":%u},\"pixelDensity\":{\"dpiX\":1,\"dpiY\":1}}}}",
+                 XCLOUD_STREAM_WIDTH, XCLOUD_STREAM_HEIGHT);
+    else
+        snprintf(info, sizeof(info),
+                 "X-MS-Device-Info: {\"appInfo\":{\"env\":{\"clientAppId\":\"www.xbox.com\",\"clientAppType\":\"browser\","
+                 "\"clientAppVersion\":\"26.1.97\",\"clientSdkVersion\":\"10.3.7\",\"httpEnvironment\":\"prod\","
+                 "\"sdkInstallId\":\"\"}},\"dev\":{\"hw\":{\"make\":\"Nintendo\",\"model\":\"New 3DS\",\"sdktype\":\"web\"},"
+                 "\"os\":{\"name\":\"android\",\"ver\":\"11.17\",\"platform\":\"mobile\"},\"displayInfo\":{\"dimensions\":"
+                 "{\"widthInPixels\":%u,\"heightInPixels\":%u},\"pixelDensity\":{\"dpiX\":1,\"dpiY\":1}},"
+                 "\"browser\":{\"browserName\":\"chrome\",\"browserVersion\":\"130.0\"}}}",
+                 XCLOUD_STREAM_WIDTH, XCLOUD_STREAM_HEIGHT);
     const char *headers[] = {
         g_auth_header, "x-gssv-client: XboxComBrowser", info, "Accept: application/json",
         "Content-Type: application/json"
@@ -1298,7 +1317,8 @@ void xcloud_session_tick(GfnClient *c)
         if (internal && strstr(why, "ServerError")) {
             const unsigned long hresult = (unsigned long)(uint32_t)strtol(internal + 14, NULL, 10);
             snprintf(text, sizeof(text),
-                     i18n_text("Microsoft couldn't start the stream (error 0x%08lX). Try again soon."),
+                     i18n_text("Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play "
+                               "with the same account."),
                      hresult);
         } else {
             snprintf(text, sizeof(text), g.home_session
@@ -1326,11 +1346,13 @@ bool xcloud_recover_session(GfnClient *c)
     const bool alive = r.status == 200 && state &&
                        (!strcmp(state, "Provisioned") || !strcmp(state, "ReadyToConnect") ||
                         !strcmp(state, "Provisioning"));
+    /* state points into root: decide before it is freed. */
+    const bool provisioned = alive && !strcmp(state, "Provisioned");
     diagnostic_log("XCLOUD", "recover: http=%ld state=%s", r.status, state ? state : "-");
     json_decref(root);
     http_response_free(&r);
     if (alive) {
-        c->session_state = !strcmp(state, "Provisioned") ? GFN_SESSION_READY : GFN_SESSION_SETUP;
+        c->session_state = provisioned ? GFN_SESSION_READY : GFN_SESSION_SETUP;
         return true;
     }
     session_failed(c, "The Xbox session ended. Start the stream again.", "ended");

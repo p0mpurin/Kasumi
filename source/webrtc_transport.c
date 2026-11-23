@@ -1149,13 +1149,19 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
      * Fewer bits per frame is all we can ask for: less for MVD to chew.
      * Fortnite too, in case it stays at 720p (xcloud_hd_fallback); at its
      * usual 800x480 this is about what GeForce NOW sends. */
-    unsigned cap = stream_profile_max_bitrate();
-    if (cap < 400) cap = 400;
-    if (cap > 2500) cap = 2500;
+    unsigned cap = 1200;
+    /* Remote Play (PR #22): the console sends what the profile allows. */
+    if (xcloud_is_home_session()) {
+        cap = stream_profile_max_bitrate();
+        if (cap < 400) cap = 400;
+        if (cap > 2500) cap = 2500;
+    }
     char video_ice[600];
     snprintf(video_ice, sizeof(video_ice), "c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s", cap, cap * 1000,
              strstr(ice, "a=rtcp:9"));
-    const char *fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020";
+    const char *fmtp = xcloud_is_home_session()
+                           ? "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020"
+                           : "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
     char *out = malloc(SDP_LIMIT);
     if (!out) {
         peer_connection_destroy(pc);

@@ -2786,15 +2786,11 @@ static void draw_pc_sheet_bottom(const App *app)
 
 static const char *console_subtitle(const XboxConsole *c, char *buf, size_t size)
 {
-    const char *power = c->power == XBC_POWER_ON ? "On"
-                      : c->power == XBC_POWER_STANDBY ? "Standby"
-                      : c->power == XBC_POWER_OFF ? "Off" : "Status unknown";
-    if (!c->streaming)
-        snprintf(buf, size, "%s · %s · Remote Play disabled", c->type, power);
-    else if (c->out_of_home_warn)
-        snprintf(buf, size, "%s · %s · Away from home", c->type, power);
-    else
-        snprintf(buf, size, "%s · %s · Ready", c->type, power);
+    const char *power = i18n_text(c->power == XBC_POWER_ON ? "On"
+                                  : c->power == XBC_POWER_STANDBY ? "Standby"
+                                  : c->power == XBC_POWER_OFF ? "Off" : "Status unknown");
+    const char *state = i18n_text(!c->streaming ? "Remote Play disabled" : c->out_of_home_warn ? "Away from home" : "Ready");
+    snprintf(buf, size, "%s · %s · %s", c->type, power, state);
     return buf;
 }
 

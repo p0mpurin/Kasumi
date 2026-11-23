@@ -836,8 +836,10 @@ void ui_button(UiRect r, const char *label, const char *jp, UiButtonStyle style,
     const float jp_size = sharp ? 15.0f : r.h >= 40.0f ? 12.0f : 11.0f;
     const bool room = f.h >= label_size + 2.0f + jp_size + 2.0f || !sharp;
     /* The kanji line repeats the label in Japanese: not when that is the
-     * language, nor with Japanese labels turned off. */
-    if ((i18n_get() == LANG_JA && ui_has_japanese()) || !g_kanji_labels) jp = NULL;
+     * language, nor with Japanese labels turned off. A second line in another
+     * script is a status (the Steam PCs and Xbox consoles sheets): it stays. */
+    if (jp && ui_text_is_japanese(jp) && ((i18n_get() == LANG_JA && ui_has_japanese()) || !g_kanji_labels))
+        jp = NULL;
     if (jp && jp[0] && r.h >= 30.0f && room && (ui_has_japanese() || !ui_text_is_japanese(jp))) {
         const float block = label_size + 2.0f + jp_size;
         const float top = f.y + (f.h - block) / 2.0f;
