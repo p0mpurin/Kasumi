@@ -26,6 +26,7 @@
 #include "steam_link.h"
 #include "stream_profile.h"
 #include "updater.h"
+#include "xbox_console.h"
 #include "zoom_zones.h"
 
 /* The PS Vita's screens: one 960x544 touch screen, laid out for fingers.
@@ -83,11 +84,12 @@ static float hash01(unsigned i, unsigned k)
 }
 
 /* Taps that pick from a list (read by main with the action). */
-static int g_touched_service = -1, g_touched_section = -1, g_touched_pc = -1, g_touched_option_row = -1;
-static int g_touched_map_field = -1, g_touched_index = -1;
+static int g_touched_service = -1, g_touched_section = -1, g_touched_pc = -1, g_touched_console = -1;
+static int g_touched_option_row = -1, g_touched_map_field = -1, g_touched_index = -1;
 int screens_touched_service(void) { return g_touched_service; }
 int screens_touched_section(void) { return g_touched_section; }
 int screens_touched_pc(void) { return g_touched_pc; }
+int screens_touched_console(void) { return g_touched_console; }
 int screens_touched_option_row(void) { return g_touched_option_row; }
 int screens_touched_map_field(void) { return g_touched_map_field; }
 int screens_touched_index(void) { return g_touched_index; }
@@ -341,7 +343,9 @@ static AppAction back_action(const App *app)
         return ACTION_NONE;
     if (app->update_open) return ACTION_UPDATE_CLOSE;
     switch (app->view) {
-    case VIEW_LIBRARY: return app->pc_sheet_open ? ACTION_PC_CLOSE : ACTION_HUB;
+    case VIEW_LIBRARY:
+        return app->pc_sheet_open ? ACTION_PC_CLOSE
+             : app->console_sheet_open ? ACTION_CONSOLE_CLOSE : ACTION_HUB;
     case VIEW_DETAILS:
         if (app->mapping_open) return ACTION_MAP_CANCEL;
         if (app->options_open) return ACTION_OPTIONS_CLOSE;
@@ -357,7 +361,7 @@ static AppAction back_action(const App *app)
 
 static const char *back_label(const App *app)
 {
-    if (app->view == VIEW_LIBRARY && !app->pc_sheet_open) return "HOME";
+    if (app->view == VIEW_LIBRARY && !app->pc_sheet_open && !app->console_sheet_open) return "HOME";
     if (app->view == VIEW_LOGIN) return "CANCEL";
     return "BACK";
 }
@@ -885,9 +889,11 @@ static void draw_library(const App *app)
     /* Buttons: the game, the library, search, settings. */
     const bool has_game = focused != NULL;
     const bool pcs = !searching && s == SERVICE_STEAM;
+    const bool consoles = !searching && s == SERVICE_XBOX;
     ui_button(library_button(0), has_game ? "OPEN GAME" : app->client->game_count ? "SHOW ALL" : "LOAD LIBRARY",
               has_game ? "詳細" : "ライブラリ", has_game ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL, pressed(app, library_button(0)));
-    ui_button(library_button(1), searching ? "LIBRARY" : pcs ? "PCS" : "REFRESH", searching ? "ライブラリ" : pcs ? "パソコン" : "更新",
+    ui_button(library_button(1), searching ? "LIBRARY" : pcs ? "PCS" : consoles ? "CONSOLES" : "REFRESH",
+              searching ? "ライブラリ" : pcs ? "パソコン" : consoles ? "本体" : "更新",
               UI_BUTTON_NORMAL, pressed(app, library_button(1)));
     ui_button(library_button(2), "SEARCH", "検索", searching ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, library_button(2)));
     ui_button(library_button(3), "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, library_button(3)));
@@ -921,6 +927,51 @@ static void draw_pc_sheet(const App *app)
     draw_hints(hints);
 }
 
+static const char *console_subtitle(const XboxConsole *c, char *buf, size_t size)
+{
+    const char *power = c->power == XBC_POWER_ON ? "On"
+                      : c->power == XBC_POWER_STANDBY ? "Standby"
+                      : c->power == XBC_POWER_OFF ? "Off" : "Status unknown";
+    if (!c->streaming)
+        snprintf(buf, size, "%s · %s · Remote Play disabled", c->type, power);
+    else if (c->out_of_home_warn)
+        snprintf(buf, size, "%s · %s · Away from home", c->type, power);
+    else
+        snprintf(buf, size, "%s · %s · Ready", c->type, power);
+    return buf;
+}
+
+static void draw_console_sheet(const App *app)
+{
+    XboxConsole list[4];
+    int count = (int)xbox_consoles_list(list, 4);
+    if (count > 4) count = 4;
+    ui_rect(0, TOP_H, CW, CH - TOP_H, ui_with_alpha(UI_BG, 0xE8));
+    draw_card((UiRect){ 136, 40, 328, 272 }, 1.0f);
+    draw_title(CW / 2, 50, "本体", "YOUR XBOX CONSOLES");
+    for (int i = 0; i < count; ++i) {
+        char sub[64];
+        console_subtitle(&list[i], sub, sizeof(sub));
+        const UiButtonStyle style = i == app->console_index ? UI_BUTTON_PRIMARY
+                                  : (list[i].streaming && list[i].power == XBC_POWER_ON) ? UI_BUTTON_ACTIVE
+                                  : UI_BUTTON_NORMAL;
+        ui_button(pc_row(i), list[i].name, sub, style, pressed(app, pc_row(i)));
+    }
+    if (count == 0)
+        ui_text(CW / 2, 130, 12, UI_TEXT_DIM, UI_ALIGN_CENTER, "No Xbox consoles loaded yet. Tap REFRESH.");
+    else if (count < 4)
+        ui_text(CW / 2, pc_row(count).y + 10, 12, UI_TEXT_FAINT, UI_ALIGN_CENTER,
+                "720p Remote Play · Standby consoles wake on connect");
+    ui_button(PC_PAIR, "WAKE UP", "起動", app->console_index == count ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, PC_PAIR));
+    ui_button(PC_FORGET, "REFRESH", "更新", app->console_index == count + 1 ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, PC_FORGET));
+    ui_button(PC_CLOSE, "CLOSE", "閉じる", app->console_index == count + 2 ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, PC_CLOSE));
+    static const char *const hints[] = { "▲ ▼", "Choose", "A", "Connect", "X", "Wake Up", "Y", "Refresh", "B", "Close", NULL };
+    draw_hints(hints);
+}
+
 static AppAction touch_library(const App *app, int x, int y)
 {
     if (app->pc_sheet_open) {
@@ -933,6 +984,18 @@ static AppAction touch_library(const App *app, int x, int y)
         if (ui_hit(PC_FORGET, x, y)) g_touched_pc = count + 1;
         if (ui_hit(PC_CLOSE, x, y)) return ACTION_PC_CLOSE;
         return g_touched_pc >= 0 ? ACTION_PC_ROW : ACTION_NONE;
+    }
+    if (app->console_sheet_open) {
+        int count = (int)xbox_consoles_list(NULL, 0);
+        if (count > 4) count = 4;
+        g_touched_console = -1;
+        for (int i = 0; i < count; ++i)
+            if (ui_hit(pc_row(i), x, y)) g_touched_console = i;
+        if (g_touched_console >= 0) return ACTION_CONSOLE_ROW;
+        if (ui_hit(PC_PAIR, x, y)) return ACTION_CONSOLE_WAKE;
+        if (ui_hit(PC_FORGET, x, y)) return ACTION_CONSOLE_REFRESH;
+        if (ui_hit(PC_CLOSE, x, y)) return ACTION_CONSOLE_CLOSE;
+        return ACTION_NONE;
     }
     if (!gfn_has_session(app->client)) {
         if (ui_hit(SIGNIN_MAIN, x, y)) return ACTION_SIGN_IN;
@@ -2442,7 +2505,7 @@ static void draw_menus(const App *app)
     else if (v == VIEW_LIBRARY && !gfn_has_session(app->client)) draw_service_backdrop(app_service(app), 0.45f);
     /* The view, rising as it fades in. */
     const int overlay = app->modal != MODAL_NONE ? 10 + (int)app->modal : app->options_open ? 3 : app->mapping_open ? 4
-                      : app->pc_sheet_open ? 5 : 0;
+                      : app->pc_sheet_open ? 5 : app->console_sheet_open ? 6 : 0;
     const float p = view_progress((int)v, overlay);
     const bool handover = g_zoom.at != 0;
     ui_offset(0.0f, handover ? 0.0f : (1.0f - p) * 10.0f);
@@ -2458,6 +2521,7 @@ static void draw_menus(const App *app)
         else {
             draw_library(app);
             if (app->pc_sheet_open) draw_pc_sheet(app);
+            else if (app->console_sheet_open) draw_console_sheet(app);
         }
         break;
     case VIEW_SETTINGS:

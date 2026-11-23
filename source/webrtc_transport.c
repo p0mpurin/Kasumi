@@ -392,8 +392,10 @@ static bool request_video_keyframe(WebRtcTransport *t, const char *reason)
     int result = 0;
     if (t->steam) {
         if (!steam_session_request_keyframe(t->peer)) return false;
+    } else {
+        if (t->xcloud) xcloud_stream_request_keyframe(t->peer);
+        result = peer_connection_request_video_keyframe(t->peer);
     }
-    else result = peer_connection_request_video_keyframe(t->peer);
     t->last_keyframe_request_at = plat_time_ms();
     t->keyframe_requests++;
     diagnostic_log("VIDEO", "PLI reason=%s attempt=%u result=%d",
@@ -531,6 +533,10 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
                 if (decode_width <= 1280 && decode_height <= 720)
                     snprintf(t->status, sizeof(t->status),
                              i18n_text("This game only streams in 720p, which the 3DS can't show yet. Fortnite works."));
+                else if (xcloud_is_home_session())
+                    snprintf(t->status, sizeof(t->status),
+                             i18n_text("Your Xbox is streaming at %ux%u. Set Remote Play quality to 720p on the console."),
+                             source_width, source_height);
                 else
                     snprintf(t->status, sizeof(t->status),
                              i18n_text("This game streams at %ux%u, which is too big for the 3DS."),
@@ -1143,11 +1149,13 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
      * Fewer bits per frame is all we can ask for: less for MVD to chew.
      * Fortnite too, in case it stays at 720p (xcloud_hd_fallback); at its
      * usual 800x480 this is about what GeForce NOW sends. */
-    const unsigned cap = 1200;
+    unsigned cap = stream_profile_max_bitrate();
+    if (cap < 400) cap = 400;
+    if (cap > 2500) cap = 2500;
     char video_ice[600];
     snprintf(video_ice, sizeof(video_ice), "c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s", cap, cap * 1000,
              strstr(ice, "a=rtcp:9"));
-    const char *fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
+    const char *fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020";
     char *out = malloc(SDP_LIMIT);
     if (!out) {
         peer_connection_destroy(pc);

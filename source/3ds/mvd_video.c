@@ -199,7 +199,7 @@ bool mvd_video_init(unsigned input_width, unsigned input_height)
     const bool shrink = g_hd_mode == MVD_HD_SHRINK || g_hd_mode == MVD_HD_NAL_SHRINK || g_hd_mode == MVD_HD_NAL_HALF;
     g_hd = big && g_hd_mode != MVD_HD_SHRINK;   /* 720p processing */
     const bool hd = big && !shrink;              /* full-size 720p output */
-    g_wide = stream_profile_wide() && !hd;
+    g_wide = (stream_profile_wide() || (big && g_hd_mode == MVD_HD_NAL_HALF)) && !hd;
     if (hd) {
         g_output_width = HD_OUTPUT_WIDTH;
         g_output_height = HD_OUTPUT_HEIGHT;

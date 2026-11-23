@@ -45,6 +45,10 @@ bool xcloud_start_session(GfnClient *client, const GfnGame *game);
 /* Only Fortnite follows our 800x480; every other game streams 1280x720,
  * which MVD decodes at half size (640x352, build 146). True for those. */
 bool xcloud_decode_720p(void);
+/* True while the active Xbox session is local Remote Play (/v5/sessions/home). */
+bool xcloud_is_home_session(void);
+/* Send a SmartGlass WakeUp power command to a console in standby. */
+bool xcloud_wake_console(GfnClient *client, const char *console_id);
 /* False pauses Xbox for maintenance (as in 1.0.4-1.0.5). */
 bool xcloud_available(void);
 /* Polls the session to ready (and connects it), then keeps it alive. */

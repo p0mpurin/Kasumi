@@ -197,6 +197,10 @@ static bool run_job(NetJobKind kind, const char *text, const GfnGame *game)
         if (g_work.game_count) game_art_prefetch(g_work.games, (unsigned)g_work.game_count);
         return ok;
     }
+    case NET_JOB_WAKE_CONSOLE:
+        if (!xcloud_wake_console(&g_work, text)) return false;
+        gfn_fetch_library(&g_work);
+        return true;
     case NET_JOB_NONE: break;
     }
     return false;

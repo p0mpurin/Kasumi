@@ -135,6 +135,11 @@ typedef enum {
     /* A row of the Steam PCs sheet (screens_touched_pc), or its CLOSE. */
     ACTION_PC_ROW,
     ACTION_PC_CLOSE,
+    /* A row of the Xbox consoles sheet (screens_touched_console), or its actions. */
+    ACTION_CONSOLE_ROW,
+    ACTION_CONSOLE_WAKE,
+    ACTION_CONSOLE_REFRESH,
+    ACTION_CONSOLE_CLOSE,
     /* Touch, where the screen shows the whole list (screens_touched_index):
      * a game on the library shelf, a library tab, a settings row. */
     ACTION_SELECT_GAME,
@@ -197,6 +202,10 @@ typedef struct {
      * PAIR ANOTHER PC and FORGET; pc_index is the highlighted row. */
     bool pc_sheet_open;
     int pc_index;
+    /* Xbox My Consoles sheet (Y in the Xbox library): live consoles, Wake Up,
+     * Refresh; console_index is the highlighted row. */
+    bool console_sheet_open;
+    int console_index;
     /* Each service's state for the hub ("Signed in", "Paired with zen"),
      * read from the SD card when the hub opens. */
     char service_status[SERVICE_COUNT][48];
@@ -424,6 +433,7 @@ int screens_section_size(int section);
 int screens_touched_section(void);
 int screens_touched_service(void);
 int screens_touched_pc(void);
+int screens_touched_console(void);
 /* The hub's card growing into its service (into) or back out of it. */
 void screens_hub_zoom(int service, bool into);
 /* Still growing: the service opens when it is done. */

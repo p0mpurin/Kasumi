@@ -25,12 +25,12 @@
  * their values and descriptions, each service's name and colour, the
  * guide, the per-game options. Each console's screens.c lays it out. */
 
-const char *const SERVICE_TABS[SERVICE_COUNT] = { "GEFORCE NOW", "XBOX CLOUD", "STEAM LINK" };
+const char *const SERVICE_TABS[SERVICE_COUNT] = { "GEFORCE NOW", "XBOX", "STEAM LINK" };
 const ServiceInfo SERVICE_INFO[SERVICE_COUNT] = {
     { "GeForce NOW", "Your PC games from Steam, Epic and more, running on NVIDIA's servers.",
       "An NVIDIA account (free or paid).", "SIGN IN WITH NVIDIA", "サインイン" },
-    { "Xbox Cloud Gaming", "Game Pass games, and free ones like Fortnite, from Microsoft's servers. Beta.",
-      "A Microsoft account; most games need Game Pass Ultimate.", "SIGN IN WITH MICROSOFT", "サインイン" },
+    { "Xbox", "Stream from your own Xbox console (Remote Play) or Xbox Cloud Gaming.",
+      "A Microsoft account; enable Remote Play on your Xbox.", "SIGN IN WITH MICROSOFT", "サインイン" },
     { "Steam Link", "Your own PC: play whatever Steam on it can run, over your Wi-Fi.",
       "A PC with Steam on, on the same Wi-Fi as the 3DS.", "PAIR WITH YOUR PC", "ペアリング" },
 };
@@ -981,9 +981,15 @@ const char *stream_line(const App *app)
         snprintf(line, sizeof(line), i18n_text("From %s  ·  800x480 wide  ·  %u fps"),
                  steam_link_host_name()[0] ? steam_link_host_name() : i18n_text("your PC"), stream_profile_fps());
         return line;
-    case SERVICE_XBOX:
+    case SERVICE_XBOX: {
+        const GfnGame *sel = app_game(app, app->selected);
+        if (sel && !strcmp(sel->store, "Remote Play")) {
+            snprintf(line, sizeof(line), i18n_text("Xbox Remote Play  ·  720p half-size"));
+            return line;
+        }
         snprintf(line, sizeof(line), i18n_text("Xbox Cloud  ·  800x480 wide  ·  60 fps"));
         return line;
+    }
     default:
         return stream_profile_name();
     }
