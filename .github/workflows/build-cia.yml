@@ -33,12 +33,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install system and devkitPro 3DS packages
+      - name: Install qrencode
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends python3 curl unzip git ca-certificates qrencode build-essential cmake
-          dkp-pacman -Syu --noconfirm
-          dkp-pacman -S --needed --noconfirm 3ds-dev 3ds-curl 3ds-jansson 3ds-mbedtls 3ds-libopus 3ds-cmake
+          apt-get install -y --no-install-recommends qrencode
 
       - name: Install makerom and bannertool
         run: |
