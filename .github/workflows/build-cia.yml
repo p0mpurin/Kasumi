@@ -59,6 +59,14 @@ jobs:
 
       - name: Build static dependencies (transport & aecm)
         run: |
+          # Patch hardcoded MSYS2/Windows devkitPro paths for Linux container
+          sed -i -E \
+            -e "s|/c/devkitPro|${DEVKITPRO}|gi" \
+            -e "s|C:/devkitPro|${DEVKITPRO}|gi" \
+            -e 's|(arm-none-eabi-[a-zA-Z0-9_+-]+)\.exe|\1|g' \
+            tools/transport-toolchain.cmake tools/build-transport.sh tools/build-aecm.sh
+          sed -i -E 's|\.exe\b||g' tools/transport-toolchain.cmake
+
           bash tools/build-transport.sh
           bash tools/build-aecm.sh
 
