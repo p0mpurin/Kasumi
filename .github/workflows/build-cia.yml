@@ -76,9 +76,12 @@ jobs:
           make cia MAKEROM=/usr/local/bin/makerom BANNERTOOL=/usr/local/bin/bannertool
           sha256sum Kasumi.cia Kasumi.3dsx > SHA256SUMS
 
-      - name: Determine release tag and generate FBI QR code
+      - name: Determine release tag, artifact name, and FBI QR code
         id: release_meta
         run: |
+          SAFE_REF=$(printf '%s' "${{ github.ref_name }}" | tr '/:*?"<>|\\' '-')
+          echo "artifact_name=Kasumi-${SAFE_REF}" >> "$GITHUB_OUTPUT"
+
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
           elif [[ -n "${{ inputs.release_tag }}" ]]; then
@@ -100,7 +103,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Kasumi-${{ github.ref_name }}
+          name: ${{ steps.release_meta.outputs.artifact_name }}
           path: |
             Kasumi.cia
             Kasumi.3dsx
