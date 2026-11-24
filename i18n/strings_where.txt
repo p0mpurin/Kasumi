@@ -1160,93 +1160,95 @@ xcloud.c:325	Xbox Live refused the sign-in (HTTP %ld)
 xcloud.c:335	RelyingParty
 xcloud.c:365	This Microsoft account has no Xbox profile yet. Sign in once on xbox.com to make one, then try again.
 xcloud.c:368	A child account needs a parent to allow cloud gaming first.
-xcloud.c:402	Cache-Control: no-store, must-revalidate, no-cache
-xcloud.c:409	Can't reach Xbox Cloud Gaming (%.80s)
-xcloud.c:507	Xbox Cloud Gaming isn't available for this account or country.
-xcloud.c:522	Contacting Microsoft sign-in...
-xcloud.c:525	client_id=
-xcloud.c:528	Your 3DS thinks it is %s, so the secure sign-in fails. Set the date and time in System Settings, then try again.
-xcloud.c:531	Couldn't reach Microsoft's sign-in (%.60s). Check Wi-Fi.
-xcloud.c:537	Microsoft sign-in: HTTP %ld
-xcloud.c:556	Microsoft sign-in response incomplete
-xcloud.c:561	Signing in to Xbox: open the link on a phone or PC and enter the code
-xcloud.c:572	Sign-in code expired; press X to get a new one
-xcloud.c:585	grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&client_id=%s&device_code=%s
-xcloud.c:594	Waiting for the Microsoft sign-in...
-xcloud.c:601	The sign-in was declined. Press X to try again.
-xcloud.c:601	Microsoft sign-in failed (%.40s)
-xcloud.c:613	Signed in to Xbox; %s
-xcloud.c:639	Xbox sign-in required.
-xcloud.c:645	Xbox request URL too long.
-xcloud.c:672	x-gssv-client: XboxComBrowser
-xcloud.c:677	Xbox unreachable (%.80s)
-xcloud.c:717	calling-app-name: Xbox Cloud Gaming Web
-xcloud.c:717	calling-app-version: 26.1.97
-xcloud.c:730	&hydration=RemoteLowJade0
-xcloud.c:783	Xbox: %s
-xcloud.c:803	/v6/servers/home?mr=50
-xcloud.c:827	Xbox Remote Play list: HTTP %ld
-xcloud.c:849	Authorization: XBL3.0 x=%s;%s
-xcloud.c:851	x-xbl-contract-version: 4
-xcloud.c:851	skillplatform: RemoteManagement
-xcloud.c:867	Xbox console list: HTTP %ld
-xcloud.c:915	Power
-xcloud.c:915	WakeUp
-xcloud.c:932	Couldn't reach Xbox console (%.80s)
-xcloud.c:939	Wake-up sent to your Xbox; wait a few seconds.
-xcloud.c:942	Couldn't wake Xbox (HTTP %ld)
-xcloud.c:951	Loading your Xbox consoles and games...
-xcloud.c:965	/v2/titles?mr=500%s%s
-xcloud.c:977	Xbox game list: HTTP %ld
-xcloud.c:1021	No streamable Xbox consoles found (enable Remote Play on your console).
-xcloud.c:1029	Library: %lu Xbox console(s) (Y for consoles)
-xcloud.c:1032	Library: %lu console(s) + %lu cloud games (Y for consoles)
-xcloud.c:1035	Library: %lu Xbox cloud games (Y for consoles)
-xcloud.c:1058	%lu games match \"%.40s\"
-xcloud.c:1072	no (Fortnite)
-xcloud.c:1082	Xbox Remote Play isn't available for this account.
-xcloud.c:1088	Xbox Cloud Gaming isn't available for this account.
-xcloud.c:1097	V3;WebrtcTransport.dll
-xcloud.c:1099	en-US
-xcloud.c:1107	POST
-xcloud.c:1120	Xbox couldn't start %.40s (HTTP %ld%s%.60s)
-xcloud.c:1148	Waking up %.40s (about 30 s)...
-xcloud.c:1167	client_id=%s&grant_type=refresh_token&refresh_token=%s
-xcloud.c:1241	Your Xbox console ended the session.
-xcloud.c:1242	Xbox Cloud Gaming ended the session.
-xcloud.c:1265	The Xbox session is gone. Try again.
-xcloud.c:1269	Your Xbox didn't wake up in time. Check that it's plugged in and Remote Play is on.
-xcloud.c:1270	The Xbox didn't finish starting. Try again in a moment.
-xcloud.c:1273	The Xbox stopped answering. Try again.
-xcloud.c:1279	Waking up your Xbox...
-xcloud.c:1284	Waiting for a free Xbox (about %u min)...
-xcloud.c:1287	Waiting for a free Xbox...
-xcloud.c:1293	Starting the Xbox...
-xcloud.c:1297	Connecting your account to the Xbox...
-xcloud.c:1299	The Xbox didn't accept the sign-in. Try again.
-xcloud.c:1304	Xbox ready; connecting the stream...
-xcloud.c:1313	Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play with the same account.
-xcloud.c:1318	Xbox Remote Play couldn't connect%s%.110s
-xcloud.c:1319	Xbox Cloud Gaming couldn't start the game%s%.110s
-xcloud.c:1324	The Xbox session didn't start. Try again.
-xcloud.c:1349	The Xbox session ended. Start the stream again.
-xcloud.c:1372	Xbox session ended
-xcloud.c:1396	no answer
-xcloud.c:1397	Xbox stream setup failed: %.100s
-xcloud.c:1405	Xbox stream setup: HTTP %ld
-xcloud.c:1410	Xbox stream setup timed out
-xcloud.c:1458	Setting up the Xbox stream...
-xcloud.c:1471	Couldn't prepare the stream (WebRTC)
-xcloud.c:1490	Couldn't send the stream offer
-xcloud.c:1497	The Xbox refused the stream offer (HTTP %ld)
-xcloud.c:1507	The Xbox sent no stream answer
-xcloud.c:1535	Couldn't send the network candidates
-xcloud.c:1549	candidate:%*s %*u %*s %*u %63s %u
-xcloud.c:1555	a=candidate:10 1 UDP 1 %s 9002 typ host 
-xcloud.c:1558	a=candidate:11 1 UDP 1 %s %u typ host 
-xcloud.c:1562	a=candidate:12 1 UDP 1 %s %u typ host 
-xcloud.c:1574	The Xbox sent no usable address
-xcloud.c:1577	Connecting to the Xbox...
+xcloud.c:403	Cache-Control: no-store, must-revalidate, no-cache
+xcloud.c:410	Can't reach Xbox Cloud Gaming (%.80s)
+xcloud.c:514	Xbox Cloud Gaming isn't available for this account or country.
+xcloud.c:529	Contacting Microsoft sign-in...
+xcloud.c:532	client_id=
+xcloud.c:535	Your 3DS thinks it is %s, so the secure sign-in fails. Set the date and time in System Settings, then try again.
+xcloud.c:538	Couldn't reach Microsoft's sign-in (%.60s). Check Wi-Fi.
+xcloud.c:544	Microsoft sign-in: HTTP %ld
+xcloud.c:563	Microsoft sign-in response incomplete
+xcloud.c:568	Signing in to Xbox: open the link on a phone or PC and enter the code
+xcloud.c:579	Sign-in code expired; press X to get a new one
+xcloud.c:592	grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&client_id=%s&device_code=%s
+xcloud.c:601	Waiting for the Microsoft sign-in...
+xcloud.c:608	The sign-in was declined. Press X to try again.
+xcloud.c:608	Microsoft sign-in failed (%.40s)
+xcloud.c:620	Signed in to Xbox; %s
+xcloud.c:646	Xbox sign-in required.
+xcloud.c:652	Xbox request URL too long.
+xcloud.c:679	x-gssv-client: XboxComBrowser
+xcloud.c:684	Xbox unreachable (%.80s)
+xcloud.c:724	calling-app-name: Xbox Cloud Gaming Web
+xcloud.c:724	calling-app-version: 26.1.97
+xcloud.c:737	&hydration=RemoteLowJade0
+xcloud.c:790	Xbox: %s
+xcloud.c:810	/v6/servers/home?mr=50
+xcloud.c:834	Xbox Remote Play list: HTTP %ld
+xcloud.c:856	Authorization: XBL3.0 x=%s;%s
+xcloud.c:858	x-xbl-contract-version: 4
+xcloud.c:858	skillplatform: RemoteManagement
+xcloud.c:874	Xbox console list: HTTP %ld
+xcloud.c:922	Power
+xcloud.c:922	WakeUp
+xcloud.c:939	Couldn't reach Xbox console (%.80s)
+xcloud.c:946	Wake-up sent to your Xbox; wait a few seconds.
+xcloud.c:949	Couldn't wake Xbox (HTTP %ld)
+xcloud.c:958	Loading your Xbox consoles and games...
+xcloud.c:972	/v2/titles?mr=500%s%s
+xcloud.c:984	Xbox game list: HTTP %ld
+xcloud.c:1028	No streamable Xbox consoles found (enable Remote Play on your console).
+xcloud.c:1036	Library: %lu Xbox console(s) (Y for consoles)
+xcloud.c:1039	Library: %lu console(s) + %lu cloud games (Y for consoles)
+xcloud.c:1042	Library: %lu Xbox cloud games (Y for consoles)
+xcloud.c:1065	%lu games match \"%.40s\"
+xcloud.c:1079	no (Fortnite)
+xcloud.c:1089	Xbox Remote Play isn't available for this account.
+xcloud.c:1095	Xbox Cloud Gaming isn't available for this account.
+xcloud.c:1104	V3;WebrtcTransport.dll
+xcloud.c:1106	en-US
+xcloud.c:1114	POST
+xcloud.c:1127	Xbox couldn't start %.40s (HTTP %ld%s%.60s)
+xcloud.c:1155	Waking up %.40s (about 30 s)...
+xcloud.c:1174	client_id=%s&grant_type=refresh_token&refresh_token=%s
+xcloud.c:1248	Your Xbox console ended the session.
+xcloud.c:1249	Xbox Cloud Gaming ended the session.
+xcloud.c:1272	The Xbox session is gone. Try again.
+xcloud.c:1276	Your Xbox didn't wake up in time. Check that it's plugged in and Remote Play is on.
+xcloud.c:1277	The Xbox didn't finish starting. Try again in a moment.
+xcloud.c:1280	The Xbox stopped answering. Try again.
+xcloud.c:1286	Waking up your Xbox...
+xcloud.c:1291	Waiting for a free Xbox (about %u min)...
+xcloud.c:1294	Waiting for a free Xbox...
+xcloud.c:1300	Starting the Xbox...
+xcloud.c:1304	Connecting your account to the Xbox...
+xcloud.c:1306	The Xbox didn't accept the sign-in. Try again.
+xcloud.c:1312	Xbox ready; connecting the stream...
+xcloud.c:1321	Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play with the same account.
+xcloud.c:1326	Xbox Remote Play couldn't connect%s%.110s
+xcloud.c:1327	Xbox Cloud Gaming couldn't start the game%s%.110s
+xcloud.c:1332	The Xbox session didn't start. Try again.
+xcloud.c:1369	The Xbox session ended. Start the stream again.
+xcloud.c:1392	Xbox session ended
+xcloud.c:1416	no answer
+xcloud.c:1417	Xbox stream setup failed: %.100s
+xcloud.c:1425	Xbox stream setup: HTTP %ld
+xcloud.c:1430	Xbox stream setup timed out
+xcloud.c:1483	Setting up the Xbox stream...
+xcloud.c:1496	Couldn't prepare the stream (WebRTC)
+xcloud.c:1515	Couldn't send the stream offer
+xcloud.c:1522	The Xbox refused the stream offer (HTTP %ld)
+xcloud.c:1532	The Xbox sent no stream answer
+xcloud.c:1560	Couldn't send the network candidates
+xcloud.c:1574	candidate:%*s %*u %*s %*u %63s %u
+xcloud.c:1580	a=candidate:10 1 UDP 1 %s 9002 typ host 
+xcloud.c:1583	a=candidate:11 1 UDP 1 %s %u typ host 
+xcloud.c:1587	a=candidate:12 1 UDP 1 %s %u typ host 
+xcloud.c:1608	ipV4Port
+xcloud.c:1613	a=candidate:20 1 UDP 1 %s %lld typ host 
+xcloud.c:1623	The Xbox sent no usable address
+xcloud.c:1626	Connecting to the Xbox...
 steam_link.c:263	Kasumi (New 3DS)
 steam_link.c:400	Found %.40s at %s
 steam_link.c:415	This 3DS isn't connected to Wi-Fi. Connect it, then try again.
@@ -1362,26 +1364,27 @@ webrtc_transport.c:689	Input ready protocol v%d
 webrtc_transport.c:699	WebRTC data channel open; input handshake
 webrtc_transport.c:720	WebRTC ICE/DTLS/SRTP connected
 webrtc_transport.c:724	ICE connected; DTLS handshake
-webrtc_transport.c:730	WebRTC transport %s
-webrtc_transport.c:733	WebRTC %s
-webrtc_transport.c:766	pollReadyAvg/Max=%llu/%lluus readAvg/Max=%llu/%lluus slowReads(>2ms)=%u lockWaitMax=%lluus
-webrtc_transport.c:788	 (system default: every larger size was refused)
-webrtc_transport.c:913	a=candidate:9911 1 UDP 16777215 %s %d typ host
-webrtc_transport.c:937	Connecting to the Xbox
-webrtc_transport.c:947	Video %ux%u from the PC
-webrtc_transport.c:997	Couldn't open the stream to the PC
-webrtc_transport.c:1141	c=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:%s\r\na=ice-pwd:%s\r\na=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n
-webrtc_transport.c:1160	c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s
-webrtc_transport.c:1163	level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020
-webrtc_transport.c:1164	level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
-webrtc_transport.c:1171	v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\nm=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\na=fmtp:102 %s\r\na=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n
-webrtc_transport.c:1208	Could not create/send WebRTC answer
-webrtc_transport.c:1216	a=general.serverBundlePort:
-webrtc_transport.c:1224	libpeer/SRTP initialization failed
-webrtc_transport.c:1263	Answer send failed: %.130s
-webrtc_transport.c:1277	Answer sent; ICE local %u/%u
-webrtc_transport.c:1309	candidate:%63s %u %15s %u %127s %u typ %31s
-webrtc_transport.c:1439	Input ready protocol v2 fallback
+webrtc_transport.c:733	Couldn't reach your Xbox over WebRTC. Outside home Wi-Fi, enable UPnP or forward UDP 9002.
+webrtc_transport.c:735	WebRTC transport %s
+webrtc_transport.c:739	WebRTC %s
+webrtc_transport.c:772	pollReadyAvg/Max=%llu/%lluus readAvg/Max=%llu/%lluus slowReads(>2ms)=%u lockWaitMax=%lluus
+webrtc_transport.c:794	 (system default: every larger size was refused)
+webrtc_transport.c:919	a=candidate:9911 1 UDP 16777215 %s %d typ host
+webrtc_transport.c:943	Connecting to the Xbox
+webrtc_transport.c:953	Video %ux%u from the PC
+webrtc_transport.c:1003	Couldn't open the stream to the PC
+webrtc_transport.c:1149	c=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:%s\r\na=ice-pwd:%s\r\na=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n
+webrtc_transport.c:1168	c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s
+webrtc_transport.c:1171	level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020
+webrtc_transport.c:1172	level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
+webrtc_transport.c:1179	v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\nm=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\na=fmtp:102 %s\r\na=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n
+webrtc_transport.c:1216	Could not create/send WebRTC answer
+webrtc_transport.c:1224	a=general.serverBundlePort:
+webrtc_transport.c:1232	libpeer/SRTP initialization failed
+webrtc_transport.c:1271	Answer send failed: %.130s
+webrtc_transport.c:1285	Answer sent; ICE local %u/%u
+webrtc_transport.c:1317	candidate:%63s %u %15s %u %127s %u typ %31s
+webrtc_transport.c:1447	Input ready protocol v2 fallback
 nvst_signal.c:205	NVIDIA removed signaling peer
 nvst_signal.c:205	NVIDIA signaling error (not transport)
 nvst_signal.c:214	NVIDIA sent BYE; offer=%lu bytes

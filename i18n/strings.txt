@@ -1245,6 +1245,8 @@ candidate:%*s %*u %*s %*u %63s %u
 a=candidate:10 1 UDP 1 %s 9002 typ host 
 a=candidate:11 1 UDP 1 %s %u typ host 
 a=candidate:12 1 UDP 1 %s %u typ host 
+ipV4Port
+a=candidate:20 1 UDP 1 %s %lld typ host 
 The Xbox sent no usable address
 Connecting to the Xbox...
 Kasumi (New 3DS)
@@ -1362,6 +1364,7 @@ Input ready protocol v%d
 WebRTC data channel open; input handshake
 WebRTC ICE/DTLS/SRTP connected
 ICE connected; DTLS handshake
+Couldn't reach your Xbox over WebRTC. Outside home Wi-Fi, enable UPnP or forward UDP 9002.
 WebRTC transport %s
 WebRTC %s
 pollReadyAvg/Max=%llu/%lluus readAvg/Max=%llu/%lluus slowReads(>2ms)=%u lockWaitMax=%lluus
