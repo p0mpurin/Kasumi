@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Tag de release opcional (ej: v1.2.0). Déjalo vacío para solo compilar sin publicar release.'
+        description: 'Tag de release opcional (ej: v1.2.0). Si se deja vacío, publica en el pre-release "latest".'
         required: false
         default: ''
         type: string
@@ -80,17 +80,26 @@ jobs:
         id: release_meta
         run: |
           SAFE_REF=$(printf '%s' "${{ github.ref_name }}" | tr '/:*?"<>|\\' '-')
+          SHORT_SHA="${GITHUB_SHA::7}"
           echo "artifact_name=Kasumi-${SAFE_REF}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TAG=""
+            PRERELEASE="false"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
+            PRERELEASE="false"
           elif [[ -n "${{ inputs.release_tag }}" ]]; then
             TAG="${{ inputs.release_tag }}"
+            PRERELEASE="false"
           else
-            TAG=""
+            TAG="latest"
+            PRERELEASE="true"
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
           if [[ -n "$TAG" ]]; then
             CIA_URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${TAG}/Kasumi.cia"
@@ -116,6 +125,8 @@ jobs:
         with:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ steps.release_meta.outputs.prerelease == 'true' }}
           generate_release_notes: true
           files: |
             Kasumi.cia
@@ -125,7 +136,7 @@ jobs:
           body: |
             ### Instalación en Nintendo 3DS (FBI)
             1. Abre **FBI** en tu 3DS → **Remote Install** → **Scan QR Code**.
-            2. Escanea este QR para descargar e instalar `Kasumi.cia` (`${{ steps.release_meta.outputs.tag }}`):
+            2. Escanea este QR para descargar e instalar `Kasumi.cia` (`${{ steps.release_meta.outputs.tag }}` — rama `${{ github.ref_name }}`, commit `${{ steps.release_meta.outputs.short_sha }}`):
 
             ![QR Code para FBI](${{ steps.release_meta.outputs.qr_url }})
 
