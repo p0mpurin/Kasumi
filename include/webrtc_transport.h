@@ -190,5 +190,5 @@ bool webrtc_transport_send_key(WebRtcTransport *transport, uint16_t keycode,
  * passed to webrtc_transport_init and its offer (malloc'd, CRLF lines, our
  * ICE candidates included). webrtc_transport_start adopts the peer once the
  * signal holds the answer; until then discard it on failure. */
-void *webrtc_transport_xcloud_offer(char **offer);
+void *webrtc_transport_xcloud_offer(char **offer, const char *stun_url);
 void webrtc_transport_discard_peer(void *peer);

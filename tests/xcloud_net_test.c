@@ -85,12 +85,61 @@ static void test_home_store_and_power(void)
     CHECK(xcloud_console_power(NULL) == XBC_POWER_UNKNOWN);
 }
 
+static void test_stun_and_ipv4_helpers(void)
+{
+    CHECK(xcloud_valid_stun_url("stun:relay.communication.microsoft.com:3478"));
+    CHECK(xcloud_valid_stun_url("stun:stun.l.google.com:19302"));
+    CHECK(xcloud_valid_stun_url("stun:s1.stun.gamestream.nvidia.com:19308"));
+    CHECK(!xcloud_valid_stun_url("turn:relay.communication.microsoft.com:3478"));
+    CHECK(!xcloud_valid_stun_url("stun:relay.communication.microsoft.com:0"));
+    CHECK(!xcloud_valid_stun_url("stun:relay.communication.microsoft.com:70000"));
+    CHECK(!xcloud_valid_stun_url("stun:relay.communication.microsoft.com:3478/foo"));
+    CHECK(!xcloud_valid_stun_url("stun:relay.communication.microsoft.com"));
+    CHECK(!xcloud_valid_stun_url("stun::3478"));
+    CHECK(!xcloud_valid_stun_url("stun:user@host:3478"));
+    CHECK(!xcloud_valid_stun_url("stun:host name:3478"));
+    CHECK(!xcloud_valid_stun_url("stun:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:3478"));
+    CHECK(!xcloud_valid_stun_url(""));
+    CHECK(!xcloud_valid_stun_url(NULL));
+
+    CHECK(xcloud_is_private_ipv4("192.168.1.86"));
+    CHECK(xcloud_is_private_ipv4("10.0.0.1"));
+    CHECK(xcloud_is_private_ipv4("172.20.10.2"));
+    CHECK(xcloud_is_private_ipv4("172.16.0.1"));
+    CHECK(xcloud_is_private_ipv4("172.31.255.254"));
+    CHECK(xcloud_is_private_ipv4("100.64.1.1"));
+    CHECK(xcloud_is_private_ipv4("100.127.255.254"));
+    CHECK(xcloud_is_private_ipv4("127.0.0.1"));
+    CHECK(xcloud_is_private_ipv4("169.254.1.1"));
+    CHECK(xcloud_is_private_ipv4("0.0.0.0"));
+    CHECK(!xcloud_is_private_ipv4("190.30.117.22"));
+    CHECK(!xcloud_is_private_ipv4("8.8.8.8"));
+    CHECK(!xcloud_is_private_ipv4("172.32.0.1"));
+    CHECK(!xcloud_is_private_ipv4("172.15.255.255"));
+    CHECK(!xcloud_is_private_ipv4("100.63.255.255"));
+    CHECK(!xcloud_is_private_ipv4("100.128.0.1"));
+    CHECK(!xcloud_is_private_ipv4("192.168.1"));
+    CHECK(!xcloud_is_private_ipv4("192.168.1.86.1"));
+    CHECK(!xcloud_is_private_ipv4(" 192.168.1.86"));
+    CHECK(!xcloud_is_private_ipv4("192.168.1.86 "));
+    CHECK(!xcloud_is_private_ipv4("999.168.1.86"));
+    CHECK(!xcloud_is_private_ipv4(""));
+    CHECK(!xcloud_is_private_ipv4(NULL));
+
+    CHECK(xcloud_same_subnet24("192.168.1.33", "192.168.1.86"));
+    CHECK(!xcloud_same_subnet24("192.168.1.33", "192.168.0.86"));
+    CHECK(!xcloud_same_subnet24("172.20.10.2", "192.168.1.86"));
+    CHECK(!xcloud_same_subnet24("192.168.1.33", "not-an-ip"));
+    CHECK(!xcloud_same_subnet24(NULL, "192.168.1.86"));
+}
+
 int main(void)
 {
     test_gs_base();
     test_subpath();
     test_ipv6_and_teredo();
     test_home_store_and_power();
-    printf("PASS: gs_base, session_subpath, ipv6/teredo_ipv4, home_store, console_power\n");
+    test_stun_and_ipv4_helpers();
+    printf("PASS: gs_base, session_subpath, ipv6/teredo_ipv4, home_store, console_power, stun/ipv4\n");
     return 0;
 }

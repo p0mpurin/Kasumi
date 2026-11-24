@@ -1115,20 +1115,14 @@ static void steam_tick(WebRtcTransport *t)
     t->input_reports = stats.hid_reports;
 }
 
-void *webrtc_transport_xcloud_offer(char **offer_out)
+static PeerConnection *create_xcloud_peer(const char *stun_url, const char **local_out)
 {
-    *offer_out = NULL;
-    if (!g_owner) return NULL;
-    if (!g_peer_runtime && peer_init() != 0) return NULL;
-    g_peer_runtime = true;
-    peer_connection_set_diagnostics_enabled(1);
+    *local_out = NULL;
     PeerConfiguration config = {0};
     config.video_codec = CODEC_H264; config.audio_codec = CODEC_OPUS;
     config.datachannel = DATA_CHANNEL_BINARY; config.onvideopacket = on_video;
     config.onaudiopacket = on_audio; config.user_data = g_owner;
-    config.ice_servers[0].urls = "stun:s1.stun.gamestream.nvidia.com:19308";
-    if (xcloud_is_home_session())
-        config.ice_servers[1].urls = "stun:stun.l.google.com:19302";
+    config.ice_servers[0].urls = stun_url;
     PeerConnection *pc = peer_connection_create(&config);
     if (!pc) return NULL;
     peer_connection_set_max_video_hold_ms(pc, stream_profile_weak() ? 900 : 700);
@@ -1140,6 +1134,37 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
         !sdp_value(local, "a=ice-pwd:", pwd, sizeof(pwd)) ||
         !sdp_value(local, "a=fingerprint:sha-256 ", fingerprint, sizeof(fingerprint))) {
         peer_connection_destroy(pc);
+        return NULL;
+    }
+    *local_out = local;
+    return pc;
+}
+
+void *webrtc_transport_xcloud_offer(char **offer_out, const char *stun_url)
+{
+    *offer_out = NULL;
+    if (!g_owner) return NULL;
+    if (!g_peer_runtime && peer_init() != 0) return NULL;
+    g_peer_runtime = true;
+    peer_connection_set_diagnostics_enabled(1);
+    const char *local = NULL;
+    PeerConnection *pc = NULL;
+    if (xcloud_is_home_session()) {
+        const char *primary = (stun_url && stun_url[0]) ? stun_url : "stun:relay.communication.microsoft.com:3478";
+        pc = create_xcloud_peer(primary, &local);
+        if (!pc || !local || !strstr(local, " typ srflx")) {
+            diagnostic_log("XHOME", "primary STUN %s yielded no srflx; retrying Google STUN", primary);
+            if (pc) peer_connection_destroy(pc);
+            pc = create_xcloud_peer("stun:stun.l.google.com:19302", &local);
+        }
+    } else {
+        pc = create_xcloud_peer("stun:s1.stun.gamestream.nvidia.com:19308", &local);
+    }
+    char ufrag[64] = "", pwd[128] = "", fingerprint[192] = "";
+    if (!pc || !local || !sdp_value(local, "a=ice-ufrag:", ufrag, sizeof(ufrag)) ||
+        !sdp_value(local, "a=ice-pwd:", pwd, sizeof(pwd)) ||
+        !sdp_value(local, "a=fingerprint:sha-256 ", fingerprint, sizeof(fingerprint))) {
+        if (pc) peer_connection_destroy(pc);
         return NULL;
     }
     /* Our own SDP in the browser's shape (mids 0/1/2, one BUNDLE): Opus

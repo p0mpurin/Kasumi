@@ -154,3 +154,70 @@ bool xcloud_teredo_ipv4(const char *ipv6_text, char *ip4_out, size_t ip4_size, u
     if (port_out) *port_out = port;
     return true;
 }
+
+bool xcloud_valid_stun_url(const char *url)
+{
+    if (!url || strncmp(url, "stun:", 5) != 0) return false;
+    const char *host = url + 5;
+    size_t host_len = 0;
+    while (host[host_len] && host[host_len] != ':') {
+        const unsigned char ch = (unsigned char)host[host_len];
+        if (ch <= ' ' || ch == '/' || ch == '?' || ch == '#' || ch == '@') return false;
+        ++host_len;
+        if (host_len > 63) return false;
+    }
+    if (host_len == 0 || host[host_len] != ':') return false;
+    const char *p = host + host_len + 1;
+    if (*p < '0' || *p > '9') return false;
+    unsigned long port = 0;
+    while (*p) {
+        if (*p < '0' || *p > '9') return false;
+        port = port * 10ul + (unsigned long)(*p - '0');
+        if (port > 65535ul) return false;
+        ++p;
+    }
+    return port >= 1ul && port <= 65535ul;
+}
+
+static bool parse_ipv4(const char *ip, uint8_t oct[4])
+{
+    if (!ip || !ip[0]) return false;
+    const char *p = ip;
+    for (int i = 0; i < 4; ++i) {
+        if (*p < '0' || *p > '9') return false;
+        unsigned val = 0;
+        int digits = 0;
+        while (*p >= '0' && *p <= '9') {
+            if (digits >= 3) return false;
+            val = val * 10u + (unsigned)(*p - '0');
+            if (val > 255u) return false;
+            ++digits;
+            ++p;
+        }
+        oct[i] = (uint8_t)val;
+        if (i < 3) {
+            if (*p != '.') return false;
+            ++p;
+        }
+    }
+    return *p == '\0';
+}
+
+bool xcloud_is_private_ipv4(const char *ip)
+{
+    uint8_t oct[4];
+    if (!parse_ipv4(ip, oct)) return false;
+    if (oct[0] == 0 || oct[0] == 10 || oct[0] == 127) return true;
+    if (oct[0] == 100 && oct[1] >= 64 && oct[1] <= 127) return true;
+    if (oct[0] == 169 && oct[1] == 254) return true;
+    if (oct[0] == 172 && oct[1] >= 16 && oct[1] <= 31) return true;
+    if (oct[0] == 192 && oct[1] == 168) return true;
+    return false;
+}
+
+bool xcloud_same_subnet24(const char *ip_a, const char *ip_b)
+{
+    uint8_t a[4], b[4];
+    if (!parse_ipv4(ip_a, a) || !parse_ipv4(ip_b, b)) return false;
+    return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
+}

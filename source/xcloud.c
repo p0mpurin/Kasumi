@@ -1474,6 +1474,44 @@ static void add_ice_candidate(NvstSignal *s, const char *cand)
     free(line);
 }
 
+typedef struct {
+    char ip[32];
+    unsigned port;
+    unsigned priority;
+    bool is_private;
+    bool is_srflx;
+    bool from_teredo;
+} XhomeRemoteCand;
+
+static void upsert_remote_cand(XhomeRemoteCand *list, unsigned *count, unsigned cap,
+                               const char *ip, unsigned port, unsigned priority,
+                               bool is_srflx, bool from_teredo)
+{
+    if (!ip || !ip[0] || strlen(ip) >= sizeof(list[0].ip) || port == 0 || port > 65535) return;
+    if (!strcmp(ip, "0.0.0.0") || !strncmp(ip, "127.", 4)) return;
+    for (unsigned i = 0; i < *count; ++i) {
+        if (!strcmp(list[i].ip, ip) && list[i].port == port) {
+            if (list[i].from_teredo && !from_teredo) {
+                list[i].from_teredo = false;
+                list[i].is_srflx = is_srflx;
+                list[i].priority = priority;
+            } else if (list[i].from_teredo == from_teredo && priority > list[i].priority) {
+                list[i].priority = priority;
+                list[i].is_srflx |= is_srflx;
+            }
+            return;
+        }
+    }
+    if (*count >= cap) return;
+    XhomeRemoteCand *c = &list[(*count)++];
+    snprintf(c->ip, sizeof(c->ip), "%s", ip);
+    c->port = port;
+    c->priority = priority;
+    c->is_private = xcloud_is_private_ipv4(ip);
+    c->is_srflx = is_srflx;
+    c->from_teredo = from_teredo;
+}
+
 bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
 {
     nvst_signal_close(s);
@@ -1489,8 +1527,49 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     snprintf(session_id, sizeof(session_id), "%s", client->session_id);
     char err[160] = "";
 
+    char stun_url[128] = "", cfg_ip[32] = "";
+    unsigned cfg_port = 0;
+    if (g.home_session) {
+        char cfg_path[220];
+        xcloud_session_subpath(cfg_path, sizeof(cfg_path), session_id, "configuration");
+        HttpResponse cfg_r;
+        if (gs_request_raw(base, token, "GET", cfg_path, NULL, &cfg_r, NULL, 0)) {
+            if (cfg_r.status == 200) {
+                json_t *cfg = response_json(&cfg_r);
+                json_t *sd = json_object_get(cfg, "serverDetails");
+                json_t *stuns = json_object_get(sd, "stunServerAddresses");
+                size_t si;
+                json_t *sv;
+                json_array_foreach(stuns, si, sv) {
+                    const char *surl = json_string_value(sv);
+                    if (surl && strlen(surl) < sizeof(stun_url) && xcloud_valid_stun_url(surl)) {
+                        snprintf(stun_url, sizeof(stun_url), "%s", surl);
+                        break;
+                    }
+                }
+                if (!stun_url[0]) {
+                    const char *single = json_string_value(json_object_get(sd, "stunServerAddress"));
+                    if (single && strlen(single) < sizeof(stun_url) && xcloud_valid_stun_url(single))
+                        snprintf(stun_url, sizeof(stun_url), "%s", single);
+                }
+                const char *ip = json_string_value(json_object_get(sd, "ipV4Address"));
+                if (!ip || !ip[0]) ip = json_string_value(json_object_get(sd, "ipAddress"));
+                json_int_t port = integer(sd, "ipV4Port");
+                if (port <= 0) port = integer(sd, "port");
+                if (ip && ip[0] && strlen(ip) < sizeof(cfg_ip) && !strchr(ip, ':') &&
+                    strcmp(ip, "10.0.0.1") != 0 && strcmp(ip, "0.0.0.0") != 0 &&
+                    port > 0 && port <= 65535) {
+                    snprintf(cfg_ip, sizeof(cfg_ip), "%s", ip);
+                    cfg_port = (unsigned)port;
+                }
+                json_decref(cfg);
+            }
+            http_response_free(&cfg_r);
+        }
+    }
+
     char *offer = NULL;
-    void *peer = webrtc_transport_xcloud_offer(&offer);
+    void *peer = webrtc_transport_xcloud_offer(&offer, stun_url[0] ? stun_url : NULL);
     if (!peer || !offer) {
         free(offer);
         return signal_fail(s, peer, "Couldn't prepare the stream (WebRTC)");
@@ -1537,16 +1616,31 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     diagnostic_log("XCLOUD", "answer %lu bytes", (unsigned long)s->offer_size);
 
     /* Our candidates (host, and server-reflexive when STUN answered). */
+    char local_host_ip[32] = "", local_srflx_ip[32] = "";
     json_t *candidates = json_array();
     for (const char *p = offer; (p = strstr(p, "a=candidate:")) != NULL;) {
         const char *end = strstr(p, "\r\n");
         const size_t n = end ? (size_t)(end - p) : strlen(p);
         char line[256];
         snprintf(line, sizeof(line), "%.*s", (int)(n < sizeof(line) ? n : sizeof(line) - 1), p);
+        char caddr[64] = "";
+        unsigned cport = 0;
+        if (sscanf(line, "a=candidate:%*s %*u %*s %*u %63s %u", caddr, &cport) >= 1 &&
+            !strchr(caddr, ':') && strlen(caddr) < sizeof(local_host_ip)) {
+            if (!local_host_ip[0] && strstr(line, " typ host"))
+                snprintf(local_host_ip, sizeof(local_host_ip), "%s", caddr);
+            else if (!local_srflx_ip[0] && strstr(line, " typ srflx"))
+                snprintf(local_srflx_ip, sizeof(local_srflx_ip), "%s", caddr);
+        }
         json_array_append_new(candidates, json_pack("{s:s,s:s,s:s,s:s}", "candidate", line, "messageType",
                                                     "iceCandidate", "sdpMLineIndex", "0", "sdpMid", "0"));
         p += n;
     }
+    if (g.home_session)
+        diagnostic_log("XHOME", "local host=%s srflx=%s stun=%s",
+                       local_host_ip[0] ? local_host_ip : "-",
+                       local_srflx_ip[0] ? local_srflx_ip : "-",
+                       stun_url[0] ? stun_url : "default");
     json_array_append_new(candidates, json_pack("{s:s,s:s,s:s,s:s}", "candidate", "a=end-of-candidates",
                                                 "messageType", "iceCandidate", "sdpMLineIndex", "0", "sdpMid", "0"));
     free(offer);
@@ -1560,65 +1654,92 @@ bool xcloud_signal_start(NvstSignal *s, const GfnClient *client)
     if (!sent) return signal_fail(s, peer, err[0] ? err : "Couldn't send the network candidates");
     http_response_free(&r);
     json_t *remote = poll_exchange(base, token, path, 15000, err, sizeof(err));
-    size_t index;
-    json_t *item;
-    json_array_foreach(remote, index, item) {
-        const char *candidate = json_string_value(json_object_get(item, "candidate"));
-        if (!candidate || strstr(candidate, "end-of-candidates") || s->remote_ice_count >= ARRAY_SIZE(s->remote_ice))
-            continue;
-        /* IPv4 only: the console has no IPv6. For Xbox Remote Play, unwrap
-         * Teredo IPv6 candidates (2001:0000::/32) into IPv4 host candidates. */
-        char address[64] = "";
-        unsigned cand_port = 0;
-        const char *body = !strncmp(candidate, "a=candidate:", 12) ? candidate + 2 : candidate;
-        sscanf(body, "candidate:%*s %*u %*s %*u %63s %u", address, &cand_port);
-        if (strchr(address, ':')) {
-            char ip4[32] = "";
-            uint16_t tport = 0;
-            if (xcloud_teredo_ipv4(address, ip4, sizeof(ip4), &tport)) {
-                char cand[128];
-                snprintf(cand, sizeof(cand), "a=candidate:10 1 UDP 1 %s 9002 typ host ", ip4);
-                add_ice_candidate(s, cand);
-                if (tport && tport != 9002) {
-                    snprintf(cand, sizeof(cand), "a=candidate:11 1 UDP 1 %s %u typ host ", ip4, (unsigned)tport);
-                    add_ice_candidate(s, cand);
-                }
-                if (cand_port && cand_port <= 65535 && cand_port != 9002 && cand_port != tport) {
-                    snprintf(cand, sizeof(cand), "a=candidate:12 1 UDP 1 %s %u typ host ", ip4, cand_port);
-                    add_ice_candidate(s, cand);
+    if (g.home_session) {
+        XhomeRemoteCand rem[16];
+        unsigned rem_count = 0;
+        size_t index;
+        json_t *item;
+        json_array_foreach(remote, index, item) {
+            const char *candidate = json_string_value(json_object_get(item, "candidate"));
+            if (!candidate || strstr(candidate, "end-of-candidates")) continue;
+            char address[64] = "";
+            unsigned prio = 0, cand_port = 0;
+            const char *body = !strncmp(candidate, "a=candidate:", 12) ? candidate + 2 : candidate;
+            if (sscanf(body, "candidate:%*s %*u %*s %u %63s %u", &prio, address, &cand_port) < 2)
+                continue;
+            if (strchr(address, ':')) {
+                char ip4[32] = "";
+                uint16_t tport = 0;
+                if (xcloud_teredo_ipv4(address, ip4, sizeof(ip4), &tport)) {
+                    upsert_remote_cand(rem, &rem_count, ARRAY_SIZE(rem), ip4, 9002, 1, false, true);
+                    if (tport && tport != 9002)
+                        upsert_remote_cand(rem, &rem_count, ARRAY_SIZE(rem), ip4, tport, 1, false, true);
+                    if (cand_port && cand_port <= 65535 && cand_port != 9002 && cand_port != tport)
+                        upsert_remote_cand(rem, &rem_count, ARRAY_SIZE(rem), ip4, cand_port, 1, false, true);
+                } else {
+                    diagnostic_log("XCLOUD", "ignored non-Teredo IPv6 candidate: %.63s", address);
                 }
             } else {
-                diagnostic_log("XCLOUD", "ignored non-Teredo IPv6 candidate: %.63s", address);
+                const bool is_srflx = strstr(body, " typ srflx") != NULL;
+                upsert_remote_cand(rem, &rem_count, ARRAY_SIZE(rem), address, cand_port,
+                                   prio ? prio : 100, is_srflx, false);
             }
-            continue;
         }
-        add_ice_candidate(s, candidate);
+        if (cfg_ip[0] && cfg_port > 0)
+            upsert_remote_cand(rem, &rem_count, ARRAY_SIZE(rem), cfg_ip, cfg_port, 1, false, true);
+
+        const char *remote_pub_ip = "", *remote_priv_ip = "";
+        for (unsigned i = 0; i < rem_count; ++i) {
+            if (!rem[i].is_private && !remote_pub_ip[0]) remote_pub_ip = rem[i].ip;
+            if (rem[i].is_private && !remote_priv_ip[0]) remote_priv_ip = rem[i].ip;
+        }
+        const bool outside_home =
+            (local_srflx_ip[0] && remote_pub_ip[0] && strcmp(local_srflx_ip, remote_pub_ip) != 0) ||
+            (local_host_ip[0] && remote_priv_ip[0] && !xcloud_same_subnet24(local_host_ip, remote_priv_ip));
+        diagnostic_log("XHOME", "route=%s remote_pub=%s remote_priv=%s unique=%u",
+                       outside_home ? "WAN" : "LAN",
+                       remote_pub_ip[0] ? remote_pub_ip : "-",
+                       remote_priv_ip[0] ? remote_priv_ip : "-", rem_count);
+
+        for (unsigned i = 0; i < rem_count; ++i) {
+            unsigned emit_prio;
+            if (outside_home) {
+                if (!rem[i].is_private && (!rem[i].from_teredo || rem[i].port == 9002))
+                    emit_prio = 2130706431u - i;
+                else if (!rem[i].is_private)
+                    emit_prio = 50000u - i;
+                else
+                    emit_prio = 100u - i;
+            } else {
+                if (rem[i].is_private)
+                    emit_prio = 2130706431u - i;
+                else if (!rem[i].from_teredo || rem[i].port == 9002)
+                    emit_prio = 1685987071u - i;
+                else
+                    emit_prio = 1000u - i;
+            }
+            char cand[128];
+            snprintf(cand, sizeof(cand), "a=candidate:%u 1 UDP %u %.31s %u typ %s",
+                     i + 1u, emit_prio, rem[i].ip, rem[i].port,
+                     rem[i].is_srflx ? "srflx" : "host");
+            add_ice_candidate(s, cand);
+        }
+    } else {
+        size_t index;
+        json_t *item;
+        json_array_foreach(remote, index, item) {
+            const char *candidate = json_string_value(json_object_get(item, "candidate"));
+            if (!candidate || strstr(candidate, "end-of-candidates") || s->remote_ice_count >= ARRAY_SIZE(s->remote_ice))
+                continue;
+            /* IPv4 only: the console has no IPv6. */
+            char address[64] = "";
+            const char *body = !strncmp(candidate, "a=candidate:", 12) ? candidate + 2 : candidate;
+            sscanf(body, "candidate:%*s %*u %*s %*u %63s", address);
+            if (strchr(address, ':')) continue;
+            add_ice_candidate(s, candidate);
+        }
     }
     json_decref(remote);
-    if (g.home_session) {
-        char cfg_path[220];
-        xcloud_session_subpath(cfg_path, sizeof(cfg_path), session_id, "configuration");
-        HttpResponse cfg_r;
-        if (gs_request_raw(base, token, "GET", cfg_path, NULL, &cfg_r, NULL, 0)) {
-            if (cfg_r.status == 200) {
-                json_t *cfg = response_json(&cfg_r);
-                json_t *sd = json_object_get(cfg, "serverDetails");
-                const char *ip = json_string_value(json_object_get(sd, "ipV4Address"));
-                if (!ip || !ip[0]) ip = json_string_value(json_object_get(sd, "ipAddress"));
-                json_int_t port = integer(sd, "ipV4Port");
-                if (port <= 0) port = integer(sd, "port");
-                if (port <= 0) port = 9002;
-                if (ip && ip[0] && !strchr(ip, ':') && port > 0 && port <= 65535) {
-                    char cand[128];
-                    snprintf(cand, sizeof(cand), "a=candidate:20 1 UDP 1 %s %lld typ host ", ip, (long long)port);
-                    add_ice_candidate(s, cand);
-                    diagnostic_log("XHOME", "config serverDetails IPv4 %s:%lld", ip, (long long)port);
-                }
-                json_decref(cfg);
-            }
-            http_response_free(&cfg_r);
-        }
-    }
     diagnostic_log("XCLOUD", "remote candidates %u (IPv4/Teredo)", s->remote_ice_count);
     if (!s->remote_ice_count || !s->offer_sdp) return signal_fail(s, peer, "The Xbox sent no usable address");
     s->xcloud_peer = peer;
