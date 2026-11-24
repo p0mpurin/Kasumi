@@ -42,9 +42,9 @@ jobs:
         run: |
           mkdir -p /tmp/3ds-tools
 
-          # makerom (Project_CTR)
+          # makerom v0.18.3 (compatible with Debian 12 glibc 2.36; v0.19.0 requires glibc 2.38+)
           curl -fsSL -o /tmp/3ds-tools/makerom.zip \
-            "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip"
+            "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip"
           unzip -q /tmp/3ds-tools/makerom.zip -d /tmp/3ds-tools/makerom
           MAKEROM_BIN=$(find /tmp/3ds-tools/makerom -type f -name "makerom" | head -n 1)
           install -m 0755 "$MAKEROM_BIN" /usr/local/bin/makerom
