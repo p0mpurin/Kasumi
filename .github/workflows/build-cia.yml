@@ -26,6 +26,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout repository
@@ -80,7 +83,7 @@ jobs:
         id: release_meta
         run: |
           SAFE_REF=$(printf '%s' "${{ github.ref_name }}" | tr '/:*?"<>|\\' '-')
-          SHORT_SHA="${GITHUB_SHA::7}"
+          SHORT_SHA=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
           echo "artifact_name=Kasumi-${SAFE_REF}" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
