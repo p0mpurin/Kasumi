@@ -1,0 +1,76 @@
+name: Build Kasumi (CIA & 3DSX)
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system and devkitPro 3DS packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3 curl unzip git ca-certificates
+          dkp-pacman -Syu --noconfirm
+          dkp-pacman -S --needed --noconfirm 3ds-dev 3ds-curl 3ds-jansson 3ds-mbedtls 3ds-libopus 3ds-cmake
+
+      - name: Install makerom and bannertool
+        run: |
+          mkdir -p /tmp/3ds-tools
+
+          # makerom (Project_CTR)
+          curl -fsSL -o /tmp/3ds-tools/makerom.zip \
+            "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip"
+          unzip -q /tmp/3ds-tools/makerom.zip -d /tmp/3ds-tools/makerom
+          MAKEROM_BIN=$(find /tmp/3ds-tools/makerom -type f -name "makerom" | head -n 1)
+          install -m 0755 "$MAKEROM_BIN" /usr/local/bin/makerom
+
+          # bannertool
+          BANNERTOOL_URL=$(curl -fsSL "https://api.github.com/repos/Steveice10/bannertool/releases/latest" \
+            | python3 -c "import sys, json; assets = json.load(sys.stdin)['assets']; print(next(a['browser_download_url'] for a in assets if a['name'].endswith('.zip')))")
+          curl -fsSL -o /tmp/3ds-tools/bannertool.zip "$BANNERTOOL_URL"
+          unzip -q /tmp/3ds-tools/bannertool.zip -d /tmp/3ds-tools/bannertool
+          BANNERTOOL_BIN=$(find /tmp/3ds-tools/bannertool -type f -path "*linux*" -name "bannertool" | head -n 1)
+          if [ -z "$BANNERTOOL_BIN" ]; then
+            BANNERTOOL_BIN=$(find /tmp/3ds-tools/bannertool -type f -name "bannertool" | head -n 1)
+          fi
+          install -m 0755 "$BANNERTOOL_BIN" /usr/local/bin/bannertool
+
+          rm -rf /tmp/3ds-tools
+
+      - name: Build static dependencies (transport & aecm)
+        run: |
+          bash tools/build-transport.sh
+          bash tools/build-aecm.sh
+
+      - name: Build Kasumi (.3dsx & .cia)
+        run: |
+          make -j"$(nproc)"
+          make cia MAKEROM=/usr/local/bin/makerom BANNERTOOL=/usr/local/bin/bannertool
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kasumi-${{ github.ref_name }}
+          path: |
+            Kasumi.cia
+            Kasumi.3dsx
+          if-no-files-found: error
