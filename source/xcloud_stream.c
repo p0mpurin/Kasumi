@@ -8,10 +8,11 @@
 
 #include "diagnostic.h"
 #include "gfn_input.h"
+#include "xcloud.h"
 
 #include "peer_connection.h"
 
-/* The console is the DTLS client, so its channels take even stream ids. */
+/* The browser/3DS is the DTLS client, so its channels take even stream ids. */
 enum { SID_CHAT = 0, SID_CONTROL = 2, SID_INPUT = 4, SID_MESSAGE = 6 };
 enum {
     REPORT_METADATA = 1, REPORT_GAMEPAD = 2, REPORT_CLIENT_METADATA = 8, REPORT_SERVER_METADATA = 16,
@@ -212,10 +213,12 @@ static void send_configuration(WebRtcTransport *t, PeerConnection *pc)
     send_message(pc, "Message", "/streaming/characteristics/touchinputenabledchanged",
                  json_pack("{s:b}", "touchInputEnabled", 0));
     send_message(pc, "Message", "/streaming/characteristics/clientdevicecapabilities", json_object());
-    /* The service fits the picture to this: the top screen's wide size, not
-     * a 1080p one to shrink (2026-10-07: 800x480 came at 60 fps). Classic
-     * mode has the decoder shrink it to 400x240. */
-    const int w = XCLOUD_STREAM_WIDTH, h = XCLOUD_STREAM_HEIGHT;
+    /* The service fits the picture to this: 800x480 for xCloud (where
+     * supported, e.g. Fortnite), and 1280x720 for Remote Play so 1080p
+     * consoles step down to 720p for the New 3DS half-size MVD path. */
+    const bool home = xcloud_is_home_session();
+    const int w = home ? 1280 : XCLOUD_STREAM_WIDTH;
+    const int h = home ? 720 : XCLOUD_STREAM_HEIGHT;
     /* The web player lifts any title constraint once connected. */
     send_message(pc, "TransactionStart", "/streaming/title/constrain", json_pack("{s:b}", "constrain", 0));
     send_message(pc, "Message", "/streaming/characteristics/dimensionschanged",
@@ -225,7 +228,14 @@ static void send_configuration(WebRtcTransport *t, PeerConnection *pc)
     x.configured = true;
     t->input_ready = true;
     snprintf(t->status, sizeof(t->status), "Xbox stream ready (%dx%d)", w, h);
-    diagnostic_log("XCLOUD", "configured: %dx%d", w, h);
+    diagnostic_log("XCLOUD", "configured: %dx%d (home=%d)", w, h, home ? 1 : 0);
+}
+
+bool xcloud_stream_request_keyframe(void *peer)
+{
+    PeerConnection *pc = peer;
+    if (!pc || !x.opened || !x.handshake_ack) return false;
+    return send_text(pc, SID_CONTROL, "{\"message\":\"videoKeyframeRequested\",\"ifrRequested\":true}");
 }
 
 void xcloud_stream_on_data(WebRtcTransport *t, const char *data, size_t length, uint16_t sid)

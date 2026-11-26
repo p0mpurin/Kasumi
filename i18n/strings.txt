@@ -34,6 +34,9 @@ Waiting for approval
 Code expires in %ld:%02ld
 New code
 Cancel
+REMOTE PLAY
+ONLINE
+STANDBY
 RECENT
 SEARCH  \"%s\"
 %lu / %lu%s%s
@@ -52,6 +55,8 @@ Browse
 Open
 Search
 Close
+Wake Up
+Refresh
 Library
 In the queue
 Preparing your rig
@@ -130,6 +135,7 @@ ADDED TO THE HOME MENU
 TRY AGAIN
 CLOSE
 Press HOME to see it. Opening it starts this game for you.
+Remote Play
 Briefly
 PLAYED
 SESSIONS
@@ -180,6 +186,7 @@ RESET
 CANCEL
 SAVE
 PLAY
+Xbox Remote Play
 Your PC
 Xbox Cloud Gaming
 LAUNCH FROM  (LEFT / RIGHT)
@@ -188,6 +195,7 @@ PLAYS ON
 SAVED
 FAVOURITE
 OPTIONS
+Streams 720p from your Xbox (half size on New 3DS)
 ON THE HOME MENU  ·  REMOVE
 + ADD TO HOME MENU
 INSTALLING THE SHORTCUT...
@@ -253,7 +261,7 @@ Kasumi game hub
 Welcome! Where are your games?
 Most Xbox games stream at a size the 3DS can't show yet. Back when they do.
 GeForce NOW
-Xbox Cloud
+Xbox
 Steam Link
 EXIT
 Your 3DS clock says %s. Set the date and time in System Settings first, or the sign-in fails.
@@ -279,13 +287,25 @@ STREAM FROM THIS PC
 Up to four PCs; pair another one below.
 PAIR ANOTHER PC
 FORGET THIS PC
+On
+Standby
+Off
+Status unknown
+Remote Play disabled
+Away from home
+Ready
+Your Xbox consoles: A connects, X wakes
+No Xbox consoles loaded yet. Tap REFRESH.
+720p Remote Play · Standby consoles wake on connect
+WAKE UP
+REFRESH
 No game selected
 Load your library or search
 OPEN GAME
 SHOW ALL GAMES
 LOAD LIBRARY
 LIBRARY
-REFRESH
+CONSOLES
 SEARCH
 HOLD L TO AIM
 HOLD ZL TO AIM
@@ -403,9 +423,9 @@ FAVOURITES
 Open a game and tap FAVOURITE to add it here.
 SHOW ALL
 Tab
-Refresh
 YOUR PCS
 IN USE - TAP TO RELOAD ITS GAMES
+YOUR XBOX CONSOLES
 Played %s on Kasumi
 Played briefly on Kasumi
 %lu session%s%s
@@ -451,12 +471,11 @@ Drag moves the zoomed view
 Nothing (turn on Touch camera or MOUSE)
 Hold START + SELECT, or tap the handle, for the menu
 GEFORCE NOW
-XBOX CLOUD
 STEAM LINK
 Your PC games from Steam, Epic and more, running on NVIDIA's servers.
 An NVIDIA account (free or paid).
-Game Pass games, and free ones like Fortnite, from Microsoft's servers. Beta.
-A Microsoft account; most games need Game Pass Ultimate.
+Stream from your own Xbox console (Remote Play) or Xbox Cloud Gaming.
+A Microsoft account; enable Remote Play on your Xbox.
 SIGN IN WITH MICROSOFT
 Your own PC: play whatever Steam on it can run, over your Wi-Fi.
 A PC with Steam on, on the same Wi-Fi as the 3DS.
@@ -522,7 +541,6 @@ UBISOFT_CONNECT
 BATTLENET
 Battle.net
 BATTLE_NET
-Xbox
 MICROSOFT
 MICROSOFT_STORE
 NV_BUNDLE
@@ -535,11 +553,9 @@ WARGAMING
 Wargaming
 Always
 While aiming
-Off
 Position
 Letters
 PlayStation
-On
 Custom
 Default
 ZL / ZR
@@ -749,6 +765,7 @@ synced %ld min ago
 synced %ld h ago
 synced %ld days ago
 From %s  ·  800x480 wide  ·  %u fps
+Xbox Remote Play  ·  720p half-size
 Xbox Cloud  ·  800x480 wide  ·  60 fps
 ★ Favourite  ·  Y removes  ·  X: game options
 Y: add to favourites  ·  X: game options
@@ -839,6 +856,7 @@ Choppy here last time: using Weak / hotspot mode
 NEEDS A PAID MEMBERSHIP
 One moment - launching again too fast makes NVIDIA refuse for a minute
 Starting %.60s on %.40s...
+Connecting to your Xbox console...
 Asking Xbox Cloud Gaming for a console...
 Creating your cloud session...
 Closing the cloud session...
@@ -888,6 +906,10 @@ Switching to %.60s...
 This 3DS forgets %.60s and streams from %.60s instead. Pair it again to stream from it.
 This 3DS forgets %.60s. Pair it again to stream from it.
 FORGET THIS PC?
+No Xbox consoles found; tap REFRESH first
+Enable Remote features on your Xbox to wake it remotely
+Sending Wake-Up to %.50s...
+Enable Remote Play on this Xbox console first
 This game uses its own Bitrate (game page, X > Options)
 Button mapping saved for every game
 Every game uses the normal layout
@@ -1051,6 +1073,7 @@ Search %.50s: %lu results
 No games on %s for this account. NVIDIA account? Pick NVIDIA in Settings > Account and sign in again.
 Loaded %lu owned games (server total %lu)
 Library: %lu games
+Library: %lu Xbox items (Y for consoles)
 Library: %lu games (Y refreshes)
 Connection check: NVIDIA unreachable
 Connection: %u ms, %u.%u Mbps, Wi-Fi %u/3
@@ -1130,6 +1153,8 @@ Chrome/130.0.0.0 Safari/537.36
 Can't reach Microsoft's sign-in (%.80s)
 client_id=%s&grant_type=refresh_token&scope=%s&refresh_token=%s
 Your Microsoft sign-in has expired. Press X to sign in again.
+RpsTicket
+TokenType
 Can't reach Xbox Live (%.80s)
 Xbox Live refused the sign-in (HTTP %ld)
 RelyingParty
@@ -1150,33 +1175,61 @@ grant_type=urn%%3Aietf%%3Aparams%%3Aoauth%%3Agrant-type%%3Adevice_code&client_id
 Waiting for the Microsoft sign-in...
 The sign-in was declined. Press X to try again.
 Microsoft sign-in failed (%.40s)
-Signed in to Xbox Cloud Gaming; %s
+Signed in to Xbox; %s
+Xbox sign-in required.
+Xbox request URL too long.
 x-gssv-client: XboxComBrowser
-Xbox Cloud Gaming unreachable (%.80s)
+Xbox unreachable (%.80s)
 calling-app-name: Xbox Cloud Gaming Web
 calling-app-version: 26.1.97
 &hydration=RemoteLowJade0
+Xbox: %s
+/v6/servers/home?mr=50
+Xbox Remote Play list: HTTP %ld
+Authorization: XBL3.0 x=%s;%s
+x-xbl-contract-version: 4
+skillplatform: RemoteManagement
+Xbox console list: HTTP %ld
+Power
+WakeUp
+Couldn't reach Xbox console (%.80s)
+Wake-up sent to your Xbox; wait a few seconds.
+Couldn't wake Xbox (HTTP %ld)
+Loading your Xbox consoles and games...
 /v2/titles?mr=500%s%s
 Xbox game list: HTTP %ld
-Library: %lu Xbox cloud games (Y refreshes)
+No streamable Xbox consoles found (enable Remote Play on your console).
+Library: %lu Xbox console(s) (Y for consoles)
+Library: %lu console(s) + %lu cloud games (Y for consoles)
+Library: %lu Xbox cloud games (Y for consoles)
 %lu games match \"%.40s\"
+no (Fortnite)
+Xbox Remote Play isn't available for this account.
+Xbox Cloud Gaming isn't available for this account.
 V3;WebrtcTransport.dll
 en-US
 POST
 Xbox couldn't start %.40s (HTTP %ld%s%.60s)
+Waking up %.40s (about 30 s)...
 client_id=%s&grant_type=refresh_token&refresh_token=%s
+Your Xbox console ended the session.
 Xbox Cloud Gaming ended the session.
 The Xbox session is gone. Try again.
+Your Xbox didn't wake up in time. Check that it's plugged in and Remote Play is on.
+The Xbox didn't finish starting. Try again in a moment.
+The Xbox stopped answering. Try again.
+Waking up your Xbox...
 Waiting for a free Xbox (about %u min)...
 Waiting for a free Xbox...
-The Xbox didn't finish starting. Try again in a moment.
 Starting the Xbox...
 Connecting your account to the Xbox...
 The Xbox didn't accept the sign-in. Try again.
 Xbox ready; connecting the stream...
 Microsoft couldn't start the game (error 0x%08lX). Try again soon, or test xbox.com/play with the same account.
+Xbox Remote Play couldn't connect%s%.110s
 Xbox Cloud Gaming couldn't start the game%s%.110s
-The Xbox session ended. Start the game again.
+The Xbox session didn't start. Try again.
+The Xbox session ended. Start the stream again.
 Xbox session ended
 no answer
 Xbox stream setup failed: %.100s
@@ -1188,7 +1241,12 @@ Couldn't send the stream offer
 The Xbox refused the stream offer (HTTP %ld)
 The Xbox sent no stream answer
 Couldn't send the network candidates
-a=candidate:%*s %*u %*s %*u %63s
+candidate:%*s %*u %*s %*u %63s %u
+a=candidate:10 1 UDP 1 %s 9002 typ host 
+a=candidate:11 1 UDP 1 %s %u typ host 
+a=candidate:12 1 UDP 1 %s %u typ host 
+ipV4Port
+a=candidate:20 1 UDP 1 %s %lld typ host 
 The Xbox sent no usable address
 Connecting to the Xbox...
 Kasumi (New 3DS)
@@ -1295,6 +1353,7 @@ v=0\no=SdpTest test_id_13 14 IN IPv4 127.0.0.1\ns=-\nt=0 0\na=general.icePasswor
 a=video.initialBitrateKbps:%u\na=video.initialPeakBitrateKbps:%u\na=vqos.bw.maximumBitrateKbps:%u\na=vqos.bw.minimumBitrateKbps:%u\na=vqos.bw.peakBitrateKbps:%u\na=vqos.bw.serverPeakBitrateKbps:%u\na=vqos.bw.enableBandwidthEstimation:1\na=vqos.bw.disableBitrateLimit:0\na=video.encoderCscMode:3\na=video.dynamicRangeMode:0\na=video.bitDepth:8\na=video.scalingFeature1:0\na=video.prefilterParams.prefilterMode:%u\na=video.prefilterParams.prefilterModel:0\na=video.prefilterParams.denoiseLevel:0\na=video.prefilterParams.sharpnessLevel:%u\nm=audio 0 RTP/AVP\na=msid:audio\nm=mic 0 RTP/AVP\na=msid:mic\na=rtpmap:0 PCMU/8000\nm=application 0 RTP/AVP\na=msid:input_1\na=ri.partialReliableThresholdMs:16\na=ri.hidDeviceMask:4294967295\na=ri.enablePartiallyReliableTransferGamepad:15\na=ri.enablePartiallyReliableTransferHid:4294967295\n
 a=vqos.dfc.enable:0\na=vqos.dfc.adjustResAndFps:0\na=vqos.resControl.cpmRtc.enable:0\na=vqos.resControl.cpmRtc.featureMask:0\na=vqos.resControl.cpmRtc.minResolutionPercent:100\na=vqos.resControl.cpmRtc.resolutionChangeHoldonMs:999999\n
 This game only streams in 720p, which the 3DS can't show yet. Fortnite works.
+Your Xbox is streaming at %ux%u. Set Remote Play quality to 720p on the console.
 This game streams at %ux%u, which is too big for the 3DS.
 Video arrived; %.140s
 The 3DS video decoder stopped responding. Close Kasumi and open it again.
@@ -1305,6 +1364,7 @@ Input ready protocol v%d
 WebRTC data channel open; input handshake
 WebRTC ICE/DTLS/SRTP connected
 ICE connected; DTLS handshake
+Couldn't reach your Xbox over WebRTC. Outside home Wi-Fi, enable UPnP or forward UDP 9002.
 WebRTC transport %s
 WebRTC %s
 pollReadyAvg/Max=%llu/%lluus readAvg/Max=%llu/%lluus slowReads(>2ms)=%u lockWaitMax=%lluus
@@ -1315,6 +1375,7 @@ Video %ux%u from the PC
 Couldn't open the stream to the PC
 c=IN IP4 0.0.0.0\r\na=rtcp:9 IN IP4 0.0.0.0\r\na=ice-ufrag:%s\r\na=ice-pwd:%s\r\na=ice-options:trickle\r\na=fingerprint:sha-256 %s\r\na=setup:actpass\r\n
 c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s
+level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020
 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f
 v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\nm=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\na=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\na=fmtp:102 %s\r\na=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\na=max-message-size:262144\r\n
 Could not create/send WebRTC answer

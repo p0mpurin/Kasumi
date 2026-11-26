@@ -392,8 +392,10 @@ static bool request_video_keyframe(WebRtcTransport *t, const char *reason)
     int result = 0;
     if (t->steam) {
         if (!steam_session_request_keyframe(t->peer)) return false;
+    } else {
+        if (t->xcloud) xcloud_stream_request_keyframe(t->peer);
+        result = peer_connection_request_video_keyframe(t->peer);
     }
-    else result = peer_connection_request_video_keyframe(t->peer);
     t->last_keyframe_request_at = plat_time_ms();
     t->keyframe_requests++;
     diagnostic_log("VIDEO", "PLI reason=%s attempt=%u result=%d",
@@ -531,6 +533,10 @@ static void on_video(const PeerVideoPacket *packet, void *userdata)
                 if (decode_width <= 1280 && decode_height <= 720)
                     snprintf(t->status, sizeof(t->status),
                              i18n_text("This game only streams in 720p, which the 3DS can't show yet. Fortnite works."));
+                else if (xcloud_is_home_session())
+                    snprintf(t->status, sizeof(t->status),
+                             i18n_text("Your Xbox is streaming at %ux%u. Set Remote Play quality to 720p on the console."),
+                             source_width, source_height);
                 else
                     snprintf(t->status, sizeof(t->status),
                              i18n_text("This game streams at %ux%u, which is too big for the 3DS."),
@@ -721,7 +727,13 @@ static void on_state(PeerConnectionState state, void *userdata)
         /* A DTLS close_notify from the rig closes a working stream. Beta.27
          * report SAFA4K counted it as "connecting" and never reconnected. */
         t->state = WEBRTC_FAILED;
-        snprintf(t->status, sizeof(t->status), i18n_text("WebRTC transport %s"), peer_connection_state_to_string(state));
+        if (state == PEER_CONNECTION_FAILED && t->xcloud && xcloud_is_home_session() && !t->connected_at) {
+            t->no_reconnect = true;
+            snprintf(t->status, sizeof(t->status),
+                     i18n_text("Couldn't reach your Xbox over WebRTC. Outside home Wi-Fi, enable UPnP or forward UDP 9002."));
+        } else {
+            snprintf(t->status, sizeof(t->status), i18n_text("WebRTC transport %s"), peer_connection_state_to_string(state));
+        }
     } else {
         t->state = WEBRTC_CHECKING;
         snprintf(t->status, sizeof(t->status), i18n_text("WebRTC %s"), peer_connection_state_to_string(state));
@@ -1103,18 +1115,14 @@ static void steam_tick(WebRtcTransport *t)
     t->input_reports = stats.hid_reports;
 }
 
-void *webrtc_transport_xcloud_offer(char **offer_out)
+static PeerConnection *create_xcloud_peer(const char *stun_url, const char **local_out)
 {
-    *offer_out = NULL;
-    if (!g_owner) return NULL;
-    if (!g_peer_runtime && peer_init() != 0) return NULL;
-    g_peer_runtime = true;
-    peer_connection_set_diagnostics_enabled(1);
+    *local_out = NULL;
     PeerConfiguration config = {0};
     config.video_codec = CODEC_H264; config.audio_codec = CODEC_OPUS;
     config.datachannel = DATA_CHANNEL_BINARY; config.onvideopacket = on_video;
     config.onaudiopacket = on_audio; config.user_data = g_owner;
-    config.ice_servers[0].urls = "stun:s1.stun.gamestream.nvidia.com:19308";
+    config.ice_servers[0].urls = stun_url;
     PeerConnection *pc = peer_connection_create(&config);
     if (!pc) return NULL;
     peer_connection_set_max_video_hold_ms(pc, stream_profile_weak() ? 900 : 700);
@@ -1126,6 +1134,54 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
         !sdp_value(local, "a=ice-pwd:", pwd, sizeof(pwd)) ||
         !sdp_value(local, "a=fingerprint:sha-256 ", fingerprint, sizeof(fingerprint))) {
         peer_connection_destroy(pc);
+        return NULL;
+    }
+    *local_out = local;
+    return pc;
+}
+
+void *webrtc_transport_xcloud_offer(char **offer_out, const char *stun_url)
+{
+    *offer_out = NULL;
+    if (!g_owner) return NULL;
+    if (!g_peer_runtime && peer_init() != 0) return NULL;
+    g_peer_runtime = true;
+    peer_connection_set_diagnostics_enabled(1);
+    const char *local = NULL;
+    PeerConnection *pc = NULL;
+    if (xcloud_is_home_session()) {
+        const char *primary = (stun_url && stun_url[0]) ? stun_url : "stun:relay.communication.microsoft.com:3478";
+        static const char *const fallbacks[] = {
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+        };
+        const char *urls[3];
+        size_t url_count = 0;
+        urls[url_count++] = primary;
+        for (size_t i = 0; i < sizeof(fallbacks) / sizeof(fallbacks[0]); ++i) {
+            if (strcmp(primary, fallbacks[i]) != 0)
+                urls[url_count++] = fallbacks[i];
+        }
+        for (size_t i = 0; i < url_count; ++i) {
+            pc = create_xcloud_peer(urls[i], &local);
+            if (pc && local && strstr(local, " typ srflx")) break;
+            if (i + 1 < url_count) {
+                diagnostic_log("XHOME", "STUN %s yielded no srflx; retrying %s", urls[i], urls[i + 1]);
+                if (pc) {
+                    peer_connection_destroy(pc);
+                    pc = NULL;
+                    local = NULL;
+                }
+            }
+        }
+    } else {
+        pc = create_xcloud_peer("stun:s1.stun.gamestream.nvidia.com:19308", &local);
+    }
+    char ufrag[64] = "", pwd[128] = "", fingerprint[192] = "";
+    if (!pc || !local || !sdp_value(local, "a=ice-ufrag:", ufrag, sizeof(ufrag)) ||
+        !sdp_value(local, "a=ice-pwd:", pwd, sizeof(pwd)) ||
+        !sdp_value(local, "a=fingerprint:sha-256 ", fingerprint, sizeof(fingerprint))) {
+        if (pc) peer_connection_destroy(pc);
         return NULL;
     }
     /* Our own SDP in the browser's shape (mids 0/1/2, one BUNDLE): Opus
@@ -1143,35 +1199,52 @@ void *webrtc_transport_xcloud_offer(char **offer_out)
      * Fewer bits per frame is all we can ask for: less for MVD to chew.
      * Fortnite too, in case it stays at 720p (xcloud_hd_fallback); at its
      * usual 800x480 this is about what GeForce NOW sends. */
-    const unsigned cap = 1200;
+    unsigned cap = 1200;
+    /* Remote Play (PR #22): the console sends what the profile allows. */
+    if (xcloud_is_home_session()) {
+        cap = stream_profile_max_bitrate();
+        if (cap < 400) cap = 400;
+        if (cap > 2500) cap = 2500;
+    }
     char video_ice[600];
     snprintf(video_ice, sizeof(video_ice), "c=IN IP4 0.0.0.0\r\nb=AS:%u\r\nb=TIAS:%u\r\n%s", cap, cap * 1000,
              strstr(ice, "a=rtcp:9"));
-    const char *fmtp = "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
+    const char *fmtp = xcloud_is_home_session()
+                           ? "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e020"
+                           : "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f";
     char *out = malloc(SDP_LIMIT);
     if (!out) {
         peer_connection_destroy(pc);
         return NULL;
     }
+    char local_cands[1024] = "";
+    size_t cands_len = 0;
+    for (const char *p = local; (p = strstr(p, "a=candidate:")) != NULL;) {
+        const char *end = strstr(p, "\r\n");
+        const size_t length = end ? (size_t)(end - p) : strlen(p);
+        if (cands_len + length + 2 < sizeof(local_cands)) {
+            memcpy(local_cands + cands_len, p, length);
+            cands_len += length;
+            local_cands[cands_len++] = '\r';
+            local_cands[cands_len++] = '\n';
+            local_cands[cands_len] = '\0';
+        }
+        p += length;
+    }
+    /* Emit gathered candidates inside the BUNDLE-tag section (mid:0) per RFC 8843;
+     * Xbox ignores candidates appended to later bundled sections such as mid:2. */
     int n = snprintf(out, SDP_LIMIT,
         "v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\n"
         "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\n"
-        "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n"
+        "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n%s"
         "m=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\n"
         "a=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\n"
         "a=fmtp:102 %s\r\n"
         "a=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\n"
         "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\n"
         "a=max-message-size:262144\r\n",
-        (unsigned long)(plat_ticks() & 0x7fffffff), ice, video_ice, fmtp, ice);
+        (unsigned long)(plat_ticks() & 0x7fffffff), ice, local_cands, video_ice, fmtp, ice);
     if (cap) diagnostic_log("WEBRTC", "xcloud offer bandwidth cap=%u kbps", cap);
-    /* The candidates libpeer gathered, for the ICE exchange. */
-    for (const char *p = local; n > 0 && n < SDP_LIMIT && (p = strstr(p, "a=candidate:")) != NULL;) {
-        const char *end = strstr(p, "\r\n");
-        const int length = end ? (int)(end - p) : (int)strlen(p);
-        n += snprintf(out + n, SDP_LIMIT - n, "%.*s\r\n", length, p);
-        p += length;
-    }
     if (n <= 0 || n >= SDP_LIMIT) {
         free(out);
         peer_connection_destroy(pc);

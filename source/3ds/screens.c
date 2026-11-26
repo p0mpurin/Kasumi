@@ -27,6 +27,8 @@
 #include "regions.h"
 #include "report.h"
 #include "steam_link.h"
+#include "xbox_console.h"
+#include "xcloud_net.h"
 
 /* ---- Shared geometry (drawing and hit-testing use the same rects) -------- */
 
@@ -70,6 +72,13 @@ static const UiRect PC_FORGET = { 164, 168, 140, 30 };
 static const UiRect PC_CLOSE = { 16, 204, 288, 30 };
 static int g_touched_pc = -1;
 int screens_touched_pc(void) { return g_touched_pc; }
+/* Xbox My Consoles sheet: up to four consoles, Wake Up, Refresh, Close. */
+static UiRect console_row(int i) { return (UiRect){ 16, 30.0f + (float)i * 34.0f, 288, 30 }; }
+static const UiRect CON_WAKE = { 16, 168, 140, 30 };
+static const UiRect CON_REFRESH = { 164, 168, 140, 30 };
+static const UiRect CON_CLOSE = { 16, 204, 288, 30 };
+static int g_touched_console = -1;
+int screens_touched_console(void) { return g_touched_console; }
 
 /* Login and session: two mirrored buttons, or one centred. */
 static const UiRect PAIR_LEFT = { 16, 186, 140, 44 };
@@ -1039,10 +1048,39 @@ static void draw_art_placeholder(const GfnGame *game, float x, float y, float w,
             UI_ALIGN_CENTER, initial);
 }
 
+/* Procedural Xbox Remote Play cover card (zero extra VRAM/ROM assets). */
+static void draw_console_cover(const GfnGame *game, float x, float y, float w, float h, float alpha)
+{
+    const u8 a8 = (u8)(255.0f * alpha);
+    const u32 xbox = service_light(SERVICE_XBOX);
+    ui_rect(x, y, w, h, ui_with_alpha(UI_SURFACE, a8));
+    ui_gradient(x, y, w, h * 0.55f, ui_with_alpha(xbox, (u8)(46.0f * alpha)), ui_with_alpha(xbox, 0));
+    ui_rect(x, y, w, h > 60 ? 3.0f : 2.0f, ui_with_alpha(xbox, a8));
+    ui_icon(UI_IMAGE_ICON_XBOX, x + w / 2, y + h * 0.36f, w * 0.36f, ui_with_alpha(UI_TEXT, a8));
+    if (h > 65 && game) {
+        ui_text_wrap(x + w / 2, y + h * 0.62f, 10, ui_with_alpha(UI_TEXT, a8), UI_ALIGN_CENTER,
+                     w - 8, 2, 12, game->title);
+        XboxConsole c;
+        const char *sub = "REMOTE PLAY";
+        u32 sub_col = ui_with_alpha(xbox, a8);
+        if (xbox_consoles_find(game->app_id, &c)) {
+            if (c.power == XBC_POWER_ON) sub = "ONLINE";
+            else if (c.power == XBC_POWER_STANDBY) { sub = "STANDBY"; sub_col = ui_with_alpha(UI_KIN, a8); }
+            else if (c.power == XBC_POWER_OFF) { sub = "OFF"; sub_col = ui_with_alpha(UI_TEXT_DIM, a8); }
+        }
+        ui_label(x + w / 2, y + h - 14, 8, sub_col, UI_ALIGN_CENTER, sub);
+    }
+}
+
 /* Draws a game's art (or its placeholder) fitted to w x h at (x, y). */
 static void draw_game_art(const GfnGame *game, float x, float y, float w, float alpha)
 {
     const float scale = w / GAME_ART_WIDTH, h = GAME_ART_HEIGHT * scale;
+    if (game && xcloud_is_home_store(game->store)) {
+        draw_console_cover(game, x, y, w, h, alpha);
+        ui_outline(x - 1, y - 1, w + 2, h + 2, 1.0f, UI_LINE_STRONG);
+        return;
+    }
     const UiImage special = special_cover(game);
     if (special != UI_IMAGE_COUNT) {
         ui_image_fit(special, x, y, w, h, alpha);
@@ -1058,6 +1096,10 @@ static void draw_game_art(const GfnGame *game, float x, float y, float w, float 
 static void draw_cover(const GfnGame *game, float x, float y, float w, float alpha)
 {
     const float scale = w / GAME_ART_WIDTH, h = GAME_ART_HEIGHT * scale;
+    if (game && xcloud_is_home_store(game->store)) {
+        draw_console_cover(game, x, y, w, h, alpha);
+        return;
+    }
     const UiImage special = special_cover(game);
     if (special != UI_IMAGE_COUNT && ui_image_fit(special, x, y, w, h, alpha)) return;
     game_art_want(game);
@@ -1245,9 +1287,12 @@ static void draw_library_top(const App *app, bool entering)
     /* L and R sit beside the tabs, so the row stays short enough for 15 px. */
     static const char *const hints[] = { "◀ ▶", "Browse", "A", "Open", "X", "Search", "B", "Home", NULL };
     static const char *const pc_hints[] = { "A", "Choose", "X", "PC address", "B", "Close", NULL };
+    static const char *const con_hints[] = { "A", "Connect", "X", "Wake Up", "Y", "Refresh", "B", "Close", NULL };
     static const char *const search_hints[] = { "◀ ▶", "Browse", "A", "Open", "X", "Search", "B", "Library",
                                                 NULL };
-    draw_footer(UI_TOP_WIDTH, app->pc_sheet_open ? pc_hints : searching ? search_hints : hints);
+    draw_footer(UI_TOP_WIDTH, app->pc_sheet_open ? pc_hints
+                : app->console_sheet_open ? con_hints
+                : searching ? search_hints : hints);
 }
 
 static void draw_session_top(const App *app)
@@ -1778,8 +1823,10 @@ static void draw_details_top(const App *app)
             px += draw_tag(px, y, store_label(game->variants[i].store), on ? light : UI_TEXT_FAINT, on) + 6;
         }
     } else {
-        px += draw_tag(px, y, app_service(app) == SERVICE_GFN ? details_store(app, game)
-                                                             : SERVICE_INFO[app_service(app)].name, light, true) + 6;
+        const char *tag = xcloud_is_home_store(game->store) ? "Remote Play"
+                        : app_service(app) == SERVICE_GFN ? details_store(app, game)
+                        : SERVICE_INFO[app_service(app)].name;
+        px += draw_tag(px, y, tag, light, true) + 6;
     }
     if (game_prefs_favourite(game->app_id) && px < x + w - 40) draw_tag(px, y, "★", UI_KIN, true);
     y += 30;
@@ -2003,6 +2050,7 @@ static void draw_details_bottom(const App *app, float overlay_p)
     draw_arrow(DET_STORE_NEXT, 1, choice, pressed(app, DET_STORE_NEXT));
     /* Only GeForce NOW has store versions; the others say where it runs. */
     const char *where = gfn ? details_store(app, game)
+                      : xcloud_is_home_store(game->store) ? "Xbox Remote Play"
                       : app_service(app) == SERVICE_STEAM
                       ? (steam_link_host_name()[0] ? steam_link_host_name() : "Your PC") : "Xbox Cloud Gaming";
     ui_label(160, 110, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
@@ -2013,14 +2061,19 @@ static void draw_details_bottom(const App *app, float overlay_p)
     ui_button(DET_FAV, favourite ? "SAVED" : "FAVOURITE", "お気に入り",
               favourite ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, DET_FAV));
     ui_button(DET_OPTIONS, "OPTIONS", "設定", UI_BUTTON_NORMAL, pressed(app, DET_OPTIONS));
-    /* HOME Menu shortcut: add, or (once there) remove. */
-    const ShortcutState shortcut = shortcut_state();
-    const bool on_home = shortcut_exists(game->app_id);
-    ui_button(DET_SHORTCUT,
-              shortcut == SHORTCUT_IDLE ? (on_home ? "ON THE HOME MENU  ·  REMOVE" : "+ ADD TO HOME MENU")
-              : shortcut == SHORTCUT_WORKING ? "INSTALLING THE SHORTCUT..." : "DRAWING THE SHORTCUT...",
-              NULL, on_home && shortcut == SHORTCUT_IDLE ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL,
-              pressed(app, DET_SHORTCUT));
+    if (xcloud_is_home_store(game->store)) {
+        ui_text_fit(160, 164, 11, UI_TEXT_DIM, UI_ALIGN_CENTER, 288,
+                    "Streams 720p from your Xbox (half size on New 3DS)");
+    } else {
+        /* HOME Menu shortcut: add, or (once there) remove. */
+        const ShortcutState shortcut = shortcut_state();
+        const bool on_home = shortcut_exists(game->app_id);
+        ui_button(DET_SHORTCUT,
+                  shortcut == SHORTCUT_IDLE ? (on_home ? "ON THE HOME MENU  ·  REMOVE" : "+ ADD TO HOME MENU")
+                  : shortcut == SHORTCUT_WORKING ? "INSTALLING THE SHORTCUT..." : "DRAWING THE SHORTCUT...",
+                  NULL, on_home && shortcut == SHORTCUT_IDLE ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL,
+                  pressed(app, DET_SHORTCUT));
+    }
     ui_button(DET_BACK, "BACK", "戻る", UI_BUTTON_NORMAL, pressed(app, DET_BACK));
     if (app->shortcut_sheet != SHORTCUT_SHEET_NONE) {
         draw_shortcut_bottom(app);
@@ -2638,7 +2691,7 @@ static void draw_hub_bottom(const App *app)
         if (on) ui_gradient(r.x + 1, r.y + 1, r.w - 2, r.h - 2, ui_with_alpha(li, 0x58), ui_with_alpha(li, 0x10));
         if (pressed(app, base)) ui_rect_r(r, ui_with_alpha(UI_TEXT, 0x24));
         ui_icon(SERVICE_ICON[i], r.x + r.w / 2, r.y + 19, 22, on ? UI_TEXT : UI_TEXT_FAINT);
-        static const char *const short_names[SERVICE_COUNT] = { "GeForce NOW", "Xbox Cloud", "Steam Link" };
+        static const char *const short_names[SERVICE_COUNT] = { "GeForce NOW", "Xbox", "Steam Link" };
         ui_text_fit(r.x + r.w / 2, r.y + 33, 11, on ? UI_TEXT : UI_TEXT_DIM, UI_ALIGN_CENTER, r.w - 6,
                     short_names[i]);
         if (app->service_ready[i]) ui_circle(r.x + r.w - 8, r.y + 8, 2.5f, li);
@@ -2731,10 +2784,52 @@ static void draw_pc_sheet_bottom(const App *app)
               pressed(app, PC_CLOSE));
 }
 
+static const char *console_subtitle(const XboxConsole *c, char *buf, size_t size)
+{
+    const char *power = i18n_text(c->power == XBC_POWER_ON ? "On"
+                                  : c->power == XBC_POWER_STANDBY ? "Standby"
+                                  : c->power == XBC_POWER_OFF ? "Off" : "Status unknown");
+    const char *state = i18n_text(!c->streaming ? "Remote Play disabled" : c->out_of_home_warn ? "Away from home" : "Ready");
+    snprintf(buf, size, "%s · %s · %s", c->type, power, state);
+    return buf;
+}
+
+static void draw_console_sheet_bottom(const App *app)
+{
+    XboxConsole list[4];
+    int count = (int)xbox_consoles_list(list, 4);
+    if (count > 4) count = 4;
+    draw_status_strip(app, "Your Xbox consoles: A connects, X wakes");
+    for (int i = 0; i < count; ++i) {
+        char sub[64];
+        console_subtitle(&list[i], sub, sizeof(sub));
+        const UiButtonStyle style = i == app->console_index ? UI_BUTTON_PRIMARY
+                                  : (list[i].streaming && list[i].power == XBC_POWER_ON) ? UI_BUTTON_ACTIVE
+                                  : UI_BUTTON_NORMAL;
+        ui_button(console_row(i), list[i].name, sub, style, pressed(app, console_row(i)));
+    }
+    if (count == 0)
+        ui_text(160, 76, 12, UI_TEXT_DIM, UI_ALIGN_CENTER,
+                "No Xbox consoles loaded yet. Tap REFRESH.");
+    else if (count < 4)
+        ui_text(160, console_row(count).y + 8, 11, UI_TEXT_FAINT, UI_ALIGN_CENTER,
+                "720p Remote Play · Standby consoles wake on connect");
+    ui_button(CON_WAKE, "WAKE UP", "起動", app->console_index == count ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, CON_WAKE));
+    ui_button(CON_REFRESH, "REFRESH", "更新", app->console_index == count + 1 ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, CON_REFRESH));
+    ui_button(CON_CLOSE, "CLOSE", "閉じる", app->console_index == count + 2 ? UI_BUTTON_PRIMARY : UI_BUTTON_NORMAL,
+              pressed(app, CON_CLOSE));
+}
+
 static void draw_library_bottom(const App *app)
 {
     if (app->pc_sheet_open) {
         draw_pc_sheet_bottom(app);
+        return;
+    }
+    if (app->console_sheet_open) {
+        draw_console_sheet_bottom(app);
         return;
     }
     const GfnClient *client = app->client;
@@ -2789,10 +2884,12 @@ static void draw_library_bottom(const App *app)
               pressed(app, l->play));
     /* In the library this button refreshes it; after a search it goes back. */
     const bool searching = app->search_text[0] != '\0';
-    /* Steam Link: its library is the PC's, so this button picks the PC. */
+    /* Steam Link picks PCs; Xbox picks consoles (and refreshes from there). */
     const bool pcs = !searching && app_service(app) == SERVICE_STEAM;
-    ui_button(l->library, searching ? "LIBRARY" : pcs ? "PCS" : "REFRESH",
-              searching ? "ライブラリ" : pcs ? "パソコン" : "更新", UI_BUTTON_NORMAL, pressed(app, l->library));
+    const bool consoles = !searching && app_service(app) == SERVICE_XBOX;
+    ui_button(l->library, searching ? "LIBRARY" : pcs ? "PCS" : consoles ? "CONSOLES" : "REFRESH",
+              searching ? "ライブラリ" : pcs ? "パソコン" : consoles ? "本体" : "更新",
+              UI_BUTTON_NORMAL, pressed(app, l->library));
     ui_button(l->search, "SEARCH", "検索",
               app->search_text[0] ? UI_BUTTON_ACTIVE : UI_BUTTON_NORMAL, pressed(app, l->search));
     ui_button(l->settings, "SETTINGS", "設定", UI_BUTTON_NORMAL, pressed(app, l->settings));
@@ -3798,6 +3895,18 @@ AppAction screens_touch(const App *app, int x, int y)
             if (ui_hit(PC_CLOSE, x, y)) return ACTION_PC_CLOSE;
             return g_touched_pc >= 0 ? ACTION_PC_ROW : ACTION_NONE;
         }
+        if (app->console_sheet_open) {
+            int count = (int)xbox_consoles_list(NULL, 0);
+            if (count > 4) count = 4;
+            g_touched_console = -1;
+            for (int i = 0; i < count; ++i)
+                if (ui_hit(console_row(i), x, y)) g_touched_console = i;
+            if (g_touched_console >= 0) return ACTION_CONSOLE_ROW;
+            if (ui_hit(CON_WAKE, x, y)) return ACTION_CONSOLE_WAKE;
+            if (ui_hit(CON_REFRESH, x, y)) return ACTION_CONSOLE_REFRESH;
+            if (ui_hit(CON_CLOSE, x, y)) return ACTION_CONSOLE_CLOSE;
+            return ACTION_NONE;
+        }
         if (ui_hit(HOME_BACK, x, y) && !app->toast) return ACTION_HUB;
         if (!gfn_has_session(app->client)) {
             if (ui_hit(SIGNIN_MAIN, x, y)) return ACTION_SIGN_IN;
@@ -3869,7 +3978,10 @@ AppAction screens_touch(const App *app, int x, int y)
         if (ui_hit(DET_STORE_NEXT, x, y)) return ACTION_VARIANT_NEXT;
         if (ui_hit(DET_FAV, x, y)) return ACTION_FAVOURITE;
         if (ui_hit(DET_OPTIONS, x, y)) return ACTION_OPTIONS;
-        if (ui_hit(DET_SHORTCUT, x, y)) return ACTION_SHORTCUT;
+        {
+            const GfnGame *dg = app_game(app, app->selected);
+            if (!(dg && xcloud_is_home_store(dg->store)) && ui_hit(DET_SHORTCUT, x, y)) return ACTION_SHORTCUT;
+        }
         if (ui_hit(DET_BACK, x, y)) return ACTION_BACK;
         break;
     case VIEW_STREAM:

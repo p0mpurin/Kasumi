@@ -372,6 +372,125 @@ static void agent_create_binding_request(Agent* agent, StunMessage* msg) {
   stun_msg_finish(msg, STUN_CREDENTIAL_SHORT_TERM, agent->remote_upwd, strlen(agent->remote_upwd));
 }
 
+static int agent_addr_same(const Address* a, const Address* b) {
+  if (!a || !b || a->family != b->family || a->port != b->port) {
+    return 0;
+  }
+  if (a->family == AF_INET) {
+    return a->sin.sin_addr.s_addr == b->sin.sin_addr.s_addr;
+  }
+  if (a->family == AF_INET6) {
+    return memcmp(&a->sin6.sin6_addr, &b->sin6.sin6_addr, sizeof(a->sin6.sin6_addr)) == 0;
+  }
+  return 0;
+}
+
+static void agent_promote_pair_to_front(Agent* agent, int idx) {
+  if (!agent || idx < 0 || idx >= agent->candidate_pairs_num) {
+    return;
+  }
+  for (int i = 0; i < agent->candidate_pairs_num; i++) {
+    if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_INPROGRESS) {
+      agent->candidate_pairs[i].state = ICE_CANDIDATE_STATE_FROZEN;
+      agent->candidate_pairs[i].conncheck = 0;
+    }
+  }
+  IceCandidatePair promoted = agent->candidate_pairs[idx];
+  if (idx > 0) {
+    memmove(&agent->candidate_pairs[1], &agent->candidate_pairs[0],
+            (size_t)idx * sizeof(IceCandidatePair));
+  }
+  promoted.state = ICE_CANDIDATE_STATE_FROZEN;
+  promoted.conncheck = 0;
+  agent->candidate_pairs[0] = promoted;
+  agent->nominated_pair = &agent->candidate_pairs[0];
+}
+
+static void agent_handle_triggered_check(Agent* agent, Address* addr) {
+  if (!agent || agent->selected_pair || !addr || agent->local_candidates_count <= 0 ||
+      !agent->remote_ufrag[0] || !agent->remote_upwd[0]) {
+    return;
+  }
+
+  /* Inbound request on the currently nominated remote: fire a rate-limited
+   * triggered check immediately rather than waiting for the periodic tick. */
+  if (agent->nominated_pair && agent->nominated_pair->remote &&
+      agent_addr_same(&agent->nominated_pair->remote->addr, addr)) {
+    const uint32_t now_ms = ports_get_epoch_time();
+    if (agent->last_binding_request_sent_ms == 0 ||
+        (uint32_t)(now_ms - agent->last_binding_request_sent_ms) >= 200u) {
+      StunMessage req;
+      memset(&req, 0, sizeof(req));
+      agent_create_binding_request(agent, &req);
+      agent->connectivity_requests_attempted++;
+      if (agent_socket_send(agent, &agent->nominated_pair->remote->addr, req.buf, req.size) >= 0) {
+        agent->last_binding_request_sent_ms = now_ms;
+        agent->connectivity_requests_sent++;
+      } else {
+        agent->connectivity_send_failures++;
+        agent->connectivity_last_errno = errno;
+      }
+    }
+    return;
+  }
+
+  int matched_live = -1;
+  int matched_any = 0;
+  for (int i = 0; i < agent->candidate_pairs_num; i++) {
+    IceCandidatePair* pair = &agent->candidate_pairs[i];
+    if (pair->remote && agent_addr_same(&pair->remote->addr, addr)) {
+      matched_any = 1;
+      if (matched_live < 0 &&
+          pair->state != ICE_CANDIDATE_STATE_FAILED &&
+          pair->state != ICE_CANDIDATE_STATE_SUCCEEDED) {
+        matched_live = i;
+      }
+    }
+  }
+  if (matched_live >= 0) {
+    agent_promote_pair_to_front(agent, matched_live);
+    return;
+  }
+  if (matched_any) {
+    return;
+  }
+
+  for (int i = 0; i < agent->remote_candidates_count; i++) {
+    if (agent_addr_same(&agent->remote_candidates[i].addr, addr)) {
+      return;
+    }
+  }
+
+  IceCandidate* local = NULL;
+  for (int i = 0; i < agent->local_candidates_count; i++) {
+    if (agent->local_candidates[i].addr.family == addr->family) {
+      local = &agent->local_candidates[i];
+      break;
+    }
+  }
+  if (!local ||
+      agent->remote_candidates_count >= AGENT_MAX_CANDIDATES ||
+      agent->candidate_pairs_num >= AGENT_MAX_CANDIDATE_PAIRS) {
+    return;
+  }
+
+  IceCandidate* remote = &agent->remote_candidates[agent->remote_candidates_count];
+  memset(remote, 0, sizeof(*remote));
+  ice_candidate_create(remote, 900 + agent->remote_candidates_count, ICE_CANDIDATE_TYPE_PRFLX, addr);
+  agent->remote_candidates_count++;
+
+  const int new_idx = agent->candidate_pairs_num++;
+  IceCandidatePair* pair = &agent->candidate_pairs[new_idx];
+  pair->local = local;
+  pair->remote = remote;
+  pair->priority = ice_candidate_pair_priority(
+      local->priority, remote->priority, agent->mode == AGENT_MODE_CONTROLLING);
+  pair->state = ICE_CANDIDATE_STATE_FROZEN;
+  pair->conncheck = 0;
+
+  agent_promote_pair_to_front(agent, new_idx);
+}
+
 void agent_process_stun_request(Agent* agent, StunMessage* stun_msg, Address* addr) {
   StunMessage msg;
   StunHeader* header;
@@ -383,6 +502,7 @@ void agent_process_stun_request(Agent* agent, StunMessage* stun_msg, Address* ad
         agent_create_binding_response(agent, &msg, addr);
         agent_socket_send(agent, addr, msg.buf, msg.size);
         agent->binding_request_time = ports_get_epoch_time();
+        agent_handle_triggered_check(agent, addr);
       }
       break;
     default:

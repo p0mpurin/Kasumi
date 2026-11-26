@@ -53,6 +53,8 @@
 #include "ui.h"
 #include "webrtc_transport.h"
 #include "xcloud.h"
+#include "xcloud_net.h"
+#include "xbox_console.h"
 #include "steam_link.h"
 
 #define MENU_COMBO_HOLD_MS 800
@@ -401,7 +403,9 @@ static void launch_game(const GfnGame *game)
     if (current_service() == SERVICE_STEAM)
         snprintf(busy, sizeof(busy), i18n_text("Starting %.60s on %.40s..."), game->title, steam_link_host_name());
     else if (current_service() == SERVICE_XBOX)
-        snprintf(busy, sizeof(busy), i18n_text("Asking Xbox Cloud Gaming for a console..."));
+        snprintf(busy, sizeof(busy), !strcmp(game->store, "Remote Play")
+                 ? i18n_text("Connecting to your Xbox console...")
+                 : i18n_text("Asking Xbox Cloud Gaming for a console..."));
     else
         snprintf(busy, sizeof(busy), i18n_text("Creating your cloud session..."));
     submit_job(NET_JOB_START_SESSION, busy, NULL, &g_current_game);
@@ -1470,6 +1474,7 @@ static void handle_modal(u32 down, AppAction action)
     } else if (modal == MODAL_SIGN_OUT) {
         submit_job(NET_JOB_SIGN_OUT, NULL, NULL, NULL);
         g_app.pc_sheet_open = false;
+        g_app.console_sheet_open = false;
         g_app.continue_index = -1;
         g_app.settings_open = false;
         g_app.search_text[0] = '\0';
@@ -1560,6 +1565,7 @@ static void open_hub(void)
     refresh_service_status();
     g_app.hub_open = true;
     g_app.pc_sheet_open = false;
+    g_app.console_sheet_open = false;
     g_app.hub_index = (int)current_service();
 }
 
@@ -1763,6 +1769,88 @@ static void handle_pc_sheet(u32 down, u32 repeat, AppAction action)
     }
 }
 
+static const GfnGame *find_console_game(const char *id)
+{
+    for (size_t i = 0; i < g_client.game_count; ++i) {
+        if (xcloud_is_home_store(g_client.games[i].store) && !strcmp(g_client.games[i].app_id, id))
+            return &g_client.games[i];
+    }
+    return NULL;
+}
+
+static void wake_selected_console(const XboxConsole *c)
+{
+    if (!c) {
+        show_notice("No Xbox consoles found; tap REFRESH first");
+        return;
+    }
+    if (!c->remote_mgmt) {
+        show_notice("Enable Remote features on your Xbox to wake it remotely");
+        return;
+    }
+    static char wake_busy[96];
+    snprintf(wake_busy, sizeof(wake_busy), i18n_text("Sending Wake-Up to %.50s..."), c->name);
+    if (submit_job(NET_JOB_WAKE_CONSOLE, wake_busy, c->id, NULL))
+        g_app.console_sheet_open = false;
+}
+
+static void handle_console_sheet(u32 down, u32 repeat, AppAction action)
+{
+    XboxConsole list[4];
+    int count = (int)xbox_consoles_list(list, 4);
+    if (count > 4) count = 4;
+    const int rows = count + 3; /* consoles, WAKE UP, REFRESH, CLOSE */
+    if (repeat & PLAT_KEY_UP) g_app.console_index = (g_app.console_index + rows - 1) % rows;
+    if (repeat & PLAT_KEY_DOWN) g_app.console_index = (g_app.console_index + 1) % rows;
+    if ((repeat & PLAT_KEY_LEFT) && g_app.console_index == count + 1) g_app.console_index = count;
+    if ((repeat & PLAT_KEY_RIGHT) && g_app.console_index == count) g_app.console_index = count + 1;
+    if (g_app.console_index >= rows) g_app.console_index = 0;
+
+    if ((down & PLAT_KEY_B) || action == ACTION_CONSOLE_CLOSE) {
+        g_app.console_sheet_open = false;
+        return;
+    }
+    if ((down & PLAT_KEY_Y) || action == ACTION_CONSOLE_REFRESH) {
+        g_app.console_sheet_open = false;
+        load_library();
+        return;
+    }
+    if ((down & PLAT_KEY_X) || action == ACTION_CONSOLE_WAKE) {
+        const XboxConsole *target = count > 0
+            ? &list[g_app.console_index < count ? g_app.console_index : 0] : NULL;
+        wake_selected_console(target);
+        return;
+    }
+
+    int pick = -1;
+    if (action == ACTION_CONSOLE_ROW) pick = g_app.console_index = screens_touched_console();
+    else if (down & PLAT_KEY_A) pick = g_app.console_index;
+    if (pick < 0) return;
+
+    if (pick == count + 2) {
+        g_app.console_sheet_open = false;
+    } else if (pick == count + 1) {
+        g_app.console_sheet_open = false;
+        load_library();
+    } else if (pick == count) {
+        wake_selected_console(count > 0 ? &list[0] : NULL);
+    } else if (pick < count) {
+        const XboxConsole *c = &list[pick];
+        if (!c->streaming) {
+            show_notice("Enable Remote Play on this Xbox console first");
+            return;
+        }
+        const GfnGame *game = find_console_game(c->id);
+        if (!game) {
+            g_app.console_sheet_open = false;
+            load_library();
+            return;
+        }
+        g_app.console_sheet_open = false;
+        launch_with_options(game, 0);
+    }
+}
+
 static void handle_library(u32 down, u32 repeat, AppAction action)
 {
     const size_t count = g_app.list_count;
@@ -1772,6 +1860,10 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
     }
     if (g_app.pc_sheet_open) {
         handle_pc_sheet(down, repeat, action);
+        return;
+    }
+    if (g_app.console_sheet_open) {
+        handle_console_sheet(down, repeat, action);
         return;
     }
     if (!gfn_has_session(&g_client)) {
@@ -1834,6 +1926,12 @@ static void handle_library(u32 down, u32 repeat, AppAction action)
         else if (current_service() == SERVICE_STEAM) {
             g_app.pc_sheet_open = true;
             g_app.pc_index = 0;
+        } else if (current_service() == SERVICE_XBOX) {
+            if (xbox_consoles_list(NULL, 0) == 0 && !g_client.game_count) load_library();
+            else {
+                g_app.console_sheet_open = true;
+                g_app.console_index = 0;
+            }
         } else load_library();
     } else if ((down & PLAT_KEY_B) && g_app.search_text[0]) {
         show_saved_library();
@@ -2141,7 +2239,7 @@ static void handle_details(u32 down, u32 repeat, AppAction action)
         g_app.options_open = true;
         g_app.options_index = 0;
     } else if ((down & PLAT_KEY_SELECT) || action == ACTION_SHORTCUT) {
-        shortcut_action(game);
+        if (!xcloud_is_home_store(game->store)) shortcut_action(game);
     } else if (variants > 1 && ((repeat & PLAT_KEY_LEFT) || action == ACTION_VARIANT_PREV)) {
         g_app.details_variant = (g_app.details_variant + variants - 1) % variants;
     } else if (variants > 1 && ((repeat & PLAT_KEY_RIGHT) || action == ACTION_VARIANT_NEXT)) {
@@ -3767,8 +3865,12 @@ static void finish_jobs(void)
         g_app.reconnect_attempt = 4;
     }
     if (result.kind == NET_JOB_LOAD_LIBRARY || result.kind == NET_JOB_SEARCH || result.kind == NET_JOB_USE_PC ||
-        result.kind == NET_JOB_SIGN_OUT)
+        result.kind == NET_JOB_SIGN_OUT || result.kind == NET_JOB_WAKE_CONSOLE)
         g_app.selected = g_app.list_top = 0;
+    if (result.kind == NET_JOB_LOAD_LIBRARY && !result.ok && !result.cancelled && g_client.status[0])
+        show_notice(g_client.status);
+    if (result.kind == NET_JOB_WAKE_CONSOLE && !result.cancelled)
+        show_notice(g_client.status);
     /* Steam Link: pairing another PC found none, or the PC switched. */
     if (result.kind == NET_JOB_BEGIN_LOGIN && !result.ok && gfn_has_session(&g_client))
         show_notice(g_client.status);
@@ -3780,8 +3882,11 @@ static void finish_jobs(void)
     }
     if (result.kind == NET_JOB_HOME_THEME && !result.cancelled)
         show_notice(result.ok ? "Theme saved to /Themes: install it with Anemone3DS" : g_client.status);
-    /* A service signed in before but with no saved library yet. */
-    if (result.kind == NET_JOB_SWITCH_SERVICE && gfn_has_session(&g_client) && !g_client.game_count)
+    /* A service signed in before but with no saved library yet, or Xbox
+     * upgraded from an xCloud-only cache without Remote Play consoles yet. */
+    if (result.kind == NET_JOB_SWITCH_SERVICE && gfn_has_session(&g_client) &&
+        (!g_client.game_count ||
+         (current_service() == SERVICE_XBOX && !xbox_consoles_live() && xbox_consoles_list(NULL, 0) == 0)))
         load_library();
     if (result.kind == NET_JOB_RESUME_CHECK && result.ok && g_client.resume_found) {
         char text[192];
@@ -4078,6 +4183,8 @@ int main(int argc, char **argv)
         g_library_upgrade = true;
         for (size_t i = 0; i < g_client.game_count && g_library_upgrade; ++i)
             if (g_client.games[i].wide_url[0]) g_library_upgrade = false;
+        if (xcloud_selected() && !xbox_consoles_live() && xbox_consoles_list(NULL, 0) == 0)
+            g_library_upgrade = true;
     }
     if (!gfn_input_self_test()) {
         diagnostic_log("INPUT", "wire encoder self-test FAILED");

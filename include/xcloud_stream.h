@@ -24,3 +24,5 @@ void xcloud_stream_note_frame(uint32_t rtp_timestamp);
 void xcloud_stream_on_data(WebRtcTransport *t, const char *data, size_t length, uint16_t sid);
 /* Opens the channels, answers, and sends controller state (UI thread). */
 void xcloud_stream_tick(WebRtcTransport *t, void *peer);
+/* Sends videoKeyframeRequested on the Xbox control channel. */
+bool xcloud_stream_request_keyframe(void *peer);

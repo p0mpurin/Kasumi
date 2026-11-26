@@ -45,6 +45,8 @@ typedef enum {
     NET_JOB_SWITCH_SERVICE,
     /* Steam Link: stream from another paired PC (text: its index). */
     NET_JOB_USE_PC,
+    /* Xbox Remote Play: send SmartGlass WakeUp to console (text: console id), then refresh. */
+    NET_JOB_WAKE_CONSOLE,
     /* The Kasumi HOME Menu theme (by morrisonion) into sdmc:/Themes. */
     NET_JOB_HOME_THEME
 } NetJobKind;

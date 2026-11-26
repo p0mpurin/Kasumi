@@ -7,6 +7,8 @@
 #include "stream_profile.h"
 #include "regions.h"
 #include "xcloud.h"
+#include "xcloud_net.h"
+#include "xbox_console.h"
 #include "steam_link.h"
 
 #include <jansson.h>
@@ -1020,8 +1022,25 @@ bool gfn_library_load(GfnClient *client)
     client->catalog_total = client->game_count;
     json_decref(root);
     library_remember(client);
+    if (xcloud_selected()) {
+        XboxConsole cached[XBOX_CONSOLE_MAX];
+        unsigned cc = 0;
+        for (size_t i = 0; i < client->game_count && cc < XBOX_CONSOLE_MAX; ++i) {
+            if (!xcloud_is_home_store(client->games[i].store)) continue;
+            memset(&cached[cc], 0, sizeof(cached[cc]));
+            snprintf(cached[cc].id, sizeof(cached[cc].id), "%s", client->games[i].app_id);
+            snprintf(cached[cc].name, sizeof(cached[cc].name), "%s", client->games[i].title);
+            snprintf(cached[cc].type, sizeof(cached[cc].type), "Xbox");
+            cached[cc].power = XBC_POWER_UNKNOWN;
+            cached[cc].streaming = true;
+            cached[cc].remote_mgmt = true;
+            ++cc;
+        }
+        if (cc > 0) xbox_consoles_seed_cached(cached, cc);
+    }
     /* Steam Link's Y opens the PCs instead of refreshing. */
     snprintf(client->status, sizeof(client->status), steam_link_selected() ? i18n_text("Library: %lu games")
+             : xcloud_selected() ? i18n_text("Library: %lu Xbox items (Y for consoles)")
              : i18n_text("Library: %lu games (Y refreshes)"), (unsigned long)client->game_count);
     return true;
 }
