@@ -1151,11 +1151,28 @@ void *webrtc_transport_xcloud_offer(char **offer_out, const char *stun_url)
     PeerConnection *pc = NULL;
     if (xcloud_is_home_session()) {
         const char *primary = (stun_url && stun_url[0]) ? stun_url : "stun:relay.communication.microsoft.com:3478";
-        pc = create_xcloud_peer(primary, &local);
-        if (!pc || !local || !strstr(local, " typ srflx")) {
-            diagnostic_log("XHOME", "primary STUN %s yielded no srflx; retrying Google STUN", primary);
-            if (pc) peer_connection_destroy(pc);
-            pc = create_xcloud_peer("stun:stun.l.google.com:19302", &local);
+        static const char *const fallbacks[] = {
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+        };
+        const char *urls[3];
+        size_t url_count = 0;
+        urls[url_count++] = primary;
+        for (size_t i = 0; i < sizeof(fallbacks) / sizeof(fallbacks[0]); ++i) {
+            if (strcmp(primary, fallbacks[i]) != 0)
+                urls[url_count++] = fallbacks[i];
+        }
+        for (size_t i = 0; i < url_count; ++i) {
+            pc = create_xcloud_peer(urls[i], &local);
+            if (pc && local && strstr(local, " typ srflx")) break;
+            if (i + 1 < url_count) {
+                diagnostic_log("XHOME", "STUN %s yielded no srflx; retrying %s", urls[i], urls[i + 1]);
+                if (pc) {
+                    peer_connection_destroy(pc);
+                    pc = NULL;
+                    local = NULL;
+                }
+            }
         }
     } else {
         pc = create_xcloud_peer("stun:s1.stun.gamestream.nvidia.com:19308", &local);
@@ -1200,25 +1217,34 @@ void *webrtc_transport_xcloud_offer(char **offer_out, const char *stun_url)
         peer_connection_destroy(pc);
         return NULL;
     }
+    char local_cands[1024] = "";
+    size_t cands_len = 0;
+    for (const char *p = local; (p = strstr(p, "a=candidate:")) != NULL;) {
+        const char *end = strstr(p, "\r\n");
+        const size_t length = end ? (size_t)(end - p) : strlen(p);
+        if (cands_len + length + 2 < sizeof(local_cands)) {
+            memcpy(local_cands + cands_len, p, length);
+            cands_len += length;
+            local_cands[cands_len++] = '\r';
+            local_cands[cands_len++] = '\n';
+            local_cands[cands_len] = '\0';
+        }
+        p += length;
+    }
+    /* Emit gathered candidates inside the BUNDLE-tag section (mid:0) per RFC 8843;
+     * Xbox ignores candidates appended to later bundled sections such as mid:2. */
     int n = snprintf(out, SDP_LIMIT,
         "v=0\r\no=- %lu 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 0 1 2\r\na=msid-semantic: WMS *\r\n"
         "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\n%sa=mid:0\r\na=recvonly\r\na=rtcp-mux\r\n"
-        "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n"
+        "a=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=1\r\n%s"
         "m=video 9 UDP/TLS/RTP/SAVPF 102 103\r\n%sa=mid:1\r\na=recvonly\r\na=rtcp-mux\r\na=rtcp-rsize\r\n"
         "a=rtpmap:102 H264/90000\r\na=rtcp-fb:102 nack\r\na=rtcp-fb:102 nack pli\r\na=rtcp-fb:102 ccm fir\r\n"
         "a=fmtp:102 %s\r\n"
         "a=rtpmap:103 rtx/90000\r\na=fmtp:103 apt=102\r\n"
         "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n%sa=mid:2\r\na=sctp-port:5000\r\n"
         "a=max-message-size:262144\r\n",
-        (unsigned long)(plat_ticks() & 0x7fffffff), ice, video_ice, fmtp, ice);
+        (unsigned long)(plat_ticks() & 0x7fffffff), ice, local_cands, video_ice, fmtp, ice);
     if (cap) diagnostic_log("WEBRTC", "xcloud offer bandwidth cap=%u kbps", cap);
-    /* The candidates libpeer gathered, for the ICE exchange. */
-    for (const char *p = local; n > 0 && n < SDP_LIMIT && (p = strstr(p, "a=candidate:")) != NULL;) {
-        const char *end = strstr(p, "\r\n");
-        const int length = end ? (int)(end - p) : (int)strlen(p);
-        n += snprintf(out + n, SDP_LIMIT - n, "%.*s\r\n", length, p);
-        p += length;
-    }
     if (n <= 0 || n >= SDP_LIMIT) {
         free(out);
         peer_connection_destroy(pc);
